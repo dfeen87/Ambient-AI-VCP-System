@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # Mesh Coordinator
+  coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: coordinator --cluster-id demo-cluster --strategy weighted
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info
+    networks:
+      - ambient-network
+
+  # Node 1 - Gateway
+  node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: node --id node-001 --region us-west --node-type gateway
+    environment:
+      - RUST_LOG=info
+    networks:
+      - ambient-network
+    depends_on:
+      - coordinator
+
+  # Node 2 - Compute
+  node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: node --id node-002 --region us-west --node-type compute
+    environment:
+      - RUST_LOG=info
+    networks:
+      - ambient-network
+    depends_on:
+      - coordinator
+
+  # Node 3 - Compute
+  node-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: node --id node-003 --region eu-central --node-type compute
+    environment:
+      - RUST_LOG=info
+    networks:
+      - ambient-network
+    depends_on:
+      - coordinator
+
+networks:
+  ambient-network:
+    driver: bridge
