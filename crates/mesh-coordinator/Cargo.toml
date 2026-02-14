@@ -1,0 +1,20 @@
+[package]
+name = "mesh-coordinator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+
+# Local dependencies
+ambient-node = { path = "../ambient-node" }
+wasm-engine = { path = "../wasm-engine" }
+zk-prover = { path = "../zk-prover" }
