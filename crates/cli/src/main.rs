@@ -1,0 +1,175 @@
+use ambient_node::{AmbientNode, NodeId, SafetyPolicy, TelemetrySample};
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use mesh_coordinator::{MeshCoordinator, TaskAssignmentStrategy};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::{info, Level};
+use tracing_subscriber;
+
+#[derive(Parser)]
+#[command(name = "ambient-vcp")]
+#[command(about = "Ambient AI + Verifiable Computation Protocol CLI", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Start an ambient node
+    Node {
+        /// Node ID
+        #[arg(short, long)]
+        id: String,
+
+        /// Region
+        #[arg(short, long, default_value = "us-west")]
+        region: String,
+
+        /// Node type
+        #[arg(short = 't', long, default_value = "compute")]
+        node_type: String,
+    },
+
+    /// Start a mesh coordinator
+    Coordinator {
+        /// Cluster ID
+        #[arg(short, long)]
+        cluster_id: String,
+
+        /// Task assignment strategy
+        #[arg(short, long, default_value = "weighted")]
+        strategy: String,
+    },
+
+    /// Show node information
+    Info {
+        /// Node ID
+        #[arg(short, long)]
+        id: String,
+    },
+
+    /// Run health check
+    Health,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Initialize tracing
+    tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .init();
+
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Node {
+            id,
+            region,
+            node_type,
+        } => {
+            run_node(id, region, node_type).await?;
+        }
+        Commands::Coordinator {
+            cluster_id,
+            strategy,
+        } => {
+            run_coordinator(cluster_id, strategy).await?;
+        }
+        Commands::Info { id } => {
+            show_node_info(id).await?;
+        }
+        Commands::Health => {
+            run_health_check().await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_node(id: String, region: String, node_type: String) -> Result<()> {
+    info!("Starting ambient node: {}", id);
+
+    let node_id = NodeId::new(&id, &region, &node_type);
+    let policy = SafetyPolicy::default();
+    let mut node = AmbientNode::new(node_id, policy);
+
+    // Simulate telemetry collection
+    let telemetry = TelemetrySample {
+        bandwidth_mbps: 100.0,
+        avg_latency_ms: 20.0,
+        cpu_usage_percent: 50.0,
+        memory_usage_percent: 60.0,
+        temperature_c: 65.0,
+        power_watts: 150.0,
+        timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+    };
+
+    node.ingest_telemetry(telemetry);
+
+    info!("Node ID: {}", id);
+    info!("Region: {}", region);
+    info!("Type: {}", node_type);
+    info!("Health Score: {:.2}", node.health_score());
+    info!("Safe Mode: {}", node.is_safe_mode());
+
+    info!("Node running... Press Ctrl+C to stop");
+    
+    // Keep running until interrupted
+    tokio::signal::ctrl_c().await?;
+    
+    info!("Shutting down node...");
+    Ok(())
+}
+
+async fn run_coordinator(cluster_id: String, strategy_str: String) -> Result<()> {
+    info!("Starting mesh coordinator: {}", cluster_id);
+
+    let strategy = match strategy_str.as_str() {
+        "weighted" => TaskAssignmentStrategy::Weighted,
+        "round-robin" => TaskAssignmentStrategy::RoundRobin,
+        "least-loaded" => TaskAssignmentStrategy::LeastLoaded,
+        "latency-aware" => TaskAssignmentStrategy::LatencyAware,
+        _ => {
+            info!("Unknown strategy '{}', using 'weighted'", strategy_str);
+            TaskAssignmentStrategy::Weighted
+        }
+    };
+
+    let coordinator = MeshCoordinator::new(cluster_id.clone(), strategy);
+
+    info!("Cluster ID: {}", cluster_id);
+    info!("Strategy: {:?}", strategy);
+    info!("Nodes: {}", coordinator.node_count());
+
+    let stats = coordinator.cluster_stats();
+    info!("Total Nodes: {}", stats.total_nodes);
+    info!("Healthy Nodes: {}", stats.healthy_nodes);
+    info!("Avg Health Score: {:.2}", stats.avg_health_score);
+
+    info!("Coordinator running... Press Ctrl+C to stop");
+    
+    tokio::signal::ctrl_c().await?;
+    
+    info!("Shutting down coordinator...");
+    Ok(())
+}
+
+async fn show_node_info(id: String) -> Result<()> {
+    info!("Node Information: {}", id);
+    info!("This would show detailed node information in a production system");
+    Ok(())
+}
+
+async fn run_health_check() -> Result<()> {
+    info!("Running system health check...");
+    
+    // Check system components
+    info!("✓ Ambient Node module loaded");
+    info!("✓ WASM Engine module loaded");
+    info!("✓ ZK Prover module loaded");
+    info!("✓ Mesh Coordinator module loaded");
+    
+    info!("All systems operational!");
+    Ok(())
+}

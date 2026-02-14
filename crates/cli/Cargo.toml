@@ -1,0 +1,27 @@
+[package]
+name = "ambient-vcp-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ambient-vcp"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# CLI dependencies
+clap = { version = "4.4", features = ["derive"] }
+
+# Local dependencies
+ambient-node = { path = "../ambient-node" }
+wasm-engine = { path = "../wasm-engine" }
+zk-prover = { path = "../zk-prover" }
+mesh-coordinator = { path = "../mesh-coordinator" }

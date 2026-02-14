@@ -1,0 +1,24 @@
+[package]
+name = "wasm-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+default = []
+wasm-runtime = ["dep:wasmedge-sdk"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+sha3.workspace = true
+
+# WASM runtime (optional)
+wasmedge-sdk = { version = "0.13", optional = true }
+
+# For limits and execution
+bytes = "1.5"
