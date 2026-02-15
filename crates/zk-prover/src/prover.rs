@@ -4,14 +4,14 @@ use sha3::{Digest, Sha3_256};
 
 /// ZK Prover (placeholder implementation)
 pub struct ZKProver {
-    proving_key: ProvingKey,
+    _proving_key: ProvingKey,
     verification_key: VerificationKey,
 }
 
 impl ZKProver {
     pub fn new(proving_key: ProvingKey, verification_key: VerificationKey) -> Self {
         Self {
-            proving_key,
+            _proving_key: proving_key,
             verification_key,
         }
     }
@@ -44,7 +44,7 @@ impl ZKProver {
 impl Default for ZKProver {
     fn default() -> Self {
         Self {
-            proving_key: ProvingKey {
+            _proving_key: ProvingKey {
                 key_data: vec![0u8; 32],
             },
             verification_key: VerificationKey {

@@ -2,12 +2,12 @@ use crate::{VerificationKey, ZKProof};
 
 /// ZK Proof Verifier (placeholder implementation)
 pub struct ZKVerifier {
-    verification_key: VerificationKey,
+    _verification_key: VerificationKey,
 }
 
 impl ZKVerifier {
     pub fn new(verification_key: VerificationKey) -> Self {
-        Self { verification_key }
+        Self { _verification_key: verification_key }
     }
 
     /// Verify a ZK proof
@@ -26,7 +26,7 @@ impl ZKVerifier {
 impl Default for ZKVerifier {
     fn default() -> Self {
         Self {
-            verification_key: VerificationKey {
+            _verification_key: VerificationKey {
                 key_data: vec![0u8; 32],
             },
         }
