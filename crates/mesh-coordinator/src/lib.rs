@@ -172,11 +172,7 @@ impl MeshCoordinator {
     /// Get cluster statistics
     pub fn cluster_stats(&self) -> ClusterStats {
         let total_nodes = self.nodes.len();
-        let healthy_nodes = self
-            .nodes
-            .values()
-            .filter(|n| !n.is_safe_mode())
-            .count();
+        let healthy_nodes = self.nodes.values().filter(|n| !n.is_safe_mode()).count();
         let avg_health = if total_nodes > 0 {
             self.nodes.values().map(|n| n.health_score()).sum::<f64>() / total_nodes as f64
         } else {
@@ -216,20 +212,16 @@ mod tests {
 
     #[test]
     fn test_coordinator_creation() {
-        let coordinator = MeshCoordinator::new(
-            "test-cluster".to_string(),
-            TaskAssignmentStrategy::Weighted,
-        );
+        let coordinator =
+            MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
         assert_eq!(coordinator.cluster_id(), "test-cluster");
         assert_eq!(coordinator.node_count(), 0);
     }
 
     #[test]
     fn test_node_registration() {
-        let mut coordinator = MeshCoordinator::new(
-            "test-cluster".to_string(),
-            TaskAssignmentStrategy::Weighted,
-        );
+        let mut coordinator =
+            MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
 
         let node_id = NodeId::new("node-001", "us-west", "gateway");
         let node = AmbientNode::new(node_id, SafetyPolicy::default());
@@ -240,10 +232,8 @@ mod tests {
 
     #[test]
     fn test_cluster_stats() {
-        let mut coordinator = MeshCoordinator::new(
-            "test-cluster".to_string(),
-            TaskAssignmentStrategy::Weighted,
-        );
+        let mut coordinator =
+            MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
 
         let node_id = NodeId::new("node-001", "us-west", "gateway");
         let node = AmbientNode::new(node_id, SafetyPolicy::default());

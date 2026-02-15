@@ -7,7 +7,9 @@ pub struct ZKVerifier {
 
 impl ZKVerifier {
     pub fn new(verification_key: VerificationKey) -> Self {
-        Self { _verification_key: verification_key }
+        Self {
+            _verification_key: verification_key,
+        }
     }
 
     /// Verify a ZK proof

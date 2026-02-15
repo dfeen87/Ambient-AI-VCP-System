@@ -52,8 +52,10 @@ impl TelemetrySample {
     pub fn compute_score(&self) -> f64 {
         let cpu_available = 100.0 - self.cpu_usage_percent;
         let memory_available = 100.0 - self.memory_usage_percent;
-        
-        ((cpu_available + memory_available) / 200.0).min(1.0).max(0.0)
+
+        ((cpu_available + memory_available) / 200.0)
+            .min(1.0)
+            .max(0.0)
     }
 
     /// Check if telemetry indicates healthy state

@@ -14,7 +14,7 @@ fn test_node_validation_empty_id() {
             gpu_available: false,
         },
     };
-    
+
     assert!(node_reg.validate().is_err());
 }
 
@@ -32,7 +32,7 @@ fn test_node_validation_invalid_type() {
             gpu_available: false,
         },
     };
-    
+
     assert!(node_reg.validate().is_err());
 }
 
@@ -50,7 +50,7 @@ fn test_node_validation_invalid_bandwidth() {
             gpu_available: false,
         },
     };
-    
+
     assert!(node_reg.validate().is_err());
 }
 
@@ -68,7 +68,7 @@ fn test_node_validation_zero_cpu_cores() {
             gpu_available: false,
         },
     };
-    
+
     assert!(node_reg.validate().is_err());
 }
 
@@ -86,7 +86,7 @@ fn test_node_validation_valid() {
             gpu_available: false,
         },
     };
-    
+
     assert!(node_reg.validate().is_ok());
 }
 
@@ -104,7 +104,7 @@ fn test_task_validation_invalid_type() {
             require_proof: true,
         },
     };
-    
+
     assert!(task_sub.validate().is_err());
 }
 
@@ -122,7 +122,7 @@ fn test_task_validation_zero_min_nodes() {
             require_proof: true,
         },
     };
-    
+
     assert!(task_sub.validate().is_err());
 }
 
@@ -140,7 +140,7 @@ fn test_task_validation_invalid_execution_time() {
             require_proof: true,
         },
     };
-    
+
     assert!(task_sub.validate().is_err());
 }
 
@@ -158,7 +158,7 @@ fn test_task_validation_valid() {
             require_proof: true,
         },
     };
-    
+
     assert!(task_sub.validate().is_ok());
 }
 
@@ -166,7 +166,7 @@ fn test_task_validation_valid() {
 #[tokio::test]
 async fn test_state_register_node() {
     let state = AppState::new();
-    
+
     let node_reg = NodeRegistration {
         node_id: "test-node-001".to_string(),
         region: "us-west".to_string(),
@@ -178,7 +178,7 @@ async fn test_state_register_node() {
             gpu_available: false,
         },
     };
-    
+
     let node_info = state.register_node(node_reg).await.unwrap();
     assert_eq!(node_info.node_id, "test-node-001");
     assert_eq!(node_info.region, "us-west");
@@ -189,7 +189,7 @@ async fn test_state_register_node() {
 #[tokio::test]
 async fn test_state_list_nodes() {
     let state = AppState::new();
-    
+
     // Register a node
     let node_reg = NodeRegistration {
         node_id: "test-node-001".to_string(),
@@ -203,7 +203,7 @@ async fn test_state_list_nodes() {
         },
     };
     state.register_node(node_reg).await.unwrap();
-    
+
     let nodes = state.list_nodes().await;
     assert_eq!(nodes.len(), 1);
     assert_eq!(nodes[0].node_id, "test-node-001");
@@ -213,7 +213,7 @@ async fn test_state_list_nodes() {
 #[tokio::test]
 async fn test_state_submit_task() {
     let state = AppState::new();
-    
+
     let task_sub = TaskSubmission {
         task_type: "federated_learning".to_string(),
         wasm_module: None,
@@ -225,7 +225,7 @@ async fn test_state_submit_task() {
             require_proof: true,
         },
     };
-    
+
     let task_info = state.submit_task(task_sub).await.unwrap();
     assert_eq!(task_info.task_type, "federated_learning");
     assert_eq!(task_info.status, TaskStatus::Pending);
@@ -235,12 +235,12 @@ async fn test_state_submit_task() {
 #[tokio::test]
 async fn test_state_cluster_stats() {
     let state = AppState::new();
-    
+
     // Initially empty
     let stats = state.get_cluster_stats().await;
     assert_eq!(stats.total_nodes, 0);
     assert_eq!(stats.total_tasks, 0);
-    
+
     // After registering a node
     let node_reg = NodeRegistration {
         node_id: "test-node-001".to_string(),
@@ -254,9 +254,8 @@ async fn test_state_cluster_stats() {
         },
     };
     state.register_node(node_reg).await.unwrap();
-    
+
     let stats = state.get_cluster_stats().await;
     assert_eq!(stats.total_nodes, 1);
     assert_eq!(stats.healthy_nodes, 1);
 }
-

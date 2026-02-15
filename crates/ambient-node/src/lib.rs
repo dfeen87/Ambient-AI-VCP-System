@@ -18,7 +18,11 @@ pub struct NodeId {
 }
 
 impl NodeId {
-    pub fn new(id: impl Into<String>, region: impl Into<String>, node_type: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        region: impl Into<String>,
+        node_type: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             region: region.into(),
@@ -89,9 +93,9 @@ impl AmbientNode {
         let compute_score = self.telemetry.compute_score();
         let reputation_score = self.reputation.score();
 
-        (bandwidth_score * 0.4) 
-            + (latency_score * 0.3) 
-            + (compute_score * 0.2) 
+        (bandwidth_score * 0.4)
+            + (latency_score * 0.3)
+            + (compute_score * 0.2)
             + (reputation_score * 0.1)
     }
 
@@ -134,7 +138,7 @@ mod tests {
         let node_id = NodeId::new("node-001", "us-west", "gateway");
         let policy = SafetyPolicy::default();
         let node = AmbientNode::new(node_id.clone(), policy);
-        
+
         assert_eq!(node.id, node_id);
         assert!(!node.is_safe_mode());
     }
@@ -143,7 +147,7 @@ mod tests {
     fn test_health_score_calculation() {
         let node_id = NodeId::new("node-001", "us-west", "gateway");
         let mut node = AmbientNode::new(node_id, SafetyPolicy::default());
-        
+
         let telemetry = TelemetrySample {
             bandwidth_mbps: 100.0,
             avg_latency_ms: 20.0,
@@ -151,12 +155,15 @@ mod tests {
             memory_usage_percent: 60.0,
             temperature_c: 65.0,
             power_watts: 150.0,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         };
-        
+
         node.ingest_telemetry(telemetry);
         let score = node.health_score();
-        
+
         assert!(score >= 0.0 && score <= 1.0);
     }
 
@@ -164,10 +171,10 @@ mod tests {
     fn test_safe_mode_temperature() {
         let node_id = NodeId::new("node-001", "us-west", "gateway");
         let mut node = AmbientNode::new(node_id, SafetyPolicy::default());
-        
+
         let mut telemetry = TelemetrySample::default();
         telemetry.temperature_c = 90.0; // Above threshold
-        
+
         node.ingest_telemetry(telemetry);
         assert!(node.is_safe_mode());
     }
@@ -176,18 +183,18 @@ mod tests {
     fn test_reputation_update() {
         let node_id = NodeId::new("node-001", "us-west", "gateway");
         let mut node = AmbientNode::new(node_id, SafetyPolicy::default());
-        
+
         // New node starts with 0.5 score
         assert_eq!(node.reputation.score(), 0.5);
-        
+
         // After success, score should be 1.0
         node.update_reputation(true, 0.1);
         assert_eq!(node.reputation.score(), 1.0);
-        
+
         // After one failure, score should drop
         node.update_reputation(false, 0.1);
         assert_eq!(node.reputation.score(), 0.5);
-        
+
         // After more failures, score should be lower
         node.update_reputation(false, 0.1);
         assert!(node.reputation.score() < 0.5);

@@ -25,9 +25,9 @@ impl ZKProver {
         hasher.update(&trace.function_name);
         hasher.update(&trace.inputs);
         hasher.update(&trace.outputs);
-        
+
         let proof_data = hasher.finalize().to_vec();
-        
+
         Ok(ZKProof::new(
             proof_data,
             trace.outputs.clone(),
