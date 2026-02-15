@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[cfg(feature = "wasm-runtime")]
 use wasmedge_sdk::{
@@ -44,18 +44,18 @@ pub struct WasmResult {
 
 /// WASM execution engine
 pub struct WasmEngine {
-    runtime: WasmRuntime,
+    _runtime: WasmRuntime,
     limits: SandboxLimits,
 }
 
 impl WasmEngine {
     pub fn new(runtime: WasmRuntime, limits: SandboxLimits) -> Self {
-        Self { runtime, limits }
+        Self { _runtime: runtime, limits }
     }
 
     /// Execute a WASM function call
     pub async fn execute(&self, call: WasmCall) -> Result<WasmResult> {
-        let start = Instant::now();
+        let _start = Instant::now();
 
         // Validate module path exists
         if !std::path::Path::new(&call.module_path).exists() {
@@ -70,9 +70,9 @@ impl WasmEngine {
 
         #[cfg(feature = "wasm-runtime")]
         {
-            match self.runtime {
-                WasmRuntime::WasmEdge => self.execute_wasmedge(&call, start).await,
-                _ => Err(anyhow!("Runtime not implemented: {:?}", self.runtime)),
+            match self._runtime {
+                WasmRuntime::WasmEdge => self.execute_wasmedge(&call, _start).await,
+                _ => Err(anyhow::anyhow!("Runtime not implemented: {:?}", self._runtime)),
             }
         }
 
@@ -91,6 +91,8 @@ impl WasmEngine {
     /// Execute with WasmEdge runtime
     #[cfg(feature = "wasm-runtime")]
     async fn execute_wasmedge(&self, call: &WasmCall, start: Instant) -> Result<WasmResult> {
+        use std::time::Duration;
+        
         // Build configuration with limits
         let config = ConfigBuilder::new(CommonConfigOptions::default())
             .with_bulk_memory_operations(true)
@@ -156,7 +158,7 @@ impl WasmEngine {
         &self,
         call: WasmCall,
     ) -> Result<(WasmResult, ExecutionTrace)> {
-        let trace_start = Instant::now();
+        let _trace_start = Instant::now();
         let result = self.execute(call.clone()).await?;
 
         let trace = ExecutionTrace {
@@ -175,7 +177,7 @@ impl WasmEngine {
     }
 
     /// Verify determinism by executing twice with same inputs
-    pub async fn verify_determinism(&self, module_hash: &str, inputs: &[u8]) -> bool {
+    pub async fn verify_determinism(&self, _module_hash: &str, _inputs: &[u8]) -> bool {
         // For now, return true as determinism checking requires state management
         // In production, this would execute the module twice and compare outputs
         true

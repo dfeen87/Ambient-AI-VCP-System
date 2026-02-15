@@ -23,6 +23,44 @@ pub struct NodeRegistration {
     pub capabilities: NodeCapabilities,
 }
 
+impl NodeRegistration {
+    /// Validate node registration data
+    pub fn validate(&self) -> Result<(), ApiError> {
+        // Validate node_id
+        if self.node_id.is_empty() {
+            return Err(ApiError::bad_request("node_id cannot be empty"));
+        }
+        if self.node_id.len() > 64 {
+            return Err(ApiError::bad_request("node_id cannot exceed 64 characters"));
+        }
+        if !self.node_id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+            return Err(ApiError::bad_request("node_id can only contain alphanumeric characters, hyphens, and underscores"));
+        }
+
+        // Validate region
+        if self.region.is_empty() {
+            return Err(ApiError::bad_request("region cannot be empty"));
+        }
+        if self.region.len() > 32 {
+            return Err(ApiError::bad_request("region cannot exceed 32 characters"));
+        }
+
+        // Validate node_type
+        const VALID_NODE_TYPES: &[&str] = &["compute", "gateway", "storage", "validator"];
+        if !VALID_NODE_TYPES.contains(&self.node_type.as_str()) {
+            return Err(ApiError::bad_request(format!(
+                "node_type must be one of: {}",
+                VALID_NODE_TYPES.join(", ")
+            )));
+        }
+
+        // Validate capabilities
+        self.capabilities.validate()?;
+
+        Ok(())
+    }
+}
+
 /// Node capabilities
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct NodeCapabilities {
@@ -30,6 +68,28 @@ pub struct NodeCapabilities {
     pub cpu_cores: u32,
     pub memory_gb: f64,
     pub gpu_available: bool,
+}
+
+impl NodeCapabilities {
+    /// Validate node capabilities
+    pub fn validate(&self) -> Result<(), ApiError> {
+        // Validate bandwidth (0-100,000 Mbps)
+        if self.bandwidth_mbps < 0.0 || self.bandwidth_mbps > 100_000.0 {
+            return Err(ApiError::bad_request("bandwidth_mbps must be between 0 and 100,000"));
+        }
+
+        // Validate CPU cores (1-1024 cores)
+        if self.cpu_cores == 0 || self.cpu_cores > 1024 {
+            return Err(ApiError::bad_request("cpu_cores must be between 1 and 1024"));
+        }
+
+        // Validate memory (0.1-10,000 GB)
+        if self.memory_gb < 0.1 || self.memory_gb > 10_000.0 {
+            return Err(ApiError::bad_request("memory_gb must be between 0.1 and 10,000"));
+        }
+
+        Ok(())
+    }
 }
 
 /// Node information
@@ -54,6 +114,32 @@ pub struct TaskSubmission {
     pub requirements: TaskRequirements,
 }
 
+impl TaskSubmission {
+    /// Validate task submission data
+    pub fn validate(&self) -> Result<(), ApiError> {
+        // Validate task_type
+        const VALID_TASK_TYPES: &[&str] = &["federated_learning", "zk_proof", "wasm_execution", "computation"];
+        if !VALID_TASK_TYPES.contains(&self.task_type.as_str()) {
+            return Err(ApiError::bad_request(format!(
+                "task_type must be one of: {}",
+                VALID_TASK_TYPES.join(", ")
+            )));
+        }
+
+        // Validate WASM module size if provided (max 10MB base64 encoded)
+        if let Some(ref module) = self.wasm_module {
+            if module.len() > 10 * 1024 * 1024 {
+                return Err(ApiError::bad_request("wasm_module cannot exceed 10MB"));
+            }
+        }
+
+        // Validate requirements
+        self.requirements.validate()?;
+
+        Ok(())
+    }
+}
+
 /// Task requirements
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct TaskRequirements {
@@ -61,6 +147,23 @@ pub struct TaskRequirements {
     pub max_execution_time_sec: u64,
     pub require_gpu: bool,
     pub require_proof: bool,
+}
+
+impl TaskRequirements {
+    /// Validate task requirements
+    pub fn validate(&self) -> Result<(), ApiError> {
+        // Validate min_nodes (1-1000)
+        if self.min_nodes == 0 || self.min_nodes > 1000 {
+            return Err(ApiError::bad_request("min_nodes must be between 1 and 1000"));
+        }
+
+        // Validate max_execution_time (1 second to 1 hour)
+        if self.max_execution_time_sec == 0 || self.max_execution_time_sec > 3600 {
+            return Err(ApiError::bad_request("max_execution_time_sec must be between 1 and 3600"));
+        }
+
+        Ok(())
+    }
 }
 
 /// Task information
@@ -104,7 +207,7 @@ pub struct ProofVerificationResponse {
 }
 
 /// Cluster statistics
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ClusterStats {
     pub total_nodes: usize,
     pub healthy_nodes: usize,

@@ -1,7 +1,6 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
@@ -76,6 +75,9 @@ async fn register_node(
     State(state): State<Arc<AppState>>,
     Json(registration): Json<NodeRegistration>,
 ) -> Result<(StatusCode, Json<NodeInfo>), ApiError> {
+    // Validate input
+    registration.validate()?;
+
     info!(
         "Registering node: {} in region {}",
         registration.node_id, registration.region
@@ -137,6 +139,9 @@ async fn submit_task(
     State(state): State<Arc<AppState>>,
     Json(task): Json<TaskSubmission>,
 ) -> Result<(StatusCode, Json<TaskInfo>), ApiError> {
+    // Validate input
+    task.validate()?;
+
     info!("Submitting task: {}", task.task_type);
 
     let task_info = state.submit_task(task).await?;

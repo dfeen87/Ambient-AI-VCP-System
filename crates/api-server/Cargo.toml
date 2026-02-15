@@ -33,3 +33,7 @@ utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
 # Additional utilities
 uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+hyper = { version = "1.0", features = ["full"] }
+http-body-util = "0.1"
