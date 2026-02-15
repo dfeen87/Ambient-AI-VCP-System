@@ -4,11 +4,13 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use sqlx::Row;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
+use uuid::Uuid;
 
 pub mod auth;
 pub mod db;
@@ -256,17 +258,17 @@ async fn register_user(
     let api_key = auth::generate_api_key();
 
     // Insert user into database
-    let user_id = sqlx::query_scalar!(
+    let user_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO users (username, password_hash, api_key, role)
         VALUES ($1, $2, $3, $4)
         RETURNING user_id
         "#,
-        request.username,
-        password_hash,
-        api_key,
-        "user"
     )
+    .bind(&request.username)
+    .bind(&password_hash)
+    .bind(&api_key)
+    .bind("user")
     .fetch_one(&state.db)
     .await
     .map_err(|e| {
@@ -281,7 +283,7 @@ async fn register_user(
     info!("User registered successfully: {} ({})", request.username, user_id);
 
     Ok((StatusCode::CREATED, Json(serde_json::json!({
-        "user_id": user_id,
+        "user_id": user_id.to_string(),
         "username": request.username,
         "api_key": api_key,
         "message": "User registered successfully. Save your API key - it won't be shown again."
@@ -305,43 +307,46 @@ async fn login(
     info!("Login attempt for user: {}", request.username);
 
     // Get user from database
-    let user = sqlx::query!(
+    let user_row = sqlx::query(
         r#"
         SELECT user_id, username, password_hash, role
         FROM users
         WHERE username = $1
         "#,
-        request.username
     )
+    .bind(&request.username)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::unauthorized("Invalid username or password"))?;
 
+    let user_id: Uuid = user_row.get("user_id");
+    let username: String = user_row.get("username");
+    let password_hash: String = user_row.get("password_hash");
+    let role: String = user_row.get("role");
+
     // Verify password
-    let password_valid = auth::verify_password(&request.password, &user.password_hash)?;
+    let password_valid = auth::verify_password(&request.password, &password_hash)?;
     if !password_valid {
         return Err(ApiError::unauthorized("Invalid username or password"));
     }
 
     // Update last login
-    sqlx::query!(
-        "UPDATE users SET last_login = NOW() WHERE user_id = $1",
-        user.user_id
-    )
-    .execute(&state.db)
-    .await?;
+    sqlx::query("UPDATE users SET last_login = NOW() WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&state.db)
+        .await?;
 
     // Get auth config from environment
     let auth_config = auth::AuthConfig::from_env()?;
 
     // Generate JWT token
     let token = auth_config.generate_token(
-        user.user_id.to_string(),
-        user.username,
-        user.role,
+        user_id.to_string(),
+        username.clone(),
+        role,
     )?;
 
-    info!("Login successful for user: {}", request.username);
+    info!("Login successful for user: {}", username);
 
     Ok(Json(auth::LoginResponse {
         access_token: token,

@@ -1,3 +1,4 @@
+use crate::error::ApiError;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 

@@ -2,9 +2,9 @@
 ///
 /// This module provides CRUD operations for nodes and tasks using a PostgreSQL database.
 
-use crate::error::{ApiError, ApiResult};
+use crate::error::ApiResult;
 use crate::models::*;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 /// Application state with database connection pool
@@ -24,7 +24,7 @@ impl AppState {
         let now = chrono::Utc::now();
 
         // Insert node into database
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO nodes (
                 node_id, region, node_type, bandwidth_mbps, cpu_cores, 
@@ -33,18 +33,18 @@ impl AppState {
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             "#,
-            registration.node_id,
-            registration.region,
-            registration.node_type,
-            registration.capabilities.bandwidth_mbps,
-            registration.capabilities.cpu_cores as i32,
-            registration.capabilities.memory_gb,
-            registration.capabilities.gpu_available,
-            100.0_f64,
-            "online",
-            now,
-            now,
         )
+        .bind(&registration.node_id)
+        .bind(&registration.region)
+        .bind(&registration.node_type)
+        .bind(registration.capabilities.bandwidth_mbps)
+        .bind(registration.capabilities.cpu_cores as i32)
+        .bind(registration.capabilities.memory_gb)
+        .bind(registration.capabilities.gpu_available)
+        .bind(100.0_f64)
+        .bind("online")
+        .bind(now)
+        .bind(now)
         .execute(&self.db)
         .await?;
 
@@ -65,7 +65,7 @@ impl AppState {
 
     /// List all nodes from the database
     pub async fn list_nodes(&self) -> Vec<NodeInfo> {
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             SELECT 
                 node_id, region, node_type, bandwidth_mbps, cpu_cores,
@@ -82,19 +82,19 @@ impl AppState {
             Ok(rows) => rows
                 .into_iter()
                 .map(|row| NodeInfo {
-                    node_id: row.node_id,
-                    region: row.region,
-                    node_type: row.node_type,
+                    node_id: row.get("node_id"),
+                    region: row.get("region"),
+                    node_type: row.get("node_type"),
                     capabilities: NodeCapabilities {
-                        bandwidth_mbps: row.bandwidth_mbps,
-                        cpu_cores: row.cpu_cores as u32,
-                        memory_gb: row.memory_gb,
-                        gpu_available: row.gpu_available,
+                        bandwidth_mbps: row.get("bandwidth_mbps"),
+                        cpu_cores: row.get::<i32, _>("cpu_cores") as u32,
+                        memory_gb: row.get("memory_gb"),
+                        gpu_available: row.get("gpu_available"),
                     },
-                    health_score: row.health_score,
-                    status: row.status,
-                    registered_at: row.registered_at.to_rfc3339(),
-                    last_seen: row.last_seen.to_rfc3339(),
+                    health_score: row.get("health_score"),
+                    status: row.get("status"),
+                    registered_at: row.get::<chrono::DateTime<chrono::Utc>, _>("registered_at").to_rfc3339(),
+                    last_seen: row.get::<chrono::DateTime<chrono::Utc>, _>("last_seen").to_rfc3339(),
                 })
                 .collect(),
             Err(e) => {
@@ -106,7 +106,7 @@ impl AppState {
 
     /// Get a specific node from the database
     pub async fn get_node(&self, node_id: &str) -> Option<NodeInfo> {
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             SELECT 
                 node_id, region, node_type, bandwidth_mbps, cpu_cores,
@@ -115,26 +115,26 @@ impl AppState {
             FROM nodes
             WHERE node_id = $1
             "#,
-            node_id
         )
+        .bind(node_id)
         .fetch_optional(&self.db)
         .await;
 
         match result {
             Ok(Some(row)) => Some(NodeInfo {
-                node_id: row.node_id,
-                region: row.region,
-                node_type: row.node_type,
+                node_id: row.get("node_id"),
+                region: row.get("region"),
+                node_type: row.get("node_type"),
                 capabilities: NodeCapabilities {
-                    bandwidth_mbps: row.bandwidth_mbps,
-                    cpu_cores: row.cpu_cores as u32,
-                    memory_gb: row.memory_gb,
-                    gpu_available: row.gpu_available,
+                    bandwidth_mbps: row.get("bandwidth_mbps"),
+                    cpu_cores: row.get::<i32, _>("cpu_cores") as u32,
+                    memory_gb: row.get("memory_gb"),
+                    gpu_available: row.get("gpu_available"),
                 },
-                health_score: row.health_score,
-                status: row.status,
-                registered_at: row.registered_at.to_rfc3339(),
-                last_seen: row.last_seen.to_rfc3339(),
+                health_score: row.get("health_score"),
+                status: row.get("status"),
+                registered_at: row.get::<chrono::DateTime<chrono::Utc>, _>("registered_at").to_rfc3339(),
+                last_seen: row.get::<chrono::DateTime<chrono::Utc>, _>("last_seen").to_rfc3339(),
             }),
             Ok(None) => None,
             Err(e) => {
@@ -150,7 +150,7 @@ impl AppState {
         let now = chrono::Utc::now();
 
         // Insert task into database
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO tasks (
                 task_id, task_type, status, wasm_module, inputs,
@@ -158,16 +158,16 @@ impl AppState {
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
-            task_id,
-            task.task_type,
-            "pending",
-            task.wasm_module,
-            task.inputs,
-            task.requirements.min_nodes as i32,
-            task.requirements.max_execution_time_sec as i64,
-            task.requirements.require_gpu,
-            task.requirements.require_proof,
         )
+        .bind(task_id)
+        .bind(&task.task_type)
+        .bind("pending")
+        .bind(task.wasm_module.as_deref())
+        .bind(&task.inputs)
+        .bind(task.requirements.min_nodes as i32)
+        .bind(task.requirements.max_execution_time_sec as i64)
+        .bind(task.requirements.require_gpu)
+        .bind(task.requirements.require_proof)
         .execute(&self.db)
         .await?;
 
@@ -192,7 +192,7 @@ impl AppState {
             Err(_) => return None,
         };
 
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             SELECT 
                 t.task_id, t.task_type, t.status, t.result, t.proof_id,
@@ -204,25 +204,25 @@ impl AppState {
                         WHERE ta.task_id = t.task_id
                     ),
                     ARRAY[]::VARCHAR[]
-                ) as "assigned_nodes!"
+                ) as assigned_nodes
             FROM tasks t
             WHERE t.task_id = $1
             "#,
-            task_uuid
         )
+        .bind(task_uuid)
         .fetch_optional(&self.db)
         .await;
 
         match result {
             Ok(Some(row)) => Some(TaskInfo {
-                task_id: row.task_id.to_string(),
-                task_type: row.task_type,
-                status: parse_task_status(&row.status),
-                assigned_nodes: row.assigned_nodes,
-                created_at: row.created_at.to_rfc3339(),
-                updated_at: row.updated_at.to_rfc3339(),
-                result: row.result,
-                proof_id: row.proof_id,
+                task_id: row.get::<Uuid, _>("task_id").to_string(),
+                task_type: row.get("task_type"),
+                status: parse_task_status(&row.get::<String, _>("status")),
+                assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
+                created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
+                updated_at: row.get::<chrono::DateTime<chrono::Utc>, _>("updated_at").to_rfc3339(),
+                result: row.try_get("result").ok(),
+                proof_id: row.try_get("proof_id").ok(),
             }),
             Ok(None) => None,
             Err(e) => {
@@ -234,7 +234,7 @@ impl AppState {
 
     /// List all tasks from the database
     pub async fn list_tasks(&self) -> Vec<TaskInfo> {
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             SELECT 
                 t.task_id, t.task_type, t.status, t.result, t.proof_id,
@@ -246,7 +246,7 @@ impl AppState {
                         WHERE ta.task_id = t.task_id
                     ),
                     ARRAY[]::VARCHAR[]
-                ) as "assigned_nodes!"
+                ) as assigned_nodes
             FROM tasks t
             ORDER BY t.created_at DESC
             "#
@@ -258,14 +258,14 @@ impl AppState {
             Ok(rows) => rows
                 .into_iter()
                 .map(|row| TaskInfo {
-                    task_id: row.task_id.to_string(),
-                    task_type: row.task_type,
-                    status: parse_task_status(&row.status),
-                    assigned_nodes: row.assigned_nodes,
-                    created_at: row.created_at.to_rfc3339(),
-                    updated_at: row.updated_at.to_rfc3339(),
-                    result: row.result,
-                    proof_id: row.proof_id,
+                    task_id: row.get::<Uuid, _>("task_id").to_string(),
+                    task_type: row.get("task_type"),
+                    status: parse_task_status(&row.get::<String, _>("status")),
+                    assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
+                    created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
+                    updated_at: row.get::<chrono::DateTime<chrono::Utc>, _>("updated_at").to_rfc3339(),
+                    result: row.try_get("result").ok(),
+                    proof_id: row.try_get("proof_id").ok(),
                 })
                 .collect(),
             Err(e) => {
@@ -300,7 +300,7 @@ impl AppState {
     /// Get cluster statistics from the database
     pub async fn get_cluster_stats(&self) -> ClusterStats {
         // Get node statistics
-        let node_stats = sqlx::query!(
+        let node_stats = sqlx::query(
             r#"
             SELECT 
                 COUNT(*) as total_nodes,
@@ -314,7 +314,7 @@ impl AppState {
         .await;
 
         // Get task statistics
-        let task_stats = sqlx::query!(
+        let task_stats = sqlx::query(
             r#"
             SELECT 
                 COUNT(*) as total_tasks,
@@ -328,13 +328,13 @@ impl AppState {
 
         match (node_stats, task_stats) {
             (Ok(nodes), Ok(tasks)) => ClusterStats {
-                total_nodes: nodes.total_nodes.unwrap_or(0) as usize,
-                healthy_nodes: nodes.healthy_nodes.unwrap_or(0) as usize,
-                total_tasks: tasks.total_tasks.unwrap_or(0) as usize,
-                completed_tasks: tasks.completed_tasks.unwrap_or(0) as usize,
-                failed_tasks: tasks.failed_tasks.unwrap_or(0) as usize,
-                avg_health_score: nodes.avg_health_score.unwrap_or(0.0),
-                total_compute_capacity: nodes.total_compute_capacity.unwrap_or(0.0),
+                total_nodes: nodes.get::<i64, _>("total_nodes") as usize,
+                healthy_nodes: nodes.get::<i64, _>("healthy_nodes") as usize,
+                total_tasks: tasks.get::<i64, _>("total_tasks") as usize,
+                completed_tasks: tasks.get::<i64, _>("completed_tasks") as usize,
+                failed_tasks: tasks.get::<i64, _>("failed_tasks") as usize,
+                avg_health_score: nodes.get("avg_health_score"),
+                total_compute_capacity: nodes.get("total_compute_capacity"),
             },
             _ => {
                 tracing::error!("Failed to get cluster stats");

@@ -23,6 +23,7 @@ wasm-engine = { path = "../wasm-engine" }
 
 # Web framework
 axum = "0.7"
+axum-extra = { version = "0.9", features = ["typed-header"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
@@ -41,8 +42,8 @@ sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid"
 jsonwebtoken = "9.3"
 bcrypt = "0.15"
 
-# Rate limiting
-axum-rate-limit = { version = "0.5", features = ["tokio"] }
+# Random number generation (for API keys and rate limiting)
+rand = "0.8"
 
 # Environment variables
 dotenvy = "0.15"

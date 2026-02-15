@@ -7,10 +7,13 @@
 
 use crate::error::{ApiError, ApiResult};
 use axum::{
-    extract::{FromRequestParts, TypedHeader},
-    headers::{authorization::Bearer, Authorization},
+    extract::FromRequestParts,
     http::request::Parts,
     RequestPartsExt,
+};
+use axum_extra::{
+    headers::{authorization::Bearer, Authorization},
+    TypedHeader,
 };
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
