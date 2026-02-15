@@ -6,7 +6,6 @@ abstract: "A production-ready implementation of a Verifiable Computation Protoco
 authors:
   - family-names: "Feeney Jr."
     given-names: "Don Michael"
-    orcid: "https://orcid.org/0000-0000-0000-0000"
 repository-code: "https://github.com/dfeen87/Ambient-AI-VCP-System"
 url: "https://github.com/dfeen87/Ambient-AI-VCP-System"
 license: MIT
