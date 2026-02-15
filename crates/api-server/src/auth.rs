@@ -4,13 +4,8 @@
 /// - JWT token generation and validation
 /// - API key authentication
 /// - Password hashing with bcrypt
-
 use crate::error::{ApiError, ApiResult};
-use axum::{
-    extract::FromRequestParts,
-    http::request::Parts,
-    RequestPartsExt,
-};
+use axum::{extract::FromRequestParts, http::request::Parts, RequestPartsExt};
 use axum_extra::{
     headers::{authorization::Bearer, Authorization},
     TypedHeader,
@@ -40,7 +35,7 @@ impl Claims {
     pub fn new(user_id: String, username: String, role: String, expiration_hours: i64) -> Self {
         let now = Utc::now();
         let expiration = now + Duration::hours(expiration_hours);
-        
+
         Self {
             sub: user_id,
             username,
@@ -65,48 +60,54 @@ impl AuthConfig {
     pub fn from_env() -> ApiResult<Self> {
         let jwt_secret = std::env::var("JWT_SECRET")
             .map_err(|_| ApiError::internal_error("JWT_SECRET not configured"))?;
-        
+
         // Check if we're in production mode
         let is_production = std::env::var("ENVIRONMENT")
             .unwrap_or_else(|_| "development".to_string())
-            .to_lowercase() == "production";
-        
+            .to_lowercase()
+            == "production";
+
         // In production, reject insecure default secrets
-        if is_production && (
-            jwt_secret == "your-jwt-secret-key-change-this-in-production" ||
-            jwt_secret.contains("dev") ||
-            jwt_secret.contains("local") ||
-            jwt_secret.contains("test") ||
-            jwt_secret.len() < 32
-        ) {
+        if is_production
+            && (jwt_secret == "your-jwt-secret-key-change-this-in-production"
+                || jwt_secret.contains("dev")
+                || jwt_secret.contains("local")
+                || jwt_secret.contains("test")
+                || jwt_secret.len() < 32)
+        {
             return Err(ApiError::internal_error(
                 "PRODUCTION ERROR: JWT_SECRET must be a secure random string (min 32 chars). Generate with: openssl rand -base64 32"
             ));
         }
-        
+
         // In development, just warn
-        if !is_production && (
-            jwt_secret == "your-jwt-secret-key-change-this-in-production" ||
-            jwt_secret.len() < 32
-        ) {
+        if !is_production
+            && (jwt_secret == "your-jwt-secret-key-change-this-in-production"
+                || jwt_secret.len() < 32)
+        {
             tracing::warn!("Using weak JWT_SECRET - only acceptable for development. Generate a secure one with: openssl rand -base64 32");
         }
-        
+
         let jwt_expiration_hours = std::env::var("JWT_EXPIRATION_HOURS")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(24);
-        
+
         Ok(Self {
             jwt_secret,
             jwt_expiration_hours,
         })
     }
-    
+
     /// Generate a JWT token for a user
-    pub fn generate_token(&self, user_id: String, username: String, role: String) -> ApiResult<String> {
+    pub fn generate_token(
+        &self,
+        user_id: String,
+        username: String,
+        role: String,
+    ) -> ApiResult<String> {
         let claims = Claims::new(user_id, username, role, self.jwt_expiration_hours);
-        
+
         let token = encode(
             &Header::default(),
             &claims,
@@ -116,20 +117,20 @@ impl AuthConfig {
             tracing::error!("Failed to generate JWT: {:?}", e);
             ApiError::internal_error("Failed to generate authentication token")
         })?;
-        
+
         Ok(token)
     }
-    
+
     /// Validate a JWT token and extract claims
     pub fn validate_token(&self, token: &str) -> ApiResult<Claims> {
         let validation = Validation::default();
-        
+
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(self.jwt_secret.as_bytes()),
             &validation,
         )?;
-        
+
         Ok(token_data.claims)
     }
 }
@@ -208,40 +209,46 @@ impl RegisterRequest {
     pub fn validate(&self) -> ApiResult<()> {
         // Validate username
         if self.username.len() < 3 || self.username.len() > 32 {
-            return Err(ApiError::validation_error("Username must be 3-32 characters"));
-        }
-        
-        if !self.username.chars().all(|c| c.is_alphanumeric() || c == '_') {
             return Err(ApiError::validation_error(
-                "Username can only contain letters, numbers, and underscores"
+                "Username must be 3-32 characters",
             ));
         }
-        
+
+        if !self
+            .username
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_')
+        {
+            return Err(ApiError::validation_error(
+                "Username can only contain letters, numbers, and underscores",
+            ));
+        }
+
         // Validate password strength
         if self.password.len() < 8 {
-            return Err(ApiError::validation_error("Password must be at least 8 characters"));
+            return Err(ApiError::validation_error(
+                "Password must be at least 8 characters",
+            ));
         }
-        
+
         Ok(())
     }
 }
 
 /// Hash a password using bcrypt
 pub fn hash_password(password: &str) -> ApiResult<String> {
-    bcrypt::hash(password, bcrypt::DEFAULT_COST)
-        .map_err(|e| {
-            tracing::error!("Failed to hash password: {:?}", e);
-            ApiError::internal_error("Failed to process password")
-        })
+    bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|e| {
+        tracing::error!("Failed to hash password: {:?}", e);
+        ApiError::internal_error("Failed to process password")
+    })
 }
 
 /// Verify a password against a hash
 pub fn verify_password(password: &str, hash: &str) -> ApiResult<bool> {
-    bcrypt::verify(password, hash)
-        .map_err(|e| {
-            tracing::error!("Failed to verify password: {:?}", e);
-            ApiError::internal_error("Failed to verify password")
-        })
+    bcrypt::verify(password, hash).map_err(|e| {
+        tracing::error!("Failed to verify password: {:?}", e);
+        ApiError::internal_error("Failed to verify password")
+    })
 }
 
 /// Generate a secure API key
@@ -249,16 +256,16 @@ pub fn generate_api_key() -> String {
     use rand::Rng;
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     const KEY_LENGTH: usize = 32;
-    
+
     let mut rng = rand::thread_rng();
-    
+
     let key: String = (0..KEY_LENGTH)
         .map(|_| {
             let idx = rng.gen_range(0..CHARSET.len());
             CHARSET[idx] as char
         })
         .collect();
-    
+
     format!("vcp_{}", key)
 }
 
@@ -270,11 +277,11 @@ mod tests {
     fn test_password_hashing() {
         let password = "secure_password_123";
         let hash = hash_password(password).unwrap();
-        
+
         assert!(verify_password(password, &hash).unwrap());
         assert!(!verify_password("wrong_password", &hash).unwrap());
     }
-    
+
     #[test]
     fn test_api_key_generation() {
         let key = generate_api_key();

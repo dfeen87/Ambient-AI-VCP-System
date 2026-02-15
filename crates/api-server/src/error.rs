@@ -2,7 +2,6 @@
 ///
 /// This module provides comprehensive error types for the API with
 /// security-focused error handling that prevents information leakage.
-
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -73,21 +72,13 @@ impl ApiError {
 
     /// 429 Too Many Requests - Rate limit exceeded
     pub fn rate_limited(message: impl Into<String>) -> Self {
-        Self::new(
-            "rate_limited",
-            message,
-            StatusCode::TOO_MANY_REQUESTS,
-        )
+        Self::new("rate_limited", message, StatusCode::TOO_MANY_REQUESTS)
     }
 
     /// 500 Internal Server Error - Generic server error
     /// NOTE: Use sparingly and avoid exposing internal details
     pub fn internal_error(message: impl Into<String>) -> Self {
-        Self::new(
-            "internal_error",
-            message,
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
+        Self::new("internal_error", message, StatusCode::INTERNAL_SERVER_ERROR)
     }
 
     /// 503 Service Unavailable - Service temporarily unavailable
@@ -113,7 +104,7 @@ impl From<anyhow::Error> for ApiError {
     fn from(err: anyhow::Error) -> Self {
         // Log the full error internally for debugging
         tracing::error!("Internal error: {:?}", err);
-        
+
         // Return a sanitized error to the user
         ApiError::internal_error("An internal error occurred. Please try again later.")
     }
@@ -124,25 +115,25 @@ impl From<sqlx::Error> for ApiError {
     fn from(err: sqlx::Error) -> Self {
         // Log the full error for debugging
         tracing::error!("Database error: {:?}", err);
-        
+
         match err {
-            sqlx::Error::RowNotFound => {
-                ApiError::not_found("The requested resource was not found")
-            }
+            sqlx::Error::RowNotFound => ApiError::not_found("The requested resource was not found"),
             sqlx::Error::Database(db_err) => {
                 // Check for constraint violations (e.g., unique constraint)
                 if let Some(constraint) = db_err.constraint() {
                     if constraint.contains("unique") || constraint.contains("pkey") {
-                        return ApiError::conflict("A resource with this identifier already exists");
+                        return ApiError::conflict(
+                            "A resource with this identifier already exists",
+                        );
                     }
                 }
-                
+
                 // For other database errors, return a generic message
                 ApiError::internal_error("A database error occurred. Please try again later.")
             }
-            sqlx::Error::PoolTimedOut => {
-                ApiError::service_unavailable("The service is temporarily unavailable. Please try again later.")
-            }
+            sqlx::Error::PoolTimedOut => ApiError::service_unavailable(
+                "The service is temporarily unavailable. Please try again later.",
+            ),
             _ => {
                 // For all other database errors, return a generic message
                 ApiError::internal_error("A database error occurred. Please try again later.")
@@ -156,7 +147,7 @@ impl From<jsonwebtoken::errors::Error> for ApiError {
     fn from(err: jsonwebtoken::errors::Error) -> Self {
         // Log the error for debugging
         tracing::warn!("JWT error: {:?}", err);
-        
+
         match err.kind() {
             jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
                 ApiError::unauthorized("Your session has expired. Please log in again.")
@@ -167,9 +158,7 @@ impl From<jsonwebtoken::errors::Error> for ApiError {
             jsonwebtoken::errors::ErrorKind::InvalidSignature => {
                 ApiError::unauthorized("Invalid authentication token")
             }
-            _ => {
-                ApiError::unauthorized("Authentication failed")
-            }
+            _ => ApiError::unauthorized("Authentication failed"),
         }
     }
 }

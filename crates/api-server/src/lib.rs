@@ -283,14 +283,20 @@ async fn register_user(
         ApiError::from(e)
     })?;
 
-    info!("User registered successfully: {} ({})", request.username, user_id);
+    info!(
+        "User registered successfully: {} ({})",
+        request.username, user_id
+    );
 
-    Ok((StatusCode::CREATED, Json(serde_json::json!({
-        "user_id": user_id.to_string(),
-        "username": request.username,
-        "api_key": api_key,
-        "message": "User registered successfully. Save your API key - it won't be shown again."
-    }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "user_id": user_id.to_string(),
+            "username": request.username,
+            "api_key": api_key,
+            "message": "User registered successfully. Save your API key - it won't be shown again."
+        })),
+    ))
 }
 
 /// Login endpoint
@@ -343,11 +349,7 @@ async fn login(
     let auth_config = auth::AuthConfig::from_env()?;
 
     // Generate JWT token
-    let token = auth_config.generate_token(
-        user_id.to_string(),
-        username.clone(),
-        role,
-    )?;
+    let token = auth_config.generate_token(user_id.to_string(), username.clone(), role)?;
 
     info!("Login successful for user: {}", username);
 
@@ -360,16 +362,13 @@ async fn login(
 
 /// Authentication middleware
 /// Validates JWT token and adds auth config to request extensions
-async fn auth_middleware(
-    mut request: Request<Body>,
-    next: Next,
-) -> Result<Response, ApiError> {
+async fn auth_middleware(mut request: Request<Body>, next: Next) -> Result<Response, ApiError> {
     // Get auth config from environment
     let auth_config = auth::AuthConfig::from_env()?;
-    
+
     // Add auth config to request extensions so AuthUser extractor can use it
     request.extensions_mut().insert(auth_config);
-    
+
     Ok(next.run(request).await)
 }
 
@@ -392,9 +391,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .layer(middleware::from_fn(auth_middleware));
 
     // Combine routes
-    let api_routes = Router::new()
-        .merge(public_routes)
-        .merge(protected_routes);
+    let api_routes = Router::new().merge(public_routes).merge(protected_routes);
 
     // Create main router with API prefix
     Router::new()
