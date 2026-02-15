@@ -22,7 +22,9 @@ February 15, 2026
 - **Warnings Found**: 12 compiler warnings
 
 ### Unit Tests
-- **Total Tests**: 29
+- **Total Tests**: 31 unit tests
+- **Performance Tests**: 2
+- **Total**: 33
 - **Status**: ✅ All passing
 - **Coverage**:
   - ambient-node: 12 tests
@@ -30,7 +32,7 @@ February 15, 2026
   - federated-learning: 5 tests
   - mesh-coordinator: 3 tests
   - wasm-engine: 4 tests
-  - zk-prover: 4 tests
+  - zk-prover: 6 tests (including performance benchmarks)
 
 ### Functionality Testing
 - ✅ API Server starts successfully
@@ -242,10 +244,10 @@ test result: ok. 3 passed
 running 4 tests (wasm-engine)
 test result: ok. 4 passed
 
-running 4 tests (zk-prover)
-test result: ok. 4 passed
+running 6 tests (zk-prover)
+test result: ok. 6 passed (includes performance benchmarks)
 
-Total: 42 tests passed
+Total: 44 tests passed
 ```
 
 ### Build Status

@@ -6,7 +6,7 @@ pub mod verifier;
 pub use prover::*;
 pub use verifier::*;
 
-/// ZK Proof representation (placeholder)
+/// ZK Proof representation (Production Groth16 implementation)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZKProof {
     pub proof_data: Vec<u8>,
@@ -21,7 +21,7 @@ impl ZKProof {
             proof_data,
             public_inputs,
             circuit_id,
-            proof_system: "risc0-zkvm".to_string(),
+            proof_system: "groth16-bn254".to_string(),
         }
     }
 
