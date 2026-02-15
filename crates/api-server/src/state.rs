@@ -1,7 +1,6 @@
 /// Application state with PostgreSQL persistence
 ///
 /// This module provides CRUD operations for nodes and tasks using a PostgreSQL database.
-
 use crate::error::ApiResult;
 use crate::models::*;
 use sqlx::{PgPool, Row};
@@ -73,7 +72,7 @@ impl AppState {
                 registered_at, last_seen
             FROM nodes
             ORDER BY registered_at DESC
-            "#
+            "#,
         )
         .fetch_all(&self.db)
         .await;
@@ -93,8 +92,12 @@ impl AppState {
                     },
                     health_score: row.get("health_score"),
                     status: row.get("status"),
-                    registered_at: row.get::<chrono::DateTime<chrono::Utc>, _>("registered_at").to_rfc3339(),
-                    last_seen: row.get::<chrono::DateTime<chrono::Utc>, _>("last_seen").to_rfc3339(),
+                    registered_at: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("registered_at")
+                        .to_rfc3339(),
+                    last_seen: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("last_seen")
+                        .to_rfc3339(),
                 })
                 .collect(),
             Err(e) => {
@@ -133,8 +136,12 @@ impl AppState {
                 },
                 health_score: row.get("health_score"),
                 status: row.get("status"),
-                registered_at: row.get::<chrono::DateTime<chrono::Utc>, _>("registered_at").to_rfc3339(),
-                last_seen: row.get::<chrono::DateTime<chrono::Utc>, _>("last_seen").to_rfc3339(),
+                registered_at: row
+                    .get::<chrono::DateTime<chrono::Utc>, _>("registered_at")
+                    .to_rfc3339(),
+                last_seen: row
+                    .get::<chrono::DateTime<chrono::Utc>, _>("last_seen")
+                    .to_rfc3339(),
             }),
             Ok(None) => None,
             Err(e) => {
@@ -219,8 +226,12 @@ impl AppState {
                 task_type: row.get("task_type"),
                 status: parse_task_status(&row.get::<String, _>("status")),
                 assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
-                created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
-                updated_at: row.get::<chrono::DateTime<chrono::Utc>, _>("updated_at").to_rfc3339(),
+                created_at: row
+                    .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                    .to_rfc3339(),
+                updated_at: row
+                    .get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
+                    .to_rfc3339(),
                 result: row.try_get("result").ok(),
                 proof_id: row.try_get("proof_id").ok(),
             }),
@@ -249,7 +260,7 @@ impl AppState {
                 ) as assigned_nodes
             FROM tasks t
             ORDER BY t.created_at DESC
-            "#
+            "#,
         )
         .fetch_all(&self.db)
         .await;
@@ -262,8 +273,12 @@ impl AppState {
                     task_type: row.get("task_type"),
                     status: parse_task_status(&row.get::<String, _>("status")),
                     assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
-                    created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
-                    updated_at: row.get::<chrono::DateTime<chrono::Utc>, _>("updated_at").to_rfc3339(),
+                    created_at: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                        .to_rfc3339(),
+                    updated_at: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
+                        .to_rfc3339(),
                     result: row.try_get("result").ok(),
                     proof_id: row.try_get("proof_id").ok(),
                 })
@@ -308,7 +323,7 @@ impl AppState {
                 COALESCE(AVG(health_score), 0.0) as avg_health_score,
                 COALESCE(SUM(cpu_cores * memory_gb), 0.0) as total_compute_capacity
             FROM nodes
-            "#
+            "#,
         )
         .fetch_one(&self.db)
         .await;
@@ -321,7 +336,7 @@ impl AppState {
                 COUNT(*) FILTER (WHERE status = 'completed') as completed_tasks,
                 COUNT(*) FILTER (WHERE status = 'failed') as failed_tasks
             FROM tasks
-            "#
+            "#,
         )
         .fetch_one(&self.db)
         .await;
