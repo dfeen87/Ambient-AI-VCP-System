@@ -168,6 +168,48 @@ open dashboard/index.html
 # View real-time cluster metrics and manage nodes
 ```
 
+## 🌐 Global Node Deployment
+
+The VCP system can be deployed as a **global online API** that anyone can connect to:
+
+```bash
+# Quick start with Docker Compose
+docker-compose up -d
+
+# Access the API
+curl http://localhost:3000/api/v1/health
+
+# View Swagger docs
+open http://localhost:3000/swagger-ui
+```
+
+This starts a complete global network with:
+- **API Server** - Public REST API on port 3000
+- **Mesh Coordinator** - Task orchestration
+- **Multi-Region Nodes** - Distributed compute across US, EU, and APAC
+
+### Deploy to Cloud
+
+Deploy to Render.com with one click:
+```bash
+render blueprint apply
+```
+
+Your API will be available at: `https://ambient-ai-vcp-api.onrender.com`
+
+**📖 Full deployment guide**: [Global Node Deployment](./docs/GLOBAL_NODE_DEPLOYMENT.md)
+
+### Connect to a Global Node
+
+```bash
+# Register your local node to a global coordinator
+export VCP_API_URL=https://ambient-vcp-api.onrender.com
+
+cargo run --bin ambient-vcp -- node \
+  --id my-node \
+  --coordinator-url $VCP_API_URL
+```
+
 ### Health Check
 
 ```bash

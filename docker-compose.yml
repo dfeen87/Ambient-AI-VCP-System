@@ -1,25 +1,52 @@
 version: '3.8'
 
 services:
-  # Mesh Coordinator
+  # Global API Server - Public REST API endpoint
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    command: /app/target/release/api-server
+    ports:
+      - "3000:3000"
+    environment:
+      - RUST_LOG=info
+      - API_HOST=0.0.0.0
+      - API_PORT=3000
+      - CORS_ALLOWED_ORIGINS=*
+    networks:
+      - ambient-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Mesh Coordinator - Global orchestrator
   coordinator:
     build:
       context: .
       dockerfile: Dockerfile
-    command: coordinator --cluster-id demo-cluster --strategy weighted
+      target: builder
+    command: /app/target/release/ambient-vcp coordinator --cluster-id global-cluster --strategy weighted
     ports:
       - "8080:8080"
     environment:
       - RUST_LOG=info
     networks:
       - ambient-network
+    depends_on:
+      - api-server
 
-  # Node 1 - Gateway
+  # Node 1 - Gateway (North America)
   node-1:
     build:
       context: .
       dockerfile: Dockerfile
-    command: node --id node-001 --region us-west --node-type gateway
+      target: builder
+    command: /app/target/release/ambient-vcp node --id node-001 --region us-west --node-type gateway
     environment:
       - RUST_LOG=info
     networks:
@@ -27,12 +54,13 @@ services:
     depends_on:
       - coordinator
 
-  # Node 2 - Compute
+  # Node 2 - Compute (North America)
   node-2:
     build:
       context: .
       dockerfile: Dockerfile
-    command: node --id node-002 --region us-west --node-type compute
+      target: builder
+    command: /app/target/release/ambient-vcp node --id node-002 --region us-east --node-type compute
     environment:
       - RUST_LOG=info
     networks:
@@ -40,12 +68,27 @@ services:
     depends_on:
       - coordinator
 
-  # Node 3 - Compute
+  # Node 3 - Compute (Europe)
   node-3:
     build:
       context: .
       dockerfile: Dockerfile
-    command: node --id node-003 --region eu-central --node-type compute
+      target: builder
+    command: /app/target/release/ambient-vcp node --id node-003 --region eu-central --node-type compute
+    environment:
+      - RUST_LOG=info
+    networks:
+      - ambient-network
+    depends_on:
+      - coordinator
+
+  # Node 4 - Compute (Asia-Pacific)
+  node-4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    command: /app/target/release/ambient-vcp node --id node-004 --region ap-southeast --node-type compute
     environment:
       - RUST_LOG=info
     networks:
