@@ -1,5 +1,5 @@
 # Multi-stage build for Ambient AI VCP API Server
-FROM rust:1.85 as builder
+FROM rust:1.88 as builder
 WORKDIR /app
 # Copy workspace files
 COPY Cargo.toml ./
