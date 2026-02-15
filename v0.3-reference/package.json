@@ -1,0 +1,29 @@
+{
+  "name": "ambient-ai-node",
+  "version": "0.3.0",
+  "description": "Ambient AI SDK Node - v0.3-alpha Reference Implementation",
+  "main": "ambient-node.js",
+  "type": "module",
+  "scripts": {
+    "start": "node ambient-node.js",
+    "client": "node ambient-client.js",
+    "ledger": "node ambient-ledger.js",
+    "zk-setup": "node setup.js"
+  },
+  "dependencies": {
+    "@chainsafe/libp2p-noise": "^15.0.0",
+    "@libp2p/bootstrap": "^1.1.1",
+    "@libp2p/gossipsub": "^10.0.1",
+    "@libp2p/mdns": "^1.1.1",
+    "@libp2p/mplex": "^1.0.1",
+    "@libp2p/tcp": "^1.0.1",
+    "libp2p": "^1.3.1",
+    "@tensorflow/tfjs-node": "^4.20.0",
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "^0.7.4",
+    "uint8arrays": "^5.0.0"
+  },
+  "devDependencies": {
+    "circom": "^2.1.6"
+  }
+}
