@@ -198,8 +198,6 @@ When you clone this repo, you immediately get:
 - ✅ **Complete Documentation** (15+ guides)
 - ✅ **MIT License** - Use commercially, modify freely
 
-**Value**: A $100k+ enterprise platform that would take 6-12 months to build, **completely free**.
-
 👉 **[See Full Benefits Guide](./docs/USER_BENEFITS.md)** - Learn who benefits and how to use it
 
 ---
@@ -584,8 +582,10 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## ⚡ Quick Links
 
 - [**What You Get By Cloning This Repo**](./docs/USER_BENEFITS.md) ⭐ **NEW**
+- [Getting Started Guide](./GETTING_STARTED.md)
 - [API Documentation (Swagger)](http://localhost:3000/swagger-ui)
 - [Robustness Analysis](./ROBUSTNESS_ANALYSIS.md)
+- [Clone Trait Benefits Analysis](./docs/CLONER_BENEFITS_ANALYSIS.md) (Rust technical deep-dive)
 - [Phase 2 Summary](./docs/PHASE2_SUMMARY.md)
 - [Implementation Summary](./docs/IMPLEMENTATION_SUMMARY.md)
 - [Testing Summary](./docs/TESTING_SUMMARY.md)
