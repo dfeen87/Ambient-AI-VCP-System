@@ -4,7 +4,6 @@ use clap::{Parser, Subcommand};
 use mesh_coordinator::{MeshCoordinator, TaskAssignmentStrategy};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, Level};
-use tracing_subscriber;
 
 #[derive(Parser)]
 #[command(name = "ambient-vcp")]

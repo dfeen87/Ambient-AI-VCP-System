@@ -95,7 +95,7 @@ impl ZKProver {
         let start = Instant::now();
 
         // Hash the module, inputs, and outputs to field elements
-        let module_hash_fe = hash_to_field(&trace.module_hash.as_bytes());
+        let module_hash_fe = hash_to_field(trace.module_hash.as_bytes());
         let input_hash_fe = hash_to_field(&trace.inputs);
         let output_hash_fe = hash_to_field(&trace.outputs);
 
@@ -122,16 +122,9 @@ impl ZKProver {
         input_hash_fe.serialize_compressed(&mut public_inputs)?;
 
         let elapsed = start.elapsed();
-        tracing::info!(
-            "Proof generation took {:?} (target: <10s)",
-            elapsed
-        );
+        tracing::info!("Proof generation took {:?} (target: <10s)", elapsed);
 
-        Ok(ZKProof::new(
-            proof_bytes,
-            public_inputs,
-            trace.module_hash,
-        ))
+        Ok(ZKProof::new(proof_bytes, public_inputs, trace.module_hash))
     }
 
     /// Get verification key
@@ -159,9 +152,7 @@ impl Default for ZKProver {
 
         Self {
             proving_key: pk,
-            verification_key: VerificationKey {
-                key_data: vk_bytes,
-            },
+            verification_key: VerificationKey { key_data: vk_bytes },
         }
     }
 }
@@ -171,17 +162,17 @@ fn hash_to_field(data: &[u8]) -> Fr {
     let mut hasher = Blake2s256::new();
     hasher.update(data);
     let hash = hasher.finalize();
-    
+
     // Convert hash to field element, ensuring it's non-zero
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(&hash[0..32]);
     let mut fe = Fr::from_be_bytes_mod_order(&bytes);
-    
+
     // If we got zero (very unlikely), add 1
     if fe.is_zero() {
         fe = Fr::from(1u64);
     }
-    
+
     fe
 }
 

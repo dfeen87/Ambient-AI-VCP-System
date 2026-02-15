@@ -13,11 +13,9 @@ pub struct ZKVerifier {
 impl ZKVerifier {
     pub fn new(verification_key: VerificationKey) -> Self {
         // Deserialize the verification key
-        let ark_vk = ArkVerifyingKey::<Bn254>::deserialize_compressed(&verification_key.key_data[..])
-            .unwrap_or_else(|_| {
-                // If deserialization fails, use default keys
-                ZKVerifier::default().verification_key
-            });
+        let ark_vk =
+            ArkVerifyingKey::<Bn254>::deserialize_compressed(&verification_key.key_data[..])
+                .expect("Failed to deserialize verification key");
 
         Self {
             verification_key: ark_vk,
@@ -45,8 +43,9 @@ impl ZKVerifier {
         }
 
         // Verify the proof
-        let result = Groth16::<Bn254>::verify(&self.verification_key, &public_inputs_fe, &ark_proof)
-            .unwrap_or(false);
+        let result =
+            Groth16::<Bn254>::verify(&self.verification_key, &public_inputs_fe, &ark_proof)
+                .unwrap_or(false);
 
         let elapsed = start.elapsed();
         tracing::info!(
@@ -67,11 +66,11 @@ impl ZKVerifier {
 impl Default for ZKVerifier {
     fn default() -> Self {
         use crate::prover::ZKProver;
-        
+
         // Get verification key from default prover
         let prover = ZKProver::default();
         let vk_data = prover.verification_key().key_data.clone();
-        
+
         Self::new(VerificationKey { key_data: vk_data })
     }
 }
@@ -79,13 +78,13 @@ impl Default for ZKVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ExecutionTrace, prover::ZKProver};
+    use crate::{prover::ZKProver, ExecutionTrace};
 
     #[test]
     fn test_proof_verification() {
         let prover = ZKProver::default();
         let verifier = ZKVerifier::default();
-        
+
         let trace = ExecutionTrace {
             module_hash: "test_hash".to_string(),
             function_name: "test_fn".to_string(),
@@ -97,10 +96,10 @@ mod tests {
         };
 
         let proof = prover.generate_proof(trace).unwrap();
-        
+
         // Verify with correct public inputs
         assert!(verifier.verify_proof(&proof, &proof.public_inputs));
-        
+
         // Verify with incorrect public inputs should fail
         let wrong_inputs = vec![0u8; proof.public_inputs.len()];
         assert!(!verifier.verify_proof(&proof, &wrong_inputs));
@@ -110,7 +109,7 @@ mod tests {
     fn test_proof_verification_performance() {
         let prover = ZKProver::default();
         let verifier = ZKVerifier::default();
-        
+
         let trace = ExecutionTrace {
             module_hash: "performance_test".to_string(),
             function_name: "compute".to_string(),
@@ -122,7 +121,7 @@ mod tests {
         };
 
         let proof = prover.generate_proof(trace).unwrap();
-        
+
         let start = Instant::now();
         let result = verifier.verify_proof(&proof, &proof.public_inputs);
         let elapsed = start.elapsed();
@@ -139,7 +138,7 @@ mod tests {
     fn test_proof_size() {
         let prover = ZKProver::default();
         let verifier = ZKVerifier::default();
-        
+
         let trace = ExecutionTrace {
             module_hash: "test".to_string(),
             function_name: "fn".to_string(),
@@ -154,6 +153,10 @@ mod tests {
         let size = verifier.proof_size(&proof);
 
         // Groth16 proofs are typically around 128-256 bytes
-        assert!(size > 0 && size < 1024, "Proof size should be reasonable: {} bytes", size);
+        assert!(
+            size > 0 && size < 1024,
+            "Proof size should be reasonable: {} bytes",
+            size
+        );
     }
 }
