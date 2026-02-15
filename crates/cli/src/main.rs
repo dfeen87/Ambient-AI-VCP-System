@@ -56,9 +56,7 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .init();
+    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
     let cli = Cli::parse();
 
@@ -114,10 +112,10 @@ async fn run_node(id: String, region: String, node_type: String) -> Result<()> {
     info!("Safe Mode: {}", node.is_safe_mode());
 
     info!("Node running... Press Ctrl+C to stop");
-    
+
     // Keep running until interrupted
     tokio::signal::ctrl_c().await?;
-    
+
     info!("Shutting down node...");
     Ok(())
 }
@@ -148,9 +146,9 @@ async fn run_coordinator(cluster_id: String, strategy_str: String) -> Result<()>
     info!("Avg Health Score: {:.2}", stats.avg_health_score);
 
     info!("Coordinator running... Press Ctrl+C to stop");
-    
+
     tokio::signal::ctrl_c().await?;
-    
+
     info!("Shutting down coordinator...");
     Ok(())
 }
@@ -163,13 +161,13 @@ async fn show_node_info(id: String) -> Result<()> {
 
 async fn run_health_check() -> Result<()> {
     info!("Running system health check...");
-    
+
     // Check system components
     info!("✓ Ambient Node module loaded");
     info!("✓ WASM Engine module loaded");
     info!("✓ ZK Prover module loaded");
     info!("✓ Mesh Coordinator module loaded");
-    
+
     info!("All systems operational!");
     Ok(())
 }

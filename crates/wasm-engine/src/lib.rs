@@ -50,7 +50,10 @@ pub struct WasmEngine {
 
 impl WasmEngine {
     pub fn new(runtime: WasmRuntime, limits: SandboxLimits) -> Self {
-        Self { _runtime: runtime, limits }
+        Self {
+            _runtime: runtime,
+            limits,
+        }
     }
 
     /// Execute a WASM function call
@@ -72,7 +75,10 @@ impl WasmEngine {
         {
             match self._runtime {
                 WasmRuntime::WasmEdge => self.execute_wasmedge(&call, _start).await,
-                _ => Err(anyhow::anyhow!("Runtime not implemented: {:?}", self._runtime)),
+                _ => Err(anyhow::anyhow!(
+                    "Runtime not implemented: {:?}",
+                    self._runtime
+                )),
             }
         }
 
@@ -83,7 +89,9 @@ impl WasmEngine {
                 execution_time_ms: 0,
                 gas_used: 0,
                 success: false,
-                error: Some("WASM runtime not enabled. Build with --features wasm-runtime".to_string()),
+                error: Some(
+                    "WASM runtime not enabled. Build with --features wasm-runtime".to_string(),
+                ),
             })
         }
     }
@@ -92,16 +100,14 @@ impl WasmEngine {
     #[cfg(feature = "wasm-runtime")]
     async fn execute_wasmedge(&self, call: &WasmCall, start: Instant) -> Result<WasmResult> {
         use std::time::Duration;
-        
+
         // Build configuration with limits
         let config = ConfigBuilder::new(CommonConfigOptions::default())
             .with_bulk_memory_operations(true)
             .build()?;
 
         // Create VM
-        let mut vm = VmBuilder::new()
-            .with_config(config)
-            .build()?;
+        let mut vm = VmBuilder::new().with_config(config).build()?;
 
         // Load module
         vm.load_wasm_from_file(&call.module_path)?;
@@ -154,10 +160,7 @@ impl WasmEngine {
     }
 
     /// Execute with execution trace recording
-    pub async fn execute_with_trace(
-        &self,
-        call: WasmCall,
-    ) -> Result<(WasmResult, ExecutionTrace)> {
+    pub async fn execute_with_trace(&self, call: WasmCall) -> Result<(WasmResult, ExecutionTrace)> {
         let _trace_start = Instant::now();
         let result = self.execute(call.clone()).await?;
 
@@ -213,14 +216,16 @@ mod tests {
     fn test_module_not_found() {
         let limits = SandboxLimits::default();
         let engine = WasmEngine::new(WasmRuntime::WasmEdge, limits);
-        
+
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(async {
-            engine.execute(WasmCall {
-                module_path: "nonexistent.wasm".to_string(),
-                function_name: "test".to_string(),
-                inputs: vec![],
-            }).await
+            engine
+                .execute(WasmCall {
+                    module_path: "nonexistent.wasm".to_string(),
+                    function_name: "test".to_string(),
+                    inputs: vec![],
+                })
+                .await
         });
 
         assert!(result.is_ok());

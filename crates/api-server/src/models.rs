@@ -33,8 +33,14 @@ impl NodeRegistration {
         if self.node_id.len() > 64 {
             return Err(ApiError::bad_request("node_id cannot exceed 64 characters"));
         }
-        if !self.node_id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-            return Err(ApiError::bad_request("node_id can only contain alphanumeric characters, hyphens, and underscores"));
+        if !self
+            .node_id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(ApiError::bad_request(
+                "node_id can only contain alphanumeric characters, hyphens, and underscores",
+            ));
         }
 
         // Validate region
@@ -75,17 +81,23 @@ impl NodeCapabilities {
     pub fn validate(&self) -> Result<(), ApiError> {
         // Validate bandwidth (0-100,000 Mbps)
         if self.bandwidth_mbps < 0.0 || self.bandwidth_mbps > 100_000.0 {
-            return Err(ApiError::bad_request("bandwidth_mbps must be between 0 and 100,000"));
+            return Err(ApiError::bad_request(
+                "bandwidth_mbps must be between 0 and 100,000",
+            ));
         }
 
         // Validate CPU cores (1-1024 cores)
         if self.cpu_cores == 0 || self.cpu_cores > 1024 {
-            return Err(ApiError::bad_request("cpu_cores must be between 1 and 1024"));
+            return Err(ApiError::bad_request(
+                "cpu_cores must be between 1 and 1024",
+            ));
         }
 
         // Validate memory (0.1-10,000 GB)
         if self.memory_gb < 0.1 || self.memory_gb > 10_000.0 {
-            return Err(ApiError::bad_request("memory_gb must be between 0.1 and 10,000"));
+            return Err(ApiError::bad_request(
+                "memory_gb must be between 0.1 and 10,000",
+            ));
         }
 
         Ok(())
@@ -118,7 +130,12 @@ impl TaskSubmission {
     /// Validate task submission data
     pub fn validate(&self) -> Result<(), ApiError> {
         // Validate task_type
-        const VALID_TASK_TYPES: &[&str] = &["federated_learning", "zk_proof", "wasm_execution", "computation"];
+        const VALID_TASK_TYPES: &[&str] = &[
+            "federated_learning",
+            "zk_proof",
+            "wasm_execution",
+            "computation",
+        ];
         if !VALID_TASK_TYPES.contains(&self.task_type.as_str()) {
             return Err(ApiError::bad_request(format!(
                 "task_type must be one of: {}",
@@ -154,12 +171,16 @@ impl TaskRequirements {
     pub fn validate(&self) -> Result<(), ApiError> {
         // Validate min_nodes (1-1000)
         if self.min_nodes == 0 || self.min_nodes > 1000 {
-            return Err(ApiError::bad_request("min_nodes must be between 1 and 1000"));
+            return Err(ApiError::bad_request(
+                "min_nodes must be between 1 and 1000",
+            ));
         }
 
         // Validate max_execution_time (1 second to 1 hour)
         if self.max_execution_time_sec == 0 || self.max_execution_time_sec > 3600 {
-            return Err(ApiError::bad_request("max_execution_time_sec must be between 1 and 3600"));
+            return Err(ApiError::bad_request(
+                "max_execution_time_sec must be between 1 and 3600",
+            ));
         }
 
         Ok(())
@@ -193,7 +214,7 @@ pub enum TaskStatus {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ProofVerificationRequest {
     pub task_id: String,
-    pub proof_data: String, // Base64 encoded proof
+    pub proof_data: String,    // Base64 encoded proof
     pub public_inputs: String, // Base64 encoded public inputs
 }
 

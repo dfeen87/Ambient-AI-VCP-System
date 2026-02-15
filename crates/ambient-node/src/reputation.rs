@@ -24,14 +24,14 @@ impl Reputation {
     /// Calculate reputation score (0.0 - 1.0)
     pub fn score(&self) -> f64 {
         let total_tasks = self.completed_tasks + self.failed_tasks;
-        
+
         if total_tasks == 0 {
             return 0.5; // Neutral score for new nodes
         }
 
         let success_rate = self.completed_tasks as f64 / total_tasks as f64;
         let dispute_penalty = (self.disputes as f64 * 0.05).min(0.3);
-        
+
         (success_rate - dispute_penalty).max(0.0).min(1.0)
     }
 
@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn test_reputation_score() {
         let mut rep = Reputation::default();
-        
+
         // Record 10 successful tasks
         for _ in 0..10 {
             rep.record_success(1.0);
@@ -92,16 +92,16 @@ mod tests {
     #[test]
     fn test_dispute_penalty() {
         let mut rep = Reputation::default();
-        
+
         // Perfect success rate
         for _ in 0..10 {
             rep.record_success(1.0);
         }
-        
+
         // Add disputes
         rep.record_dispute();
         rep.record_dispute();
-        
+
         let score = rep.score();
         assert!(score < 1.0); // Score reduced due to disputes
         assert!(score > 0.85); // But still high
@@ -110,11 +110,11 @@ mod tests {
     #[test]
     fn test_success_rate() {
         let mut rep = Reputation::default();
-        
+
         rep.record_success(1.0);
         rep.record_success(1.0);
         rep.record_failure(1.0);
-        
+
         assert!((rep.success_rate() - 0.6667).abs() < 0.001);
     }
 }
