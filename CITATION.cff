@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Ambient AI + VCP System"
+abstract: "A production-ready implementation of a Verifiable Computation Protocol (VCP) that orchestrates AI workloads across heterogeneous edge devices with cryptographic verification, zero-knowledge proofs, and comprehensive input validation."
+authors:
+  - family-names: "Feeney Jr."
+    given-names: "Don Michael"
+    orcid: "https://orcid.org/0000-0000-0000-0000"
+repository-code: "https://github.com/dfeen87/Ambient-AI-VCP-System"
+url: "https://github.com/dfeen87/Ambient-AI-VCP-System"
+license: MIT
+version: 1.0.0
+date-released: 2026-02-15
+keywords:
+  - "verifiable computation"
+  - "zero-knowledge proofs"
+  - "distributed computing"
+  - "edge computing"
+  - "federated learning"
+  - "WASM"
+  - "blockchain"
+  - "privacy-preserving"
+  - "mesh network"
+  - "Rust"

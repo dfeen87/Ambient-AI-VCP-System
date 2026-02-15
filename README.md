@@ -441,23 +441,77 @@ kubectl apply -f k8s/service.yaml
 
 ```
 ambient-vcp/
-├── Cargo.toml              # Workspace configuration
-├── README.md               # This file
-├── ROBUSTNESS_ANALYSIS.md  # Detailed robustness analysis
-├── PHASE2_SUMMARY.md       # Phase 2 implementation summary
-├── crates/
-│   ├── ambient-node/       # Node implementation + 12 tests
-│   ├── wasm-engine/        # WASM execution runtime + 4 tests
-│   ├── zk-prover/          # ZK proof generation + 4 tests
-│   ├── mesh-coordinator/   # Task orchestration + 3 tests
-│   ├── federated-learning/ # FL protocol + 5 tests
-│   ├── api-server/         # REST API server + 1 unit + 13 integration tests
-│   └── cli/                # Command-line interface
-├── dashboard/              # Web UI (HTML/JS)
-├── demo/                   # Demo scripts
-├── docs/                   # Documentation
-└── tests/                  # Integration tests
+├── Cargo.toml                      # Workspace configuration
+├── Cargo.lock                      # Dependency lock file
+├── README.md                       # This file
+├── CITATION.cff                    # Citation metadata for research
+├── ROBUSTNESS_ANALYSIS.md          # Detailed robustness analysis
+├── LICENSE                         # MIT License
+├── Dockerfile                      # Docker container configuration
+├── docker-compose.yml              # Multi-container orchestration
+├── render.yaml                     # Render.com deployment config
+├── .env.example                    # Environment variables template
+│
+├── crates/                         # Rust workspace crates
+│   ├── ambient-node/               # Node implementation + 12 tests
+│   ├── wasm-engine/                # WASM execution runtime + 4 tests
+│   ├── zk-prover/                  # ZK proof generation + 4 tests
+│   ├── mesh-coordinator/           # Task orchestration + 3 tests
+│   ├── federated-learning/         # FL protocol + 5 tests
+│   ├── api-server/                 # REST API server + 1 unit + 13 integration tests
+│   └── cli/                        # Command-line interface
+│
+├── docs/                           # Documentation
+│   ├── API_REFERENCE.md            # API endpoint documentation
+│   ├── ARCHITECTURE.md             # System architecture details
+│   ├── CONTRIBUTING.md             # Contribution guidelines
+│   ├── DEPLOYMENT.md               # Deployment instructions
+│   ├── GLOBAL_NODE_DEPLOYMENT.md   # Global node setup guide
+│   ├── LANGUAGE_DECISION.md        # Technology stack rationale
+│   ├── IMPLEMENTATION_SUMMARY.md   # Implementation overview
+│   ├── PHASE1_SUMMARY.md           # Phase 1 development summary
+│   ├── PHASE2_SUMMARY.md           # Phase 2 development summary
+│   ├── PHASE2.md                   # Phase 2 planning document
+│   ├── TESTING_SUMMARY.md          # Testing strategy and results
+│   └── whitepapers/                # Research whitepapers
+│       ├── AMBIENT_AI.md           # Ambient AI whitepaper
+│       └── VCP.md                  # VCP protocol whitepaper
+│
+├── .github/                        # GitHub configurations
+│   └── workflows/                  # CI/CD pipelines
+│       └── ci.yml                  # Main CI workflow (tests, lint, build)
+│
+├── dashboard/                      # Web monitoring UI
+│   └── index.html                  # Real-time dashboard (HTML/JS)
+│
+├── demo/                           # Demonstration scripts
+│   ├── README.md                   # Demo documentation
+│   └── run-demo.sh                 # Multi-node demo script
+│
+├── scripts/                        # Utility scripts
+│   └── deploy-global-node.sh       # Global node deployment automation
+│
+├── examples/                       # Example implementations
+│   └── hello-compute/              # Simple WASM compute example
+│
+├── wasm-modules/                   # WASM module storage
+│   └── README.md                   # WASM modules documentation
+│
+├── v0.3-reference/                 # Legacy reference implementation
+│   ├── README.md                   # v0.3 documentation
+│   ├── package.json                # Node.js dependencies (legacy)
+│   └── *.js                        # JavaScript implementation files
+│
+└── archive/                        # Archived files
+    └── README_OLD.md               # Previous README version
 ```
+
+**Key Directories:**
+- `crates/` - Core Rust implementation with 42 passing tests
+- `docs/` - Comprehensive documentation and whitepapers
+- `.github/workflows/` - Automated CI/CD with tests, linting, and builds
+- `dashboard/` - Real-time monitoring interface
+- `scripts/` - Deployment and utility scripts
 
 ---
 
@@ -505,9 +559,13 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 - [API Documentation (Swagger)](http://localhost:3000/swagger-ui)
 - [Robustness Analysis](./ROBUSTNESS_ANALYSIS.md)
-- [Phase 2 Summary](./PHASE2_SUMMARY.md)
+- [Phase 2 Summary](./docs/PHASE2_SUMMARY.md)
+- [Implementation Summary](./docs/IMPLEMENTATION_SUMMARY.md)
+- [Testing Summary](./docs/TESTING_SUMMARY.md)
 - [Deployment Guide](./docs/GLOBAL_NODE_DEPLOYMENT.md)
 - [Language Decision](./docs/LANGUAGE_DECISION.md)
+- [Contributing Guidelines](./docs/CONTRIBUTING.md)
+- [Citation](./CITATION.cff)
 
 ---
 
