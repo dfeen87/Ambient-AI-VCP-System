@@ -4,8 +4,7 @@
 
 // Placeholder to keep the test file structure
 #[test]
-fn placeholder_test() {
-}
+fn placeholder_test() {}
 
 /*
 use api_server::{create_router, models::*, state::AppState};
