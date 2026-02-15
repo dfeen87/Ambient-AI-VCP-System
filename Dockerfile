@@ -15,6 +15,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 # Copy the API server binary from builder
 COPY --from=builder /app/target/release/api-server /app/api-server
+# Copy migrations directory
+COPY crates/api-server/migrations /app/migrations
 # Create non-root user
 RUN useradd -m -u 1000 ambient && \
     chown -R ambient:ambient /app
