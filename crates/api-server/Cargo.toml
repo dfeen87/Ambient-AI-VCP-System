@@ -19,7 +19,6 @@ ambient-node = { path = "../ambient-node" }
 mesh-coordinator = { path = "../mesh-coordinator" }
 zk-prover = { path = "../zk-prover" }
 federated-learning = { path = "../federated-learning" }
-bitcoin-anchor = { path = "../bitcoin-anchor" }
 wasm-engine = { path = "../wasm-engine" }
 
 # Web framework

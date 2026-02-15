@@ -1,6 +1,6 @@
 #!/bin/bash
 # Multi-Node Demo for Ambient AI VCP System - Phase 2
-# This script demonstrates federated learning, ZK proofs, and Bitcoin Layer-2 integration
+# This script demonstrates federated learning, ZK proofs, and verifiable computation
 
 set -e
 
@@ -182,7 +182,7 @@ show_stats() {
     echo "  - Submitted federated learning task with privacy guarantees"
     echo "  - Submitted ZK proof generation task"
     echo "  - Verified computational proofs"
-    echo "  - Demonstrated Bitcoin Layer-2 commitment capability"
+    echo "  - Demonstrated verifiable computation capabilities"
     echo ""
     echo "Next Steps:"
     echo "  1. Open dashboard: open dashboard/index.html"

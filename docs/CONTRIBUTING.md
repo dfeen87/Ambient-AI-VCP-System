@@ -69,9 +69,9 @@ Add telemetry collection for GPU metrics
 
 ### Medium Priority
 
-- Federated learning implementation
-- Bitcoin Layer-2 integration
-- Web dashboard
+- Advanced privacy-preserving techniques
+- Enhanced ZK proof systems
+- Web dashboard enhancements
 - Performance optimizations
 
 ### Good First Issues
