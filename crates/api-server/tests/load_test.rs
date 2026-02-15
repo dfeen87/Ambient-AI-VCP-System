@@ -5,7 +5,6 @@
 // Placeholder to keep the test file structure
 #[test]
 fn placeholder_test() {
-    assert!(true);
 }
 
 /*
