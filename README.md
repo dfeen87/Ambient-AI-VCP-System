@@ -565,6 +565,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 - [API Documentation (Swagger)](http://localhost:3000/swagger-ui)
 - [Robustness Analysis](./ROBUSTNESS_ANALYSIS.md)
+- [Clone Trait Benefits Analysis](./docs/CLONER_BENEFITS_ANALYSIS.md)
 - [Phase 2 Summary](./docs/PHASE2_SUMMARY.md)
 - [Implementation Summary](./docs/IMPLEMENTATION_SUMMARY.md)
 - [Testing Summary](./docs/TESTING_SUMMARY.md)
