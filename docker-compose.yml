@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database for API Server
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=vcp_user
+      - POSTGRES_PASSWORD=vcp_password
+      - POSTGRES_DB=ambient_vcp
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ambient-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vcp_user -d ambient_vcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Global API Server - Public REST API endpoint
   api-server:
     build:
@@ -15,8 +34,16 @@ services:
       - API_HOST=0.0.0.0
       - API_PORT=3000
       - CORS_ALLOWED_ORIGINS=*
+      - DATABASE_URL=postgres://vcp_user:vcp_password@postgres:5432/ambient_vcp
+      - JWT_SECRET=docker-dev-secret-change-in-production
+      - JWT_EXPIRATION_HOURS=24
+      - RATE_LIMIT_REQUESTS_PER_MINUTE=60
+      - RATE_LIMIT_BURST=10
     networks:
       - ambient-network
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
       interval: 30s
@@ -99,3 +126,6 @@ services:
 networks:
   ambient-network:
     driver: bridge
+
+volumes:
+  postgres_data:

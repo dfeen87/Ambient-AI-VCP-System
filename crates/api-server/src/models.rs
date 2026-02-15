@@ -1,8 +1,4 @@
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    Json,
-};
+use crate::error::ApiError;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -237,50 +233,4 @@ pub struct ClusterStats {
     pub failed_tasks: usize,
     pub avg_health_score: f64,
     pub total_compute_capacity: f64,
-}
-
-/// API Error
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ApiError {
-    pub error: String,
-    pub message: String,
-}
-
-impl ApiError {
-    pub fn new(error: impl Into<String>, message: impl Into<String>) -> Self {
-        Self {
-            error: error.into(),
-            message: message.into(),
-        }
-    }
-
-    pub fn not_found(message: impl Into<String>) -> Self {
-        Self::new("not_found", message)
-    }
-
-    pub fn bad_request(message: impl Into<String>) -> Self {
-        Self::new("bad_request", message)
-    }
-
-    pub fn internal_error(message: impl Into<String>) -> Self {
-        Self::new("internal_error", message)
-    }
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        let status = match self.error.as_str() {
-            "not_found" => StatusCode::NOT_FOUND,
-            "bad_request" => StatusCode::BAD_REQUEST,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-
-        (status, Json(self)).into_response()
-    }
-}
-
-impl From<anyhow::Error> for ApiError {
-    fn from(err: anyhow::Error) -> Self {
-        ApiError::internal_error(err.to_string())
-    }
 }
