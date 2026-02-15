@@ -1,9 +1,9 @@
-/// Authentication module with JWT and API key support
-///
-/// This module provides secure authentication mechanisms including:
-/// - JWT token generation and validation
-/// - API key authentication
-/// - Password hashing with bcrypt
+//! Authentication module with JWT and API key support
+//!
+//! This module provides secure authentication mechanisms including:
+//! - JWT token generation and validation
+//! - API key authentication
+//! - Password hashing with bcrypt
 
 use crate::error::{ApiError, ApiResult};
 use axum::{

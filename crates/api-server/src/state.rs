@@ -1,6 +1,6 @@
-/// Application state with PostgreSQL persistence
-///
-/// This module provides CRUD operations for nodes and tasks using a PostgreSQL database.
+//! Application state with PostgreSQL persistence
+//!
+//! This module provides CRUD operations for nodes and tasks using a PostgreSQL database.
 
 use crate::error::ApiResult;
 use crate::models::*;

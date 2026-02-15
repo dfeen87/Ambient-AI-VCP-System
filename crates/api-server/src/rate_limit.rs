@@ -1,7 +1,7 @@
-/// Rate limiting middleware
-///
-/// Provides request rate limiting to prevent abuse and ensure fair usage.
-/// Uses token bucket algorithm for flexible rate limiting.
+//! Rate limiting middleware
+//!
+//! Provides request rate limiting to prevent abuse and ensure fair usage.
+//! Uses token bucket algorithm for flexible rate limiting.
 
 use crate::error::ApiError;
 use axum::{

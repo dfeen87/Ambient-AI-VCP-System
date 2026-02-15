@@ -1,7 +1,7 @@
-/// Database module for PostgreSQL persistence
-/// 
-/// This module provides a connection pool and database operations
-/// for the Ambient AI VCP system. It uses sqlx for async database access.
+//! Database module for PostgreSQL persistence
+//! 
+//! This module provides a connection pool and database operations
+//! for the Ambient AI VCP system. It uses sqlx for async database access.
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::time::Duration;

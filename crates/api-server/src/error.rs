@@ -1,7 +1,7 @@
-/// Structured error handling with secure defaults
-///
-/// This module provides comprehensive error types for the API with
-/// security-focused error handling that prevents information leakage.
+//! Structured error handling with secure defaults
+//!
+//! This module provides comprehensive error types for the API with
+//! security-focused error handling that prevents information leakage.
 
 use axum::{
     http::StatusCode,
