@@ -82,41 +82,7 @@ privacy.add_dp_noise_to_gradients(&mut gradients, clip_norm);
 - ✅ `test_gradient_clipping` - Passed
 - ✅ `test_noise_addition` - Passed
 
-### 3. Bitcoin Layer-2 (`bitcoin-anchor`) ✅
-**Status:** Fully implemented with tests
-
-**Features:**
-- **Proof Commitments**: OP_RETURN transactions for proof hashes
-- **Merkle Roots**: Batch commitment aggregation
-- **State Peg**: Layer-2 state anchoring to Bitcoin
-- **Transaction Building**: Bitcoin transaction construction
-- **Verification**: Commitment extraction and validation
-
-**Code Example:**
-```rust
-// Create proof commitment
-let commitment = ProofCommitment::new(
-    proof_hash,
-    task_id,
-    timestamp
-);
-
-// Build Bitcoin transaction
-let builder = CommitmentTxBuilder::default();
-let tx = builder.build_commitment_tx(&commitment, fee_sats)?;
-
-// State peg management
-let mut manager = SettlementManager::new();
-let peg = manager.create_peg(state_root)?;
-manager.add_commitment_to_current(commitment_hash)?;
-```
-
-**Test Results:**
-- ✅ `test_proof_commitment` - Passed
-- ✅ `test_commitment_tx_builder` - Passed
-- ✅ `test_settlement_manager` - Passed
-
-### 4. Web Dashboard (`dashboard/`) ✅
+### 3. Web Dashboard (`dashboard/`) ✅
 **Status:** Fully functional HTML/JavaScript application
 
 **Features:**
@@ -169,7 +135,7 @@ Summary:
   - Submitted federated learning task with privacy guarantees
   - Submitted ZK proof generation task
   - Verified computational proofs
-  - Demonstrated Bitcoin Layer-2 commitment capability
+  - Demonstrated verifiable computation capabilities
 ```
 
 ### 6. Deployment Configurations ✅
@@ -206,10 +172,9 @@ Summary:
 
 ## 📊 Test Summary
 
-**Total Tests:** 29 (all passing)
+**Total Tests:** 26 (all passing)
 - ambient-node: 5 tests ✅
 - api-server: 1 test ✅
-- bitcoin-anchor: 3 tests ✅
 - federated-learning: 5 tests ✅
 - mesh-coordinator: 7 tests ✅
 - wasm-engine: 4 tests ✅
@@ -334,13 +299,6 @@ docker run -p 3000:3000 ambient-vcp:latest
 - Privacy budgets ✅
 - All tests passing ✅
 
-✅ **Bitcoin Layer-2 integration**
-- Commitment scheme ✅
-- OP_RETURN transactions ✅
-- State peg mechanism ✅
-- Merkle root computation ✅
-- All tests passing ✅
-
 ✅ **Multi-node demo application**
 - Automated demo script ✅
 - Node registration ✅
@@ -405,12 +363,12 @@ docker run -p 3000:3000 ambient-vcp:latest
 Phase 2 implementation is **COMPLETE** with all major features working:
 - ✅ Production-ready REST API with OpenAPI docs
 - ✅ Federated Learning with differential privacy
-- ✅ Bitcoin Layer-2 commitment and settlement
+- ✅ Zero-Knowledge Proof verification system
 - ✅ Interactive web dashboard
 - ✅ Multi-node demo application
 - ✅ Deployment configurations for Render.com and Kubernetes
 - ✅ Comprehensive documentation
-- ✅ All tests passing (29/29)
+- ✅ All tests passing (26/26)
 
 The system is ready for:
 - Development and testing

@@ -62,7 +62,6 @@ Successfully implemented a production-ready foundation for the Ambient AI + Veri
 
 #### Supporting Crates
 - ✅ federated-learning (256 lines) - Placeholder for Phase 2
-- ✅ bitcoin-anchor (277 lines) - Placeholder for Phase 2
 
 ### 2. Documentation (100%)
 
@@ -241,7 +240,6 @@ The system is now ready for Phase 2 enhancements:
 ### Planned Additions
 - Real ZK proof implementation (RISC Zero or Plonky2)
 - Federated learning protocol
-- Bitcoin Layer-2 integration
 - P2P networking (libp2p)
 - Web dashboard
 - Production WASM runtime

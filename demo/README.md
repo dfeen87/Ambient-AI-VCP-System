@@ -7,7 +7,7 @@ This demo showcases the Phase 2 features of the Ambient AI VCP System:
 1. **Multi-Node Registration**: Register compute nodes across different regions
 2. **Federated Learning**: Submit FL tasks with differential privacy
 3. **ZK Proof Generation**: Submit and verify zero-knowledge proofs
-4. **Bitcoin Layer-2**: Proof commitment and settlement
+4. **Verifiable Computation**: Cryptographic proof verification
 5. **REST API**: Interact with the system via HTTP endpoints
 6. **Web Dashboard**: Monitor cluster status in real-time
 
@@ -150,7 +150,7 @@ Once the server is running, visit:
           │
           ▼
     ┌─────────────┐
-    │ Bitcoin L2  │
+    │ Verifier    │
     └─────────────┘
 ```
 
@@ -163,7 +163,7 @@ Once the server is running, visit:
 3. Nodes train model locally
 4. Aggregator combines updates using FedAvg
 5. Differential privacy applied to gradients
-6. Final model committed to Bitcoin Layer-2
+6. Final model verified and stored
 
 ### Workflow 2: ZK Proof Computation
 
@@ -171,8 +171,8 @@ Once the server is running, visit:
 2. Submit WASM computation task
 3. Node executes in sandbox
 4. Generate ZK proof of correct execution
-5. Verify proof
-6. Commit proof hash to Bitcoin
+5. Verify proof cryptographically
+6. Store verified computation result
 
 ### Workflow 3: Multi-Region Coordination
 

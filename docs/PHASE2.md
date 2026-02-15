@@ -48,36 +48,7 @@ let mut gradients = vec![1.0, 2.0, 3.0];
 privacy.add_dp_noise_to_gradients(&mut gradients, 1.0);
 ```
 
-### 3. Bitcoin Layer-2
-- **Package**: `bitcoin-anchor`
-- **Features**:
-  - Proof commitments via OP_RETURN
-  - State peg mechanism
-  - Merkle root computation
-  - Transaction building
-
-**Example Usage**:
-```rust
-use bitcoin_anchor::{ProofCommitment, CommitmentTxBuilder, SettlementManager};
-
-// Create commitment
-let commitment = ProofCommitment::new(
-    "proof_hash".to_string(),
-    "task-123".to_string(),
-    timestamp
-);
-
-// Build Bitcoin transaction
-let builder = CommitmentTxBuilder::default();
-let tx = builder.build_commitment_tx(&commitment, 1000)?;
-
-// Settlement management
-let mut manager = SettlementManager::new();
-let peg = manager.create_peg("state_root".to_string())?;
-manager.add_commitment_to_current("commitment_hash".to_string())?;
-```
-
-### 4. Web Dashboard
+### 3. Web Dashboard
 - **Location**: `dashboard/index.html`
 - **Features**:
   - Real-time node monitoring
@@ -201,7 +172,6 @@ cargo test --workspace
 
 # Specific package
 cargo test -p federated-learning
-cargo test -p bitcoin-anchor
 cargo test -p api-server
 ```
 
@@ -240,9 +210,9 @@ cargo test -p api-server
         │
    ┌────┼────┐
    │    │    │
-┌──▼┐ ┌─▼┐ ┌─▼──┐
-│FL │ │ZK│ │BTC │
-└───┘ └──┘ └────┘
+┌──▼┐ ┌─▼┐ ┌─▼────┐
+│FL │ │ZK│ │WASM  │
+└───┘ └──┘ └──────┘
 ```
 
 ## Privacy Budgets

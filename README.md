@@ -1,15 +1,15 @@
 # Ambient AI + VCP System
 
-A production-ready implementation of a **decentralized compute network** that orchestrates AI workloads across heterogeneous edge devices with cryptographic verification and Bitcoin Layer-2 settlement.
+A production-ready implementation of a **Verifiable Computation Protocol (VCP)** that orchestrates AI workloads across heterogeneous edge devices with cryptographic verification and zero-knowledge proofs.
 
 ## 🌟 Features
 
 - **Ambient Node Mesh**: Self-organizing network of heterogeneous devices
 - **Intelligent Orchestration**: Health-based task assignment with reputation scoring
 - **WASM Execution Engine**: Secure sandboxed computation with resource limits
-- **Zero-Knowledge Proofs**: Cryptographic verification of execution correctness (placeholder implementation)
+- **Zero-Knowledge Proofs**: Cryptographic verification of execution correctness
 - **Federated Learning**: Privacy-preserving multi-node model training with FedAvg and differential privacy
-- **Token Incentives**: Reward system tied to Bitcoin Layer-2 with proof commitments
+- **Verifiable Computation**: Proof-of-Execution for trustless distributed computing
 - **Energy Telemetry**: Verifiable sustainability metrics
 
 ## 🏗️ Architecture
@@ -44,25 +44,19 @@ A production-ready implementation of a **decentralized compute network** that or
    - Gradient clipping and noise injection
    - Client-side model training interface
 
-6. **Bitcoin Layer-2** (`bitcoin-anchor`)
-   - Proof commitment via OP_RETURN transactions
-   - State peg mechanism for settlement
-   - Merkle root computation for batch commitments
-   - Transaction building and verification
-
-7. **REST API Server** (`api-server`)
+6. **REST API Server** (`api-server`)
    - Node registration and management
    - Task submission and tracking
    - Proof verification endpoints
    - OpenAPI/Swagger documentation
    - Real-time cluster statistics
 
-8. **CLI Tool** (`cli`)
+7. **CLI Tool** (`cli`)
    - Start and manage nodes
    - Start mesh coordinators
    - Health monitoring
 
-9. **Web Dashboard** (`dashboard`)
+8. **Web Dashboard** (`dashboard`)
    - Real-time node monitoring
    - Task management interface
    - Health metrics visualization
@@ -193,8 +187,8 @@ ambient-vcp/
 │   ├── wasm-engine/        # WASM execution runtime
 │   ├── zk-prover/          # ZK proof generation
 │   ├── mesh-coordinator/   # Task orchestration
-│   ├── federated-learning/ # FL protocol (Phase 2)
-│   ├── bitcoin-anchor/     # Bitcoin L2 (Phase 2)
+│   ├── federated-learning/ # FL protocol
+│   ├── api-server/         # REST API server
 │   └── cli/                # Command-line interface
 └── docs/                   # Documentation
 ```
@@ -233,7 +227,6 @@ RUST_LOG=info cargo test
 
 ### Phase 2 (Completed) ✅
 - ✅ Federated learning implementation (FedAvg + Differential Privacy)
-- ✅ Bitcoin Layer-2 integration (Commitment scheme + State peg)
 - ✅ Multi-node demo application
 - ✅ Web dashboard (Real-time monitoring)
 - ✅ REST API server (Axum with OpenAPI/Swagger)
@@ -259,7 +252,7 @@ MIT License - see LICENSE file for details
 
 - WasmEdge for WASM runtime
 - RISC Zero for ZK VM inspiration
-- Bitcoin community for Layer-2 protocols
+- The decentralized computing community for verifiable computation research
 
 ## 📧 Contact
 
