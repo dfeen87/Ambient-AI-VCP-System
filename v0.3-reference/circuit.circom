@@ -9,12 +9,14 @@ template SqrtProof() {
     signal input x;
 
     // Public Input (the question)
-    signal output y;
+    signal input y;
 
     // The logic: we constrain x*x to equal y.
     // If x*x does not equal y, the proof will fail to generate.
-    x * x === y;
+    signal xSquared;
+    xSquared <== x * x;
+    y === xSquared;
 }
 
 // We instantiate the template
-component main = SqrtProof();
+component main {public [y]} = SqrtProof();

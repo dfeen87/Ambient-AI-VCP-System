@@ -1,6 +1,6 @@
 /*
  * =================================================================
- * AMBIENT AI CLIENT (v0.2 - ZK REQUESTER)
+ * AMBIENT AI CLIENT (v0.3 - ZK REQUESTER)
  * =================================================================
  * This node now just publishes a task with a reward.
  * It waits for the Ledger to confirm payment.
@@ -32,7 +32,7 @@ async function publishMessage(message) {
 }
 
 const main = async () => {
-  console.log('Starting Ambient AI Client Node (v0.2)...');
+  console.log('Starting Ambient AI Client Node (v0.3)...');
   node = await createLibp2p({
     transports: [tcp()],
     streamMuxers: [mplex()],

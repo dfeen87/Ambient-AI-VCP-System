@@ -1,6 +1,6 @@
 /*
  * =================================================================
- * AMBIENT AI LEDGER (v0.2 - "THE ZK SMART CONTRACT")
+ * AMBIENT AI LEDGER (v0.3 - "THE ZK SMART CONTRACT")
  * =================================================================
  * This is the "Smart Contract" node. It:
  * 1. Listens for new "TASK" messages and stores them.
@@ -182,7 +182,7 @@ async function processResult(resultMessage) {
 }
 
 const main = async () => {
-  console.log('Starting Ambient AI Ledger Node (v0.2 ZK Verifier)...');
+  console.log('Starting Ambient AI Ledger Node (v0.3 ZK Verifier)...');
   node = await createLibp2p({
     transports: [tcp()],
     streamMuxers: [mplex()],
