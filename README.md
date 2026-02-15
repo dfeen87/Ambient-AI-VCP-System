@@ -8,8 +8,8 @@ A production-ready implementation of a **decentralized compute network** that or
 - **Intelligent Orchestration**: Health-based task assignment with reputation scoring
 - **WASM Execution Engine**: Secure sandboxed computation with resource limits
 - **Zero-Knowledge Proofs**: Cryptographic verification of execution correctness (placeholder implementation)
-- **Federated Learning**: Privacy-preserving multi-node model training (planned for Phase 2)
-- **Token Incentives**: Reward system tied to Bitcoin Layer-2 (planned for Phase 2)
+- **Federated Learning**: Privacy-preserving multi-node model training with FedAvg and differential privacy
+- **Token Incentives**: Reward system tied to Bitcoin Layer-2 with proof commitments
 - **Energy Telemetry**: Verifiable sustainability metrics
 
 ## 🏗️ Architecture
@@ -38,10 +38,35 @@ A production-ready implementation of a **decentralized compute network** that or
    - Task assignment strategies: Weighted, Round-robin, Least-loaded, Latency-aware
    - Proof verification and reward distribution
 
-5. **CLI Tool** (`cli`)
+5. **Federated Learning** (`federated-learning`)
+   - FedAvg aggregation algorithm
+   - Differential privacy with configurable ε and δ
+   - Gradient clipping and noise injection
+   - Client-side model training interface
+
+6. **Bitcoin Layer-2** (`bitcoin-anchor`)
+   - Proof commitment via OP_RETURN transactions
+   - State peg mechanism for settlement
+   - Merkle root computation for batch commitments
+   - Transaction building and verification
+
+7. **REST API Server** (`api-server`)
+   - Node registration and management
+   - Task submission and tracking
+   - Proof verification endpoints
+   - OpenAPI/Swagger documentation
+   - Real-time cluster statistics
+
+8. **CLI Tool** (`cli`)
    - Start and manage nodes
    - Start mesh coordinators
    - Health monitoring
+
+9. **Web Dashboard** (`dashboard`)
+   - Real-time node monitoring
+   - Task management interface
+   - Health metrics visualization
+   - Interactive node registration
 
 ## 🚀 Quick Start
 
@@ -82,6 +107,43 @@ cargo run --bin ambient-vcp -- coordinator --cluster-id cluster-001 --strategy w
 
 # Use different assignment strategy
 cargo run --bin ambient-vcp -- coordinator --cluster-id cluster-002 --strategy latency-aware
+```
+
+### Running the API Server (Phase 2)
+
+```bash
+# Start the REST API server
+cargo run --bin api-server
+
+# Server starts on http://localhost:3000
+# Swagger UI: http://localhost:3000/swagger-ui
+# Health check: http://localhost:3000/api/v1/health
+```
+
+### Running the Multi-Node Demo (Phase 2)
+
+```bash
+# Run the complete demo
+./demo/run-demo.sh
+
+# This will:
+# 1. Start the API server (if not running)
+# 2. Register 3 nodes across different regions
+# 3. Submit federated learning task
+# 4. Submit ZK proof task
+# 5. Verify proofs
+# 6. Display cluster statistics
+```
+
+### Accessing the Dashboard (Phase 2)
+
+```bash
+# Open the web dashboard
+open dashboard/index.html
+
+# Or navigate to it in your browser
+# Configure API URL to http://localhost:3000
+# View real-time cluster metrics and manage nodes
 ```
 
 ### Health Check
@@ -161,7 +223,7 @@ RUST_LOG=info cargo test
 
 ## 🛣️ Roadmap
 
-### Phase 1 (Current) ✅
+### Phase 1 (Completed) ✅
 - ✅ Core infrastructure (ambient-node, wasm-engine, mesh-coordinator)
 - ✅ WASM execution with resource limits
 - ✅ Execution trace recording
@@ -169,13 +231,14 @@ RUST_LOG=info cargo test
 - ✅ CLI tool
 - ✅ Basic documentation
 
-### Phase 2 (Planned)
-- [ ] Real ZK proof generation (RISC Zero or Plonky2)
-- [ ] Federated learning implementation
-- [ ] Bitcoin Layer-2 integration
-- [ ] Multi-node demo application
-- [ ] Web dashboard
-- [ ] Kubernetes deployment
+### Phase 2 (Completed) ✅
+- ✅ Federated learning implementation (FedAvg + Differential Privacy)
+- ✅ Bitcoin Layer-2 integration (Commitment scheme + State peg)
+- ✅ Multi-node demo application
+- ✅ Web dashboard (Real-time monitoring)
+- ✅ REST API server (Axum with OpenAPI/Swagger)
+- ✅ Render.com deployment configuration
+- ⚠️ Real ZK proof generation (Placeholder - RISC Zero integration pending)
 
 ### Phase 3 (Future)
 - [ ] Byzantine consensus

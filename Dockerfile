@@ -1,4 +1,4 @@
-# Build stage
+# Multi-stage build for Ambient AI VCP API Server
 FROM rust:1.75 as builder
 
 WORKDIR /app
@@ -7,8 +7,8 @@ WORKDIR /app
 COPY Cargo.toml ./
 COPY crates ./crates
 
-# Build the project
-RUN cargo build --release
+# Build the API server
+RUN cargo build --release --bin api-server
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -20,8 +20,8 @@ RUN apt-get update && \
     apt-get install -y libssl3 ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy binary from builder
-COPY --from=builder /app/target/release/ambient-vcp /usr/local/bin/
+# Copy the API server binary from builder
+COPY --from=builder /app/target/release/api-server /app/api-server
 
 # Create non-root user
 RUN useradd -m -u 1000 ambient && \
@@ -29,4 +29,8 @@ RUN useradd -m -u 1000 ambient && \
 
 USER ambient
 
-ENTRYPOINT ["ambient-vcp"]
+# Expose port (Render.com uses PORT env var)
+EXPOSE 10000
+
+# Run the API server
+CMD ["/app/api-server"]

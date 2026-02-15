@@ -114,9 +114,116 @@ cargo run --bin ambient-vcp -- health
 cargo run --bin ambient-vcp -- info --id node-001
 ```
 
-## Kubernetes Deployment (Coming Soon)
+## Kubernetes Deployment
 
-Kubernetes manifests will be added in Phase 2.
+### Prerequisites
+- Kubernetes cluster (1.20+)
+- kubectl configured
+- Docker registry access
+
+### Create Kubernetes Manifests
+
+#### Deployment
+
+```yaml
+# k8s/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ambient-vcp-api
+  labels:
+    app: ambient-vcp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ambient-vcp
+  template:
+    metadata:
+      labels:
+        app: ambient-vcp
+    spec:
+      containers:
+      - name: api-server
+        image: your-registry/ambient-vcp:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: PORT
+          value: "3000"
+        - name: RUST_LOG
+          value: "info"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+```
+
+#### Service
+
+```yaml
+# k8s/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ambient-vcp-service
+spec:
+  selector:
+    app: ambient-vcp
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 3000
+  type: LoadBalancer
+```
+
+### Deploy to Kubernetes
+
+```bash
+# Build and push Docker image
+docker build -t your-registry/ambient-vcp:latest .
+docker push your-registry/ambient-vcp:latest
+
+# Apply manifests
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+
+# Check status
+kubectl get pods
+kubectl logs -f deployment/ambient-vcp-api
+```
+
+## Render.com Deployment
+
+### Steps
+
+1. Fork or clone this repository
+2. Go to [Render.com](https://render.com) and click "New +" → "Blueprint"
+3. Connect your GitHub repository
+4. Render will automatically detect `render.yaml`
+5. Click "Apply" to deploy
+
+The API will be available at: `https://your-app-name.onrender.com`
+
+Access points:
+- Health: `/api/v1/health`
+- Swagger UI: `/swagger-ui`
+- API Docs: `/api-docs/openapi.json`
 
 ## Environment Variables
 

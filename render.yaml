@@ -1,0 +1,17 @@
+# Render.com deployment configuration
+# See: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: ambient-ai-vcp-api
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: RUST_LOG
+        value: info
+    healthCheckPath: /api/v1/health

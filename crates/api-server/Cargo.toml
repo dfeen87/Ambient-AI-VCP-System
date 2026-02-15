@@ -1,0 +1,36 @@
+[package]
+name = "api-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Workspace dependencies
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Internal crates
+ambient-node = { path = "../ambient-node" }
+mesh-coordinator = { path = "../mesh-coordinator" }
+zk-prover = { path = "../zk-prover" }
+federated-learning = { path = "../federated-learning" }
+bitcoin-anchor = { path = "../bitcoin-anchor" }
+wasm-engine = { path = "../wasm-engine" }
+
+# Web framework
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# API utilities
+utoipa = { version = "4.2", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+
+# Additional utilities
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
