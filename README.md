@@ -62,6 +62,34 @@ A production-ready implementation of a **Verifiable Computation Protocol (VCP)**
    - Health metrics visualization
    - Interactive node registration
 
+## 📚 Language & Technology Stack
+
+This is the **v1.0 production implementation** built in **Rust** for performance, safety, and scalability.
+
+### Why Rust for v1.0?
+
+- **Performance**: Near-native execution speed for compute-intensive workloads
+- **Memory Safety**: Zero-cost abstractions with compile-time guarantees
+- **WASM Support**: First-class support via WasmEdge for secure sandboxed execution
+- **Concurrency**: Tokio async runtime for high-throughput distributed systems
+- **Production-Ready**: Strong type system and error handling for reliable deployments
+
+### v0.3-alpha Reference Implementation
+
+A **JavaScript/Node.js reference implementation** demonstrating the foundational "Proof-of-Compute" architecture is available in `/v0.3-reference/`. This implementation uses:
+
+- **libp2p** for decentralized P2P networking
+- **snarkjs** for zero-knowledge proof generation
+- **Circom** for ZK circuit definitions
+
+See [`/v0.3-reference/README.md`](./v0.3-reference/README.md) for details.
+
+### Language Decision
+
+For a comprehensive analysis of language choices, technology stack decisions, and the evolution from v0.3 to v1.0, see:
+
+📖 **[Language & Technology Decision Document](./docs/LANGUAGE_DECISION.md)**
+
 ## 🚀 Quick Start
 
 ### Prerequisites

@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# ZK-Proof generated files
+zk/
+*.ptau
+*.zkey
+*.r1cs
+*.sym
+*.wasm
+*.wtns
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
