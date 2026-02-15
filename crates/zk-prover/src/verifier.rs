@@ -15,7 +15,7 @@ impl ZKVerifier {
         // Deserialize the verification key
         let ark_vk =
             ArkVerifyingKey::<Bn254>::deserialize_compressed(&verification_key.key_data[..])
-                .expect("Failed to deserialize verification key");
+                .expect("Failed to deserialize verification key: ensure the key_data is valid and not corrupted");
 
         Self {
             verification_key: ark_vk,

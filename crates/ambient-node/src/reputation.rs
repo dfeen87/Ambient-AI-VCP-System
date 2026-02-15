@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 /// Reputation tracking for nodes
+///
+/// All fields are zero-initialized by default, representing a new node
+/// with no task history.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Reputation {
     pub completed_tasks: u64,
