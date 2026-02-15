@@ -10,9 +10,14 @@ use tracing::info;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+pub mod auth;
+pub mod db;
+pub mod error;
 pub mod models;
+pub mod rate_limit;
 pub mod state;
 
+use error::{ApiError, ApiResult};
 use models::*;
 use state::AppState;
 
@@ -29,6 +34,8 @@ use state::AppState;
         list_tasks,
         verify_proof,
         get_cluster_stats,
+        register_user,
+        login,
     ),
     components(schemas(
         HealthResponse,
@@ -41,6 +48,9 @@ use state::AppState;
         ProofVerificationResponse,
         ClusterStats,
         ApiError,
+        auth::RegisterRequest,
+        auth::LoginRequest,
+        auth::LoginResponse,
     ))
 )]
 struct ApiDoc;
@@ -74,7 +84,7 @@ async fn health_check() -> Json<HealthResponse> {
 async fn register_node(
     State(state): State<Arc<AppState>>,
     Json(registration): Json<NodeRegistration>,
-) -> Result<(StatusCode, Json<NodeInfo>), ApiError> {
+) -> ApiResult<(StatusCode, Json<NodeInfo>)> {
     // Validate input
     registration.validate()?;
 
@@ -116,7 +126,7 @@ async fn list_nodes(State(state): State<Arc<AppState>>) -> Json<Vec<NodeInfo>> {
 async fn get_node(
     State(state): State<Arc<AppState>>,
     Path(node_id): Path<String>,
-) -> Result<Json<NodeInfo>, ApiError> {
+) -> ApiResult<Json<NodeInfo>> {
     let node = state
         .get_node(&node_id)
         .await
@@ -138,7 +148,7 @@ async fn get_node(
 async fn submit_task(
     State(state): State<Arc<AppState>>,
     Json(task): Json<TaskSubmission>,
-) -> Result<(StatusCode, Json<TaskInfo>), ApiError> {
+) -> ApiResult<(StatusCode, Json<TaskInfo>)> {
     // Validate input
     task.validate()?;
 
@@ -164,7 +174,7 @@ async fn submit_task(
 async fn get_task(
     State(state): State<Arc<AppState>>,
     Path(task_id): Path<String>,
-) -> Result<Json<TaskInfo>, ApiError> {
+) -> ApiResult<Json<TaskInfo>> {
     let task = state
         .get_task(&task_id)
         .await
@@ -199,7 +209,7 @@ async fn list_tasks(State(state): State<Arc<AppState>>) -> Json<Vec<TaskInfo>> {
 async fn verify_proof(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ProofVerificationRequest>,
-) -> Result<Json<ProofVerificationResponse>, ApiError> {
+) -> ApiResult<Json<ProofVerificationResponse>> {
     info!("Verifying proof for task: {}", request.task_id);
 
     let response = state.verify_proof(request).await?;
@@ -220,17 +230,147 @@ async fn get_cluster_stats(State(state): State<Arc<AppState>>) -> Json<ClusterSt
     Json(stats)
 }
 
+/// Register a new user
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/register",
+    request_body = RegisterRequest,
+    responses(
+        (status = 201, description = "User registered successfully"),
+        (status = 400, description = "Invalid request", body = ApiError)
+    )
+)]
+async fn register_user(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<auth::RegisterRequest>,
+) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
+    // Validate request
+    request.validate()?;
+
+    info!("Registering user: {}", request.username);
+
+    // Hash the password
+    let password_hash = auth::hash_password(&request.password)?;
+
+    // Generate API key
+    let api_key = auth::generate_api_key();
+
+    // Insert user into database
+    let user_id = sqlx::query_scalar!(
+        r#"
+        INSERT INTO users (username, password_hash, api_key, role)
+        VALUES ($1, $2, $3, $4)
+        RETURNING user_id
+        "#,
+        request.username,
+        password_hash,
+        api_key,
+        "user"
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| {
+        if let sqlx::Error::Database(ref db_err) = e {
+            if db_err.constraint().is_some() {
+                return ApiError::conflict("Username already exists");
+            }
+        }
+        ApiError::from(e)
+    })?;
+
+    info!("User registered successfully: {} ({})", request.username, user_id);
+
+    Ok((StatusCode::CREATED, Json(serde_json::json!({
+        "user_id": user_id,
+        "username": request.username,
+        "api_key": api_key,
+        "message": "User registered successfully. Save your API key - it won't be shown again."
+    }))))
+}
+
+/// Login endpoint
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = LoginResponse),
+        (status = 401, description = "Invalid credentials", body = ApiError)
+    )
+)]
+async fn login(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<auth::LoginRequest>,
+) -> ApiResult<Json<auth::LoginResponse>> {
+    info!("Login attempt for user: {}", request.username);
+
+    // Get user from database
+    let user = sqlx::query!(
+        r#"
+        SELECT user_id, username, password_hash, role
+        FROM users
+        WHERE username = $1
+        "#,
+        request.username
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::unauthorized("Invalid username or password"))?;
+
+    // Verify password
+    let password_valid = auth::verify_password(&request.password, &user.password_hash)?;
+    if !password_valid {
+        return Err(ApiError::unauthorized("Invalid username or password"));
+    }
+
+    // Update last login
+    sqlx::query!(
+        "UPDATE users SET last_login = NOW() WHERE user_id = $1",
+        user.user_id
+    )
+    .execute(&state.db)
+    .await?;
+
+    // Get auth config from environment
+    let auth_config = auth::AuthConfig::from_env()?;
+
+    // Generate JWT token
+    let token = auth_config.generate_token(
+        user.user_id.to_string(),
+        user.username,
+        user.role,
+    )?;
+
+    info!("Login successful for user: {}", request.username);
+
+    Ok(Json(auth::LoginResponse {
+        access_token: token,
+        token_type: "Bearer".to_string(),
+        expires_in: auth_config.jwt_expiration_hours * 3600,
+    }))
+}
+
 /// Build the API router
 pub fn create_router(state: Arc<AppState>) -> Router {
-    // Create API routes
-    let api_routes = Router::new()
+    // Create public API routes (no authentication required)
+    let public_routes = Router::new()
         .route("/health", get(health_check))
+        .route("/auth/register", post(register_user))
+        .route("/auth/login", post(login));
+
+    // Create protected API routes (authentication required)
+    let protected_routes = Router::new()
         .route("/nodes", post(register_node).get(list_nodes))
         .route("/nodes/:node_id", get(get_node))
         .route("/tasks", post(submit_task).get(list_tasks))
         .route("/tasks/:task_id", get(get_task))
         .route("/proofs/verify", post(verify_proof))
         .route("/cluster/stats", get(get_cluster_stats));
+
+    // Combine routes
+    let api_routes = Router::new()
+        .merge(public_routes)
+        .merge(protected_routes);
 
     // Create main router with API prefix
     Router::new()

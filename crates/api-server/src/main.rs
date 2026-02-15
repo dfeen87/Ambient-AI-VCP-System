@@ -1,12 +1,29 @@
 use anyhow::Result;
-use api_server::{create_router, state::AppState};
+use api_server::{create_router, db, state::AppState};
 use std::sync::Arc;
 use tracing::{info, Level};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load environment variables from .env file if present
+    dotenvy::dotenv().ok();
+
     // Initialize tracing
     tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+
+    info!("Starting Ambient AI VCP API Server");
+    info!("Version: {}", env!("CARGO_PKG_VERSION"));
+
+    // Initialize database connection
+    let db_config = db::DatabaseConfig::from_env()?;
+    let pool = db::create_pool(&db_config).await?;
+
+    // Run database migrations
+    db::run_migrations(&pool).await?;
+
+    // Verify database connection
+    db::health_check(&pool).await?;
+    info!("Database connection established and verified");
 
     // Get port from environment or use default
     let port = std::env::var("PORT")
@@ -16,11 +33,8 @@ async fn main() -> Result<()> {
 
     let addr = format!("0.0.0.0:{}", port);
 
-    info!("Starting Ambient AI VCP API Server");
-    info!("Version: {}", env!("CARGO_PKG_VERSION"));
-
     // Create application state
-    let state = Arc::new(AppState::new());
+    let state = Arc::new(AppState::new(pool));
 
     // Create router
     let app = create_router(state);
