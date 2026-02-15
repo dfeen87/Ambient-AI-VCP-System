@@ -66,8 +66,30 @@ impl AuthConfig {
         let jwt_secret = std::env::var("JWT_SECRET")
             .map_err(|_| ApiError::internal_error("JWT_SECRET not configured"))?;
         
-        if jwt_secret == "your-jwt-secret-key-change-this-in-production" {
-            tracing::warn!("Using default JWT_SECRET - this is insecure for production!");
+        // Check if we're in production mode
+        let is_production = std::env::var("ENVIRONMENT")
+            .unwrap_or_else(|_| "development".to_string())
+            .to_lowercase() == "production";
+        
+        // In production, reject insecure default secrets
+        if is_production && (
+            jwt_secret == "your-jwt-secret-key-change-this-in-production" ||
+            jwt_secret.contains("dev") ||
+            jwt_secret.contains("local") ||
+            jwt_secret.contains("test") ||
+            jwt_secret.len() < 32
+        ) {
+            return Err(ApiError::internal_error(
+                "PRODUCTION ERROR: JWT_SECRET must be a secure random string (min 32 chars). Generate with: openssl rand -base64 32"
+            ));
+        }
+        
+        // In development, just warn
+        if !is_production && (
+            jwt_secret == "your-jwt-secret-key-change-this-in-production" ||
+            jwt_secret.len() < 32
+        ) {
+            tracing::warn!("Using weak JWT_SECRET - only acceptable for development. Generate a secure one with: openssl rand -base64 32");
         }
         
         let jwt_expiration_hours = std::env::var("JWT_EXPIRATION_HOURS")

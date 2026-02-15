@@ -163,7 +163,7 @@ pub async fn rate_limit_middleware(
     next: Next,
 ) -> Result<Response, ApiError> {
     // Extract IP address from request
-    let ip = extract_client_ip(&request);
+    let ip = extract_client_ip(&request)?;
     
     // Get rate limiter from extensions
     let rate_limiter = request
@@ -187,13 +187,14 @@ pub async fn rate_limit_middleware(
 }
 
 /// Extract client IP address from request
-fn extract_client_ip(request: &Request<Body>) -> IpAddr {
+/// Returns an error if IP cannot be determined
+fn extract_client_ip(request: &Request<Body>) -> Result<IpAddr, ApiError> {
     // Try to get IP from X-Forwarded-For header (for reverse proxies)
     if let Some(forwarded) = request.headers().get("x-forwarded-for") {
         if let Ok(forwarded_str) = forwarded.to_str() {
             if let Some(first_ip) = forwarded_str.split(',').next() {
                 if let Ok(ip) = first_ip.trim().parse() {
-                    return ip;
+                    return Ok(ip);
                 }
             }
         }
@@ -203,14 +204,15 @@ fn extract_client_ip(request: &Request<Body>) -> IpAddr {
     if let Some(real_ip) = request.headers().get("x-real-ip") {
         if let Ok(ip_str) = real_ip.to_str() {
             if let Ok(ip) = ip_str.parse() {
-                return ip;
+                return Ok(ip);
             }
         }
     }
     
-    // Fall back to a default IP if we can't determine the real one
-    // In production, this shouldn't happen with proper proxy configuration
-    IpAddr::from([127, 0, 0, 1])
+    // Unable to determine client IP - reject the request
+    Err(ApiError::bad_request(
+        "Unable to determine client IP address. Ensure proper proxy headers are configured."
+    ))
 }
 
 /// Start a background task to periodically cleanup old rate limiter buckets

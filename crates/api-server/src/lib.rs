@@ -1,6 +1,9 @@
 use axum::{
+    body::Body,
     extract::{Path, State},
-    http::StatusCode,
+    http::{Request, StatusCode},
+    middleware::{self, Next},
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
@@ -355,6 +358,21 @@ async fn login(
     }))
 }
 
+/// Authentication middleware
+/// Validates JWT token and adds auth config to request extensions
+async fn auth_middleware(
+    mut request: Request<Body>,
+    next: Next,
+) -> Result<Response, ApiError> {
+    // Get auth config from environment
+    let auth_config = auth::AuthConfig::from_env()?;
+    
+    // Add auth config to request extensions so AuthUser extractor can use it
+    request.extensions_mut().insert(auth_config);
+    
+    Ok(next.run(request).await)
+}
+
 /// Build the API router
 pub fn create_router(state: Arc<AppState>) -> Router {
     // Create public API routes (no authentication required)
@@ -370,7 +388,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/tasks", post(submit_task).get(list_tasks))
         .route("/tasks/:task_id", get(get_task))
         .route("/proofs/verify", post(verify_proof))
-        .route("/cluster/stats", get(get_cluster_stats));
+        .route("/cluster/stats", get(get_cluster_stats))
+        .layer(middleware::from_fn(auth_middleware));
 
     // Combine routes
     let api_routes = Router::new()
