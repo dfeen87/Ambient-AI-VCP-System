@@ -164,7 +164,7 @@ mod tests {
         node.ingest_telemetry(telemetry);
         let score = node.health_score();
 
-        assert!(score >= 0.0 && score <= 1.0);
+        assert!((0.0..=1.0).contains(&score));
     }
 
     #[test]
@@ -172,8 +172,10 @@ mod tests {
         let node_id = NodeId::new("node-001", "us-west", "gateway");
         let mut node = AmbientNode::new(node_id, SafetyPolicy::default());
 
-        let mut telemetry = TelemetrySample::default();
-        telemetry.temperature_c = 90.0; // Above threshold
+        let telemetry = TelemetrySample {
+            temperature_c: 90.0, // Above threshold
+            ..Default::default()
+        };
 
         node.ingest_telemetry(telemetry);
         assert!(node.is_safe_mode());

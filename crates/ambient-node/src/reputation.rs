@@ -1,23 +1,15 @@
 use serde::{Deserialize, Serialize};
 
 /// Reputation tracking for nodes
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// All fields are zero-initialized by default, representing a new node
+/// with no task history.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Reputation {
     pub completed_tasks: u64,
     pub failed_tasks: u64,
     pub disputes: u64,
     pub total_compute_time_ms: u64,
-}
-
-impl Default for Reputation {
-    fn default() -> Self {
-        Self {
-            completed_tasks: 0,
-            failed_tasks: 0,
-            disputes: 0,
-            total_compute_time_ms: 0,
-        }
-    }
 }
 
 impl Reputation {
@@ -32,7 +24,7 @@ impl Reputation {
         let success_rate = self.completed_tasks as f64 / total_tasks as f64;
         let dispute_penalty = (self.disputes as f64 * 0.05).min(0.3);
 
-        (success_rate - dispute_penalty).max(0.0).min(1.0)
+        (success_rate - dispute_penalty).clamp(0.0, 1.0)
     }
 
     /// Record a successful task completion

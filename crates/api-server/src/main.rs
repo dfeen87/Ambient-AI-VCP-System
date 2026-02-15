@@ -2,7 +2,6 @@ use anyhow::Result;
 use api_server::{create_router, state::AppState};
 use std::sync::Arc;
 use tracing::{info, Level};
-use tracing_subscriber;
 
 #[tokio::main]
 async fn main() -> Result<()> {

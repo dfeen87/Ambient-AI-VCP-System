@@ -34,7 +34,7 @@ impl TelemetrySample {
     /// Calculate bandwidth score (0.0 - 1.0)
     /// Assumes max bandwidth of 1000 Mbps
     pub fn bandwidth_score(&self) -> f64 {
-        (self.bandwidth_mbps / 1000.0).min(1.0).max(0.0)
+        (self.bandwidth_mbps / 1000.0).clamp(0.0, 1.0)
     }
 
     /// Calculate latency score (0.0 - 1.0)
@@ -44,7 +44,7 @@ impl TelemetrySample {
         if self.avg_latency_ms <= 0.0 {
             return 1.0;
         }
-        (1.0 - (self.avg_latency_ms / 100.0)).min(1.0).max(0.0)
+        (1.0 - (self.avg_latency_ms / 100.0)).clamp(0.0, 1.0)
     }
 
     /// Calculate compute efficiency score (0.0 - 1.0)
@@ -53,9 +53,7 @@ impl TelemetrySample {
         let cpu_available = 100.0 - self.cpu_usage_percent;
         let memory_available = 100.0 - self.memory_usage_percent;
 
-        ((cpu_available + memory_available) / 200.0)
-            .min(1.0)
-            .max(0.0)
+        ((cpu_available + memory_available) / 200.0).clamp(0.0, 1.0)
     }
 
     /// Check if telemetry indicates healthy state
@@ -72,51 +70,77 @@ mod tests {
 
     #[test]
     fn test_bandwidth_score() {
-        let mut sample = TelemetrySample::default();
-        sample.bandwidth_mbps = 500.0;
+        let sample = TelemetrySample {
+            bandwidth_mbps: 500.0,
+            ..Default::default()
+        };
         assert_eq!(sample.bandwidth_score(), 0.5);
 
-        sample.bandwidth_mbps = 1000.0;
+        let sample = TelemetrySample {
+            bandwidth_mbps: 1000.0,
+            ..Default::default()
+        };
         assert_eq!(sample.bandwidth_score(), 1.0);
 
-        sample.bandwidth_mbps = 2000.0;
+        let sample = TelemetrySample {
+            bandwidth_mbps: 2000.0,
+            ..Default::default()
+        };
         assert_eq!(sample.bandwidth_score(), 1.0); // Capped at 1.0
     }
 
     #[test]
     fn test_latency_score() {
-        let mut sample = TelemetrySample::default();
-        sample.avg_latency_ms = 50.0;
+        let sample = TelemetrySample {
+            avg_latency_ms: 50.0,
+            ..Default::default()
+        };
         assert_eq!(sample.latency_score(), 0.5);
 
-        sample.avg_latency_ms = 10.0;
+        let sample = TelemetrySample {
+            avg_latency_ms: 10.0,
+            ..Default::default()
+        };
         assert_eq!(sample.latency_score(), 0.9);
 
-        sample.avg_latency_ms = 0.0;
+        let sample = TelemetrySample {
+            avg_latency_ms: 0.0,
+            ..Default::default()
+        };
         assert_eq!(sample.latency_score(), 1.0);
     }
 
     #[test]
     fn test_compute_score() {
-        let mut sample = TelemetrySample::default();
-        sample.cpu_usage_percent = 50.0;
-        sample.memory_usage_percent = 50.0;
+        let sample = TelemetrySample {
+            cpu_usage_percent: 50.0,
+            memory_usage_percent: 50.0,
+            ..Default::default()
+        };
         assert_eq!(sample.compute_score(), 0.5);
 
-        sample.cpu_usage_percent = 0.0;
-        sample.memory_usage_percent = 0.0;
+        let sample = TelemetrySample {
+            cpu_usage_percent: 0.0,
+            memory_usage_percent: 0.0,
+            ..Default::default()
+        };
         assert_eq!(sample.compute_score(), 1.0);
     }
 
     #[test]
     fn test_is_healthy() {
-        let mut sample = TelemetrySample::default();
-        sample.temperature_c = 70.0;
-        sample.cpu_usage_percent = 60.0;
-        sample.memory_usage_percent = 70.0;
+        let sample = TelemetrySample {
+            temperature_c: 70.0,
+            cpu_usage_percent: 60.0,
+            memory_usage_percent: 70.0,
+            ..Default::default()
+        };
         assert!(sample.is_healthy());
 
-        sample.temperature_c = 90.0;
+        let sample = TelemetrySample {
+            temperature_c: 90.0,
+            ..Default::default()
+        };
         assert!(!sample.is_healthy());
     }
 }

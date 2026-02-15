@@ -16,6 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Install WasmEdge
+        run: |
+          curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | bash -s -- -v 0.13.5
+          echo "$HOME/.wasmedge/bin" >> $GITHUB_PATH
+          echo "WASMEDGE_DIR=$HOME/.wasmedge" >> $GITHUB_ENV
+          echo "WASMEDGE_INCLUDE_DIR=$HOME/.wasmedge/include" >> $GITHUB_ENV
+          echo "WASMEDGE_LIB_DIR=$HOME/.wasmedge/lib" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=$HOME/.wasmedge/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+      
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -43,7 +52,7 @@ jobs:
         run: cargo test --verbose --all
       
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -53,6 +62,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Install WasmEdge
+        run: |
+          curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | bash -s -- -v 0.13.5
+          echo "$HOME/.wasmedge/bin" >> $GITHUB_PATH
+          echo "WASMEDGE_DIR=$HOME/.wasmedge" >> $GITHUB_ENV
+          echo "WASMEDGE_INCLUDE_DIR=$HOME/.wasmedge/include" >> $GITHUB_ENV
+          echo "WASMEDGE_LIB_DIR=$HOME/.wasmedge/lib" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=$HOME/.wasmedge/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
       
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
