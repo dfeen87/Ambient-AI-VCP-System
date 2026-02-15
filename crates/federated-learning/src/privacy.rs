@@ -134,12 +134,19 @@ mod tests {
         let value = 100.0;
         let sensitivity = 1.0;
         
-        let noisy_value = mechanism.add_gaussian_noise(value, sensitivity);
+        // Test multiple samples to check statistical properties
+        let mut differences = Vec::new();
+        for _ in 0..100 {
+            let noisy_value = mechanism.add_gaussian_noise(value, sensitivity);
+            differences.push((noisy_value - value).abs());
+        }
         
-        // Noisy value should be different from original
-        assert_ne!(noisy_value, value);
+        // At least some values should have noise
+        assert!(differences.iter().any(|&d| d > 0.1));
         
-        // But should be in reasonable range (with high probability)
-        assert!((noisy_value - value).abs() < 10.0);
+        // Most values should be within reasonable range (99.7% within 3 sigma)
+        // sigma ≈ 4.85, so 3*sigma ≈ 14.5
+        let within_range = differences.iter().filter(|&&d| d < 15.0).count();
+        assert!(within_range >= 95, "Expected at least 95/100 samples within 3 sigma, got {}", within_range);
     }
 }
