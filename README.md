@@ -20,7 +20,11 @@ Think of this app as a **marketplace for compute power**:
 - The system finds appropriate nodes, runs the work, and tracks results.
 - It can also verify that work was executed correctly using cryptographic proofs.
 
-In simple terms: one side provides machines, the other side submits jobs, and this app matches them, runs the work, and shows results in one dashboard.
+In plain terms: this application is a control center for distributed AI computing. Through a single dashboard, you can send tasks to multiple machines, run them in parallel, and watch the entire cluster update in real time.
+
+What’s especially powerful is that the system is model-agnostic — it doesn’t care whether a task runs on a GPU node, a CPU worker, a proof generator, or even multiple AI models working together. If a workflow requires several components or agents, the platform can orchestrate them across the cluster automatically.
+
+It’s designed to make complex compute workflows feel effortless — from launching jobs to monitoring performance and managing results — all through one unified interface.
 
 ## 🚀 Live Demo
 
@@ -187,6 +191,7 @@ Tip: To quickly verify the public demo is reachable, run:
 - ✅ **Authorization**: Users can only manage their own nodes
 - ✅ **Heartbeat Mechanism**: Track node availability and detect offline nodes
 - ✅ **Soft Delete**: Maintain audit trail when nodes are deregistered
+- ℹ️ **Current Visibility Model**: Node/task list endpoints are authenticated (JWT required) and visible to authenticated users; node ownership controls mutation (delete/heartbeat)
 
 **Endpoints:**
 - `GET /api/v1/health` - Health check ✅
@@ -391,6 +396,7 @@ cargo test --test integration_test
 - ✅ **Authorization**: Users can only manage their own nodes
 - ✅ **Soft Delete**: Nodes can be deregistered with audit trail (deleted_at timestamp)
 - ✅ **Heartbeat Tracking**: Detect stale/offline nodes via last_heartbeat timestamp
+- ℹ️ **Read Visibility Emphasis**: `GET /nodes` and `GET /tasks` are authenticated endpoints and currently return shared authenticated views; ownership checks apply to node management actions
 
 **Security Best Practices:**
 - ✅ Parameterized SQL queries prevent injection attacks
