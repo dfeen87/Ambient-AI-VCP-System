@@ -20,6 +20,37 @@ A **production-ready** implementation of a **Verifiable Computation Protocol (VC
 
 ---
 
+## 🎯 Quick Concept Overview
+
+**New to the system?** Here's what you need to know:
+
+**The System is a Two-Sided Marketplace:**
+- **Node Operators** (Supply) = People who provide computing power (you register your device)
+- **Task Submitters** (Demand) = People who need computing power (developers, researchers, businesses)
+- **The System** = Matches tasks to nodes, orchestrates execution, returns results
+
+**Nodes** = Devices that join the network to contribute computing power (your laptop, server, etc.)
+  - **4 Node Types**: Compute (run tasks), Gateway (route traffic), Storage (store data), Validator (verify proofs)
+  - 👉 [Learn more about node types →](./docs/NODES_AND_TASKS_GUIDE.md#node-types-explained)
+
+**Tasks** = Work submitted to the network for execution (train a model, run a computation, etc.)
+  - **4 Task Types**: Federated Learning, ZK Proof, WASM Execution, General Computation
+  - **Who creates tasks?** App developers, data scientists, researchers, businesses - anyone who needs computation
+  - 👉 [Learn more about task types →](./docs/NODES_AND_TASKS_GUIDE.md#task-types-explained)
+  - 👉 [Who creates tasks and why? →](./docs/WHO_CREATES_TASKS.md)
+
+**The Dashboard** (https://ambient-ai-vcp-system.onrender.com) lets you:
+  - ✅ Register your device as a node
+  - ✅ View all registered nodes and their health
+  - ✅ Monitor submitted tasks and their status
+  - ✅ See real-time cluster statistics
+
+📖 **For complete guides:**
+- [Understanding Nodes & Tasks](./docs/NODES_AND_TASKS_GUIDE.md) - What are nodes and tasks?
+- [Who Creates Tasks?](./docs/WHO_CREATES_TASKS.md) - The demand side explained
+
+---
+
 ## 🌟 Key Features
 
 ### Core Capabilities
@@ -592,6 +623,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## ⚡ Quick Links
 
 - [**What You Get By Cloning This Repo**](./docs/USER_BENEFITS.md) ⭐ **NEW**
+- [**Understanding Nodes & Tasks**](./docs/NODES_AND_TASKS_GUIDE.md) 📚 **NEW** - What are node types & tasks?
 - [Getting Started Guide](./GETTING_STARTED.md)
 - [API Documentation (Swagger)](http://localhost:3000/swagger-ui)
 - [Robustness Analysis](./ROBUSTNESS_ANALYSIS.md)
