@@ -240,42 +240,43 @@
         }
 
         .swagger-ui .opblock-tag {
-            background: var(--surface) !important;
-            border: 1px solid var(--border) !important;
-            border-radius: 8px !important;
-            margin-bottom: 16px !important;
+            background: transparent !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+            padding: 12px 0 !important;
+            border-bottom: 1px solid var(--border) !important;
         }
 
         .swagger-ui .opblock-tag:hover {
-            border-color: var(--border-hover) !important;
-            background: var(--surface-2) !important;
+            background: transparent !important;
+        }
+
+        .swagger-ui .opblock-section {
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            box-shadow: none !important;
         }
 
         .swagger-ui .opblock {
-            background: var(--surface) !important;
-            border: 1px solid var(--border) !important;
-            border-radius: 8px !important;
-            margin-bottom: 12px !important;
+            background: transparent !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            border-bottom: 1px solid var(--border) !important;
         }
 
-        .swagger-ui .opblock.opblock-post {
-            border-color: rgba(73, 204, 144, 0.2) !important;
-            background: rgba(73, 204, 144, 0.05) !important;
-        }
-
-        .swagger-ui .opblock.opblock-get {
-            border-color: rgba(97, 175, 254, 0.2) !important;
-            background: rgba(97, 175, 254, 0.05) !important;
-        }
-
-        .swagger-ui .opblock.opblock-put {
-            border-color: rgba(252, 161, 48, 0.2) !important;
-            background: rgba(252, 161, 48, 0.05) !important;
-        }
-
-        .swagger-ui .opblock.opblock-delete {
-            border-color: rgba(249, 62, 62, 0.2) !important;
-            background: rgba(249, 62, 62, 0.05) !important;
+        .swagger-ui .opblock.opblock-post,
+        .swagger-ui .opblock.opblock-get,
+        .swagger-ui .opblock.opblock-put,
+        .swagger-ui .opblock.opblock-delete,
+        .swagger-ui .opblock.opblock-patch,
+        .swagger-ui .opblock.opblock-head,
+        .swagger-ui .opblock.opblock-options {
+            background: transparent !important;
+            border-color: var(--border) !important;
         }
 
         .swagger-ui .opblock-summary-method {
@@ -291,6 +292,7 @@
 
         .swagger-ui .opblock-summary-description {
             color: var(--text-muted) !important;
+            margin-left: auto !important;
         }
 
 
@@ -340,6 +342,47 @@
             align-items: center !important;
         }
 
+        .swagger-ui .opblock .opblock-summary {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            padding: 8px 4px !important;
+            border: 0 !important;
+        }
+
+        .swagger-ui .opblock .opblock-summary:hover {
+            background: rgba(110, 118, 129, 0.12) !important;
+        }
+
+        .swagger-ui .opblock .opblock-summary:focus-within {
+            background: rgba(110, 118, 129, 0.16) !important;
+        }
+
+        .swagger-ui .opblock-summary-control {
+            display: flex !important;
+            align-items: center !important;
+            width: 100% !important;
+            gap: 10px !important;
+            min-height: 34px !important;
+            padding: 0 !important;
+        }
+
+        .swagger-ui .opblock-summary-path {
+            margin: 0 !important;
+            flex: 0 1 auto !important;
+        }
+
+        .swagger-ui .opblock-summary-description-wrapper {
+            flex: 1 1 auto !important;
+            min-width: 120px !important;
+        }
+
+        .swagger-ui .opblock .opblock-body {
+            padding: 0 4px 12px 4px !important;
+            border: 0 !important;
+            background: transparent !important;
+        }
+
         .swagger-ui .opblock-summary-control:focus,
         .swagger-ui button:focus,
         .swagger-ui input:focus,
@@ -379,8 +422,12 @@
         }
 
         .swagger-ui .opblock-summary-method {
-            min-width: 72px;
+            min-width: 64px;
             justify-content: center;
+            font-size: 11px !important;
+            letter-spacing: 0.02em;
+            padding: 4px 8px !important;
+            align-self: center;
         }
 
         .swagger-ui .copy-to-clipboard,
@@ -422,7 +469,7 @@
         .swagger-ui .scheme-container {
             background: var(--surface) !important;
             border: 1px solid var(--border) !important;
-            border-radius: 8px !important;
+            border-radius: 6px !important;
             padding: 16px !important;
         }
 
@@ -531,16 +578,8 @@
         }
 
         .swagger-ui .opblock-tag {
-            padding: 12px 16px !important;
-            margin: 0 0 12px 0 !important;
-        }
-
-        .swagger-ui .opblock .opblock-summary {
-            padding: 10px 12px !important;
-        }
-
-        .swagger-ui .opblock .opblock-body {
-            padding: 0 12px 12px 12px !important;
+            padding: 12px 0 !important;
+            margin: 0 !important;
         }
 
         .swagger-ui .info .base-url {
@@ -577,12 +616,12 @@
             }
 
             .swagger-ui .opblock-tag {
-                padding: 10px 12px !important;
+                padding: 10px 0 !important;
                 margin-bottom: 10px !important;
             }
 
             .swagger-ui .opblock {
-                margin-bottom: 10px !important;
+                margin-bottom: 0 !important;
             }
 
             .swagger-ui .opblock-summary-path {
@@ -591,6 +630,7 @@
 
             .swagger-ui .opblock-summary {
                 gap: 8px;
+                padding: 8px 0 !important;
             }
 
             .swagger-ui .filter-container input[type=text] {
