@@ -1,7 +1,7 @@
 /// Application state with PostgreSQL persistence
 ///
 /// This module provides CRUD operations for nodes and tasks using a PostgreSQL database.
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -168,7 +168,7 @@ impl AppState {
     }
 
     /// Submit a task to the database
-    pub async fn submit_task(&self, task: TaskSubmission) -> ApiResult<TaskInfo> {
+    pub async fn submit_task(&self, task: TaskSubmission, creator_id: Uuid) -> ApiResult<TaskInfo> {
         let task_id = Uuid::new_v4();
         let now = chrono::Utc::now();
 
@@ -180,9 +180,9 @@ impl AppState {
             r#"
             INSERT INTO tasks (
                 task_id, task_type, status, wasm_module, inputs,
-                min_nodes, max_execution_time_sec, require_gpu, require_proof
+                min_nodes, max_execution_time_sec, require_gpu, require_proof, creator_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             "#,
         )
         .bind(task_id)
@@ -194,6 +194,7 @@ impl AppState {
         .bind(task.requirements.max_execution_time_sec as i64)
         .bind(task.requirements.require_gpu)
         .bind(task.requirements.require_proof)
+        .bind(creator_id)
         .execute(&self.db)
         .await?;
 
@@ -382,7 +383,71 @@ impl AppState {
     }
 
     /// Get a specific task from the database
-    pub async fn get_task(&self, task_id: &str) -> Option<TaskInfo> {
+    pub async fn get_task(&self, task_id: &str, requester_id: Uuid) -> Option<TaskInfo> {
+        let task_uuid = match Uuid::parse_str(task_id) {
+            Ok(uuid) => uuid,
+            Err(_) => return None,
+        };
+
+        let result = sqlx::query(
+            r#"
+            SELECT 
+                t.task_id, t.task_type, t.status, t.result, t.proof_id,
+                t.created_at, t.updated_at,
+                COALESCE(
+                    (
+                        SELECT ARRAY_AGG(ta.node_id)
+                        FROM task_assignments ta
+                        WHERE ta.task_id = t.task_id
+                    ),
+                    ARRAY[]::VARCHAR[]
+                ) as assigned_nodes
+            FROM tasks t
+            WHERE t.task_id = $1
+              AND t.creator_id = $2
+            "#,
+        )
+        .bind(task_uuid)
+        .bind(requester_id)
+        .fetch_optional(&self.db)
+        .await;
+
+        match result {
+            Ok(Some(row)) => {
+                let task_id_uuid: Uuid = row.get("task_id");
+                let status_text: String = row.get("status");
+                if let Err(e) = self
+                    .notify_if_task_completed(task_id_uuid, &status_text)
+                    .await
+                {
+                    tracing::warn!("Failed to send completion email: {:?}", e);
+                }
+
+                Some(TaskInfo {
+                    task_id: task_id_uuid.to_string(),
+                    task_type: row.get("task_type"),
+                    status: parse_task_status(&status_text),
+                    assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
+                    created_at: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                        .to_rfc3339(),
+                    updated_at: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
+                        .to_rfc3339(),
+                    result: row.try_get("result").ok(),
+                    proof_id: row.try_get("proof_id").ok(),
+                })
+            }
+            Ok(None) => None,
+            Err(e) => {
+                tracing::error!("Failed to get task {}: {:?}", task_id, e);
+                None
+            }
+        }
+    }
+
+    /// Get a specific task without ownership filtering (admin access)
+    pub async fn get_task_unscoped(&self, task_id: &str) -> Option<TaskInfo> {
         let task_uuid = match Uuid::parse_str(task_id) {
             Ok(uuid) => uuid,
             Err(_) => return None,
@@ -410,20 +475,31 @@ impl AppState {
         .await;
 
         match result {
-            Ok(Some(row)) => Some(TaskInfo {
-                task_id: row.get::<Uuid, _>("task_id").to_string(),
-                task_type: row.get("task_type"),
-                status: parse_task_status(&row.get::<String, _>("status")),
-                assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
-                created_at: row
-                    .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-                    .to_rfc3339(),
-                updated_at: row
-                    .get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
-                    .to_rfc3339(),
-                result: row.try_get("result").ok(),
-                proof_id: row.try_get("proof_id").ok(),
-            }),
+            Ok(Some(row)) => {
+                let task_id_uuid: Uuid = row.get("task_id");
+                let status_text: String = row.get("status");
+                if let Err(e) = self
+                    .notify_if_task_completed(task_id_uuid, &status_text)
+                    .await
+                {
+                    tracing::warn!("Failed to send completion email: {:?}", e);
+                }
+
+                Some(TaskInfo {
+                    task_id: task_id_uuid.to_string(),
+                    task_type: row.get("task_type"),
+                    status: parse_task_status(&status_text),
+                    assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
+                    created_at: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                        .to_rfc3339(),
+                    updated_at: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
+                        .to_rfc3339(),
+                    result: row.try_get("result").ok(),
+                    proof_id: row.try_get("proof_id").ok(),
+                })
+            }
             Ok(None) => None,
             Err(e) => {
                 tracing::error!("Failed to get task {}: {:?}", task_id, e);
@@ -432,8 +508,8 @@ impl AppState {
         }
     }
 
-    /// List all tasks from the database
-    pub async fn list_tasks(&self) -> Vec<TaskInfo> {
+    /// List all tasks from the database for a specific user
+    pub async fn list_tasks(&self, requester_id: Uuid) -> Vec<TaskInfo> {
         let result = sqlx::query(
             r#"
             SELECT 
@@ -448,13 +524,15 @@ impl AppState {
                     ARRAY[]::VARCHAR[]
                 ) as assigned_nodes
             FROM tasks t
+            WHERE t.creator_id = $1
             ORDER BY t.created_at DESC
             "#,
         )
+        .bind(requester_id)
         .fetch_all(&self.db)
         .await;
 
-        match result {
+        let tasks: Vec<TaskInfo> = match result {
             Ok(rows) => rows
                 .into_iter()
                 .map(|row| TaskInfo {
@@ -476,7 +554,190 @@ impl AppState {
                 tracing::error!("Failed to list tasks: {:?}", e);
                 vec![]
             }
+        };
+
+        for task in &tasks {
+            if task.status == TaskStatus::Completed {
+                if let Ok(task_uuid) = Uuid::parse_str(&task.task_id) {
+                    if let Err(e) = self.notify_if_task_completed(task_uuid, "completed").await {
+                        tracing::warn!("Failed to send completion email: {:?}", e);
+                    }
+                }
+            }
         }
+
+        tasks
+    }
+
+    /// List all tasks without ownership filtering (admin access)
+    pub async fn list_tasks_unscoped(&self) -> Vec<TaskInfo> {
+        let result = sqlx::query(
+            r#"
+            SELECT 
+                t.task_id, t.task_type, t.status, t.result, t.proof_id,
+                t.created_at, t.updated_at,
+                COALESCE(
+                    (
+                        SELECT ARRAY_AGG(ta.node_id)
+                        FROM task_assignments ta
+                        WHERE ta.task_id = t.task_id
+                    ),
+                    ARRAY[]::VARCHAR[]
+                ) as assigned_nodes
+            FROM tasks t
+            ORDER BY t.created_at DESC
+            "#,
+        )
+        .fetch_all(&self.db)
+        .await;
+
+        let tasks: Vec<TaskInfo> = match result {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|row| TaskInfo {
+                    task_id: row.get::<Uuid, _>("task_id").to_string(),
+                    task_type: row.get("task_type"),
+                    status: parse_task_status(&row.get::<String, _>("status")),
+                    assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
+                    created_at: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                        .to_rfc3339(),
+                    updated_at: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
+                        .to_rfc3339(),
+                    result: row.try_get("result").ok(),
+                    proof_id: row.try_get("proof_id").ok(),
+                })
+                .collect(),
+            Err(e) => {
+                tracing::error!("Failed to list tasks: {:?}", e);
+                vec![]
+            }
+        };
+
+        for task in &tasks {
+            if task.status == TaskStatus::Completed {
+                if let Ok(task_uuid) = Uuid::parse_str(&task.task_id) {
+                    if let Err(e) = self.notify_if_task_completed(task_uuid, "completed").await {
+                        tracing::warn!("Failed to send completion email: {:?}", e);
+                    }
+                }
+            }
+        }
+
+        tasks
+    }
+
+    async fn notify_if_task_completed(&self, task_id: Uuid, status: &str) -> ApiResult<()> {
+        if status != "completed" {
+            return Ok(());
+        }
+
+        let row = sqlx::query(
+            r#"
+            SELECT t.result, u.email
+            FROM tasks t
+            LEFT JOIN users u ON u.user_id = t.creator_id
+            WHERE t.task_id = $1
+              AND t.status = 'completed'
+              AND t.completion_email_sent_at IS NULL
+            "#,
+        )
+        .bind(task_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        let Some(row) = row else {
+            return Ok(());
+        };
+
+        let email = row.try_get::<Option<String>, _>("email").ok().flatten();
+        let Some(email) = email.filter(|v| !v.trim().is_empty()) else {
+            return Ok(());
+        };
+
+        let result_payload = row
+            .try_get::<Option<serde_json::Value>, _>("result")
+            .ok()
+            .flatten()
+            .unwrap_or(serde_json::json!({"message": "Task completed"}));
+
+        self.send_completion_email(&email, task_id, &result_payload)
+            .await?;
+
+        sqlx::query(
+            r#"
+            UPDATE tasks
+            SET completion_email_sent_at = NOW()
+            WHERE task_id = $1
+            "#,
+        )
+        .bind(task_id)
+        .execute(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn send_completion_email(
+        &self,
+        recipient: &str,
+        task_id: Uuid,
+        result: &serde_json::Value,
+    ) -> ApiResult<()> {
+        use tokio::io::AsyncWriteExt;
+        use tokio::process::Command;
+
+        let sender = std::env::var("EMAIL_FROM")
+            .map_err(|_| ApiError::internal_error("EMAIL_FROM not configured"))?;
+        let subject = format!("Task Completed: {task_id}");
+        let body = format!(
+            "Your task {task_id} has completed.
+
+Result:
+{}",
+            serde_json::to_string_pretty(result)
+                .unwrap_or_else(|_| "<failed to serialize task result>".to_string())
+        );
+
+        let message = format!(
+            "From: {sender}
+To: {recipient}
+Subject: {subject}
+Content-Type: text/plain; charset=\"utf-8\"
+
+{body}
+"
+        );
+
+        let mut child = Command::new("sendmail")
+            .arg("-t")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|_| ApiError::internal_error("sendmail command is not available"))?;
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin
+                .write_all(message.as_bytes())
+                .await
+                .map_err(|_| ApiError::internal_error("Failed writing message to sendmail"))?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|_| ApiError::internal_error("Failed waiting for sendmail completion"))?;
+
+        if !output.status.success() {
+            return Err(ApiError::internal_error(format!(
+                "sendmail failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+
+        Ok(())
     }
 
     /// Verify a ZK proof using actual cryptographic verification

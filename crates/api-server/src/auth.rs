@@ -287,6 +287,8 @@ pub struct RegisterRequest {
     pub username: String,
     /// Password (minimum 8 characters)
     pub password: String,
+    /// Optional email address for task completion notifications
+    pub email: Option<String>,
 }
 
 impl RegisterRequest {
@@ -314,6 +316,25 @@ impl RegisterRequest {
             return Err(ApiError::validation_error(
                 "Password must be at least 8 characters",
             ));
+        }
+
+        if let Some(email) = &self.email {
+            let trimmed = email.trim();
+            if trimmed.is_empty() {
+                return Err(ApiError::validation_error(
+                    "Email cannot be empty when provided",
+                ));
+            }
+
+            if trimmed.len() > 255 {
+                return Err(ApiError::validation_error(
+                    "Email cannot exceed 255 characters",
+                ));
+            }
+
+            if !trimmed.contains('@') {
+                return Err(ApiError::validation_error("Email must be a valid address"));
+            }
         }
 
         Ok(())

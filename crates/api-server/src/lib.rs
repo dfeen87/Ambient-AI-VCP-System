@@ -299,13 +299,17 @@ async fn update_heartbeat(
 )]
 async fn submit_task(
     State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
     Json(task): Json<TaskSubmission>,
 ) -> ApiResult<(StatusCode, Json<TaskInfo>)> {
     task.validate()?;
 
     info!("Submitting task: {}", task.task_type);
 
-    let task_info = state.submit_task(task).await?;
+    let creator_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+
+    let task_info = state.submit_task(task, creator_id).await?;
 
     Ok((StatusCode::CREATED, Json(task_info)))
 }
@@ -324,12 +328,17 @@ async fn submit_task(
 )]
 async fn get_task(
     State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
     Path(task_id): Path<String>,
 ) -> ApiResult<Json<TaskInfo>> {
-    let task = state
-        .get_task(&task_id)
-        .await
-        .ok_or_else(|| ApiError::not_found(format!("Task {} not found", task_id)))?;
+    let task = if auth_user.role == "admin" {
+        state.get_task_unscoped(&task_id).await
+    } else {
+        let requester_id = Uuid::parse_str(&auth_user.user_id)
+            .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+        state.get_task(&task_id, requester_id).await
+    }
+    .ok_or_else(|| ApiError::not_found(format!("Task {} not found", task_id)))?;
 
     Ok(Json(task))
 }
@@ -342,9 +351,19 @@ async fn get_task(
         (status = 200, description = "List of tasks", body = Vec<TaskInfo>)
     )
 )]
-async fn list_tasks(State(state): State<Arc<AppState>>) -> Json<Vec<TaskInfo>> {
-    let tasks = state.list_tasks().await;
-    Json(tasks)
+async fn list_tasks(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+) -> ApiResult<Json<Vec<TaskInfo>>> {
+    let tasks = if auth_user.role == "admin" {
+        state.list_tasks_unscoped().await
+    } else {
+        let requester_id = Uuid::parse_str(&auth_user.user_id)
+            .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+        state.list_tasks(requester_id).await
+    };
+
+    Ok(Json(tasks))
 }
 
 /// Verify a ZK proof
@@ -425,14 +444,15 @@ async fn register_user(
 
     let user_id: Uuid = sqlx::query_scalar(
         r#"
-        INSERT INTO users (username, password_hash, role)
-        VALUES ($1, $2, $3)
+        INSERT INTO users (username, password_hash, role, email)
+        VALUES ($1, $2, $3, $4)
         RETURNING user_id
         "#,
     )
     .bind(&request.username)
     .bind(&password_hash)
     .bind("user")
+    .bind(request.email.as_deref())
     .fetch_one(&state.db)
     .await
     .map_err(|e| {
@@ -468,6 +488,7 @@ async fn register_user(
         Json(serde_json::json!({
             "user_id": user_id.to_string(),
             "username": request.username,
+            "email": request.email,
             "api_key": api_key,
             "message": "User registered successfully. Save your API key - it won't be shown again."
         })),
