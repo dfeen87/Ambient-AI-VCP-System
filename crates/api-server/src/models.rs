@@ -48,7 +48,7 @@ impl NodeRegistration {
         }
 
         // Validate node_type
-        const VALID_NODE_TYPES: &[&str] = &["compute", "gateway", "storage", "validator"];
+        const VALID_NODE_TYPES: &[&str] = &["compute", "gateway", "storage", "validator", "any"];
         if !VALID_NODE_TYPES.contains(&self.node_type.as_str()) {
             return Err(ApiError::bad_request(format!(
                 "node_type must be one of: {}",

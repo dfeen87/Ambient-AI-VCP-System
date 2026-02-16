@@ -112,6 +112,24 @@ fn test_node_validation_valid() {
     assert!(node_reg.validate().is_ok());
 }
 
+/// Test node validation - "any" node type is valid for universal nodes
+#[test]
+fn test_node_validation_any_type() {
+    let node_reg = NodeRegistration {
+        node_id: "universal-node".to_string(),
+        region: "us-west".to_string(),
+        node_type: "any".to_string(),
+        capabilities: NodeCapabilities {
+            bandwidth_mbps: 500.0,
+            cpu_cores: 8,
+            memory_gb: 16.0,
+            gpu_available: false,
+        },
+    };
+
+    assert!(node_reg.validate().is_ok());
+}
+
 /// Test task validation - invalid task_type
 #[test]
 fn test_task_validation_invalid_type() {

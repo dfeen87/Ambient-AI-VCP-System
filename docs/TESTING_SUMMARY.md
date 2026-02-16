@@ -273,7 +273,7 @@ Finished release [optimized] target(s) in 1m 10s
 ❌ node_id="" → REJECTED: "node_id cannot be empty"
 
 # Invalid node_type
-❌ node_type="invalid" → REJECTED: "node_type must be one of: compute, gateway, storage, validator"
+❌ node_type="invalid" → REJECTED: "node_type must be one of: compute, gateway, storage, validator, any"
 
 # Invalid bandwidth
 ❌ bandwidth=-100 → REJECTED: "bandwidth_mbps must be between 0 and 100,000"

@@ -217,7 +217,7 @@ GET  /api/v1/cluster/stats      # Cluster statistics
 
 | Issue | Solution |
 |-------|----------|
-| "node_type must be one of..." | Use: `compute`, `gateway`, `storage`, or `validator` |
+| "node_type must be one of..." | Use: `compute`, `gateway`, `storage`, `validator`, or `any` |
 | "node_id cannot exceed 64 chars" | Shorten your node ID |
 | "bandwidth_mbps must be between 0-100,000" | Check your bandwidth value |
 | Can't connect to API | Verify URL: https://ambient-ai-vcp-system.onrender.com |
