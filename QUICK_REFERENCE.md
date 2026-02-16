@@ -4,6 +4,25 @@
 
 ---
 
+## 🔄 THE TWO-SIDED MARKETPLACE
+
+```
+┌──────────────────┐                      ┌──────────────────┐
+│  TASK SUBMITTERS │  ───Submit work───>  │  NODE OPERATORS  │
+│  (Demand Side)   │                      │  (Supply Side)   │
+│                  │  <───Return results─ │                  │
+└──────────────────┘                      └──────────────────┘
+ • App developers                          • Home users with PCs
+ • Data scientists                         • Universities
+ • Researchers                             • Data centers
+ • Businesses                              • Anyone with compute
+ • Need computing                          • Provide computing
+```
+
+**See full guide:** [docs/WHO_CREATES_TASKS.md](./docs/WHO_CREATES_TASKS.md)
+
+---
+
 ## 🖥️ NODE TYPES
 
 | Type | Symbol | Purpose | Best For | Hardware |

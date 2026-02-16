@@ -1,13 +1,46 @@
 # Understanding Nodes and Tasks in Ambient AI VCP System
 
 ## 📋 Table of Contents
+- [The Two-Sided Marketplace](#the-two-sided-marketplace)
 - [What is a Node?](#what-is-a-node)
 - [Node Types Explained](#node-types-explained)
 - [What is a Task?](#what-is-a-task)
+- [Who Creates Tasks?](#who-creates-tasks)
 - [Task Types Explained](#task-types-explained)
 - [How to Register a Node](#how-to-register-a-node)
 - [How to Submit a Task](#how-to-submit-a-task)
 - [Complete Examples](#complete-examples)
+
+---
+
+## 🔄 The Two-Sided Marketplace
+
+Ambient AI VCP System is a **two-sided marketplace for computation**:
+
+### Supply Side: **Node Operators** (YOU!)
+- People who have computing power to share
+- Run nodes on laptops, servers, GPUs, edge devices
+- Contribute idle compute capacity
+- Earn reputation for completing tasks
+- Examples: Home users, universities, data centers
+
+### Demand Side: **Task Submitters**
+- People who need computing power
+- Submit computational work via API
+- Developers, data scientists, researchers, businesses
+- Pay for usage (future: token-based economy)
+- Examples: App developers, ML engineers, research labs
+
+### The System Connects Both:
+```
+Task Submitters → (Submit work) → Ambient AI VCP → (Distribute) → Node Operators
+       ↓                                                                ↓
+Need computation                                              Have computing power
+       ↓                                                                ↓
+       └────────────← (Results returned) ←──────────────────────────────┘
+```
+
+**👉 For a deep dive on who creates tasks and why, see:** [WHO_CREATES_TASKS.md](./WHO_CREATES_TASKS.md)
 
 ---
 
@@ -159,6 +192,28 @@ A **task** is a unit of work submitted to the network for execution. Tasks are d
 4. **Execution**: Selected nodes execute the task
 5. **Verification**: (Optional) Validators verify execution proofs
 6. **Completion**: Results are returned to the client
+
+---
+
+## 👥 Who Creates Tasks?
+
+Tasks are created by **anyone who needs computational work done**:
+
+- 💻 **Application Developers** - Building AI-powered apps
+- 🧪 **Data Scientists** - Training models, running experiments
+- 🔬 **Researchers** - Large-scale simulations, data processing
+- 🏢 **Businesses** - Fraud detection, risk analysis, ML pipelines
+- 🎨 **Individual Users** - Personal projects, learning, experimentation
+
+### Why Submit Tasks?
+Instead of buying and maintaining expensive servers:
+- ✅ Pay only for computation you use
+- ✅ Zero infrastructure maintenance
+- ✅ Access to distributed compute power
+- ✅ Privacy-preserving options (federated learning)
+- ✅ Global scalability
+
+**👉 See complete guide:** [WHO_CREATES_TASKS.md](./WHO_CREATES_TASKS.md) - Deep dive into task submitters, use cases, and the complete ecosystem.
 
 ---
 
