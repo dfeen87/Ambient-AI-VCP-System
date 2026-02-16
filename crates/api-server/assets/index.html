@@ -854,7 +854,7 @@
                         <th>Task ID</th>
                         <th>Type</th>
                         <th>Status</th>
-                        <th>Percent Completed</th>
+                        <th>Progress (AI ETA)</th>
                         <th>Assigned Nodes</th>
                         <th>Created At</th>
                     </tr>
@@ -1038,6 +1038,14 @@
     let authToken = localStorage.getItem('vcp_auth_token');
     let currentUser = localStorage.getItem('vcp_username');
     let currentUserId = parseUserIdFromToken(authToken);
+    const taskProgressMemory = new Map();
+
+    const taskDurationByTypeSec = {
+        computation: 300,
+        federated_learning: 900,
+        zk_proof: 600,
+        wasm_execution: 450,
+    };
 
 
     function parseUserIdFromToken(token) {
@@ -1454,25 +1462,94 @@
             tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No tasks submitted yet</td></tr>';
             return;
         }
+
+        const activeTaskIds = new Set(tasks.map(t => t.task_id));
+        for (const taskId of taskProgressMemory.keys()) {
+            if (!activeTaskIds.has(taskId)) {
+                taskProgressMemory.delete(taskId);
+            }
+        }
+
         tbody.innerHTML = tasks.map(t => {
             const cls = t.status === 'completed' ? 'badge-completed'
                       : t.status === 'failed'    ? 'badge-failed'
                       :                            'badge-pending';
-            const percentComplete = t.status === 'completed' ? '100%'
-                                 : t.status === 'running'   ? '50%'
-                                 : t.status === 'failed'    ? '0%'
-                                 :                            '0%';
+            const projection = estimateTaskProgress(t);
             return `
                 <tr>
                     <td><span class="mono-dim">${t.task_id.substring(0, 12)}···</span></td>
                     <td>${t.task_type}</td>
                     <td><span class="badge ${cls}">${t.status}</span></td>
-                    <td class="mono-dim">${percentComplete}</td>
+                    <td class="mono-dim">${projection.progressLabel}<br><span title="${projection.etaTooltip}">${projection.etaLabel}</span></td>
                     <td class="mono-dim">${t.assigned_nodes.length} nodes</td>
                     <td class="mono-dim">${new Date(t.created_at).toLocaleString()}</td>
                 </tr>
             `;
         }).join('');
+    }
+
+    function estimateTaskProgress(task) {
+        const nowMs = Date.now();
+        const createdMs = Date.parse(task.created_at) || nowMs;
+        const elapsedSec = Math.max(0, (nowMs - createdMs) / 1000);
+        const baselineSec = taskDurationByTypeSec[task.task_type] || 480;
+        const nodeBoost = Math.min(Math.max(task.assigned_nodes.length, 1), 8);
+        const projectedTotalSec = task.status === 'pending'
+            ? baselineSec * 1.3
+            : Math.max(30, baselineSec / (1 + (nodeBoost - 1) * 0.35));
+
+        let estimatedProgress = (elapsedSec / projectedTotalSec) * 100;
+        if (task.status === 'pending') {
+            estimatedProgress = Math.min(estimatedProgress, 85);
+        } else if (task.status === 'running') {
+            estimatedProgress = Math.max(estimatedProgress, 8);
+            estimatedProgress = Math.min(estimatedProgress, 99);
+        } else if (task.status === 'failed') {
+            estimatedProgress = 0;
+        } else if (task.status === 'completed') {
+            estimatedProgress = 100;
+        }
+
+        const previous = taskProgressMemory.get(task.task_id) || { percent: 0, sampledAtMs: nowMs };
+        const minIncrease = task.status === 'running'
+            ? ((nowMs - previous.sampledAtMs) / 1000) * 0.2
+            : 0;
+        const monotonicProgress = task.status === 'completed' || task.status === 'failed'
+            ? estimatedProgress
+            : Math.max(previous.percent + minIncrease, estimatedProgress);
+        const boundedProgress = Math.min(100, Math.max(0, monotonicProgress));
+
+        taskProgressMemory.set(task.task_id, {
+            percent: boundedProgress,
+            sampledAtMs: nowMs,
+        });
+
+        if (task.status === 'completed') {
+            return {
+                progressLabel: '100%',
+                etaLabel: 'Completed',
+                etaTooltip: 'Task completed successfully.'
+            };
+        }
+
+        if (task.status === 'failed') {
+            return {
+                progressLabel: '0%',
+                etaLabel: 'Failed',
+                etaTooltip: 'Task failed before completion.'
+            };
+        }
+
+        const remainingSec = Math.max(0, projectedTotalSec - elapsedSec);
+        const etaLabel = remainingSec < 60
+            ? `ETA ${Math.ceil(remainingSec)}s`
+            : `ETA ${Math.ceil(remainingSec / 60)}m`;
+
+        return {
+            progressLabel: `${Math.round(boundedProgress)}%`,
+            etaLabel,
+            etaTooltip: `AI projection: ~${Math.round(projectedTotalSec)}s total based on task type, elapsed time, and assigned node count.`
+        };
     }
 
     document.getElementById('register-node-form').addEventListener('submit', async (e) => {
