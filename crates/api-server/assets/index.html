@@ -484,6 +484,38 @@
         .badge-failed    { background: rgba(239,68,68,.1);  color: var(--red);    border: 1px solid rgba(239,68,68,.2); }
         .badge-failed::before { background: var(--red); }
 
+        .status-cell {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .eject-btn {
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            background: rgba(239, 68, 68, 0.08);
+            color: #fca5a5;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .eject-btn:hover:not(:disabled) {
+            border-color: rgba(239, 68, 68, 0.6);
+            background: rgba(239, 68, 68, 0.16);
+            color: #fecaca;
+        }
+
+        .eject-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
         .empty-row td {
             text-align: center;
             color: var(--text-muted);
@@ -1004,6 +1036,28 @@
     let apiBaseUrl = 'https://ambient-ai-vcp-system.onrender.com';
     let authToken = localStorage.getItem('vcp_auth_token');
     let currentUser = localStorage.getItem('vcp_username');
+    let currentUserId = parseUserIdFromToken(authToken);
+
+
+    function parseUserIdFromToken(token) {
+        if (!token) return null;
+        try {
+            const payloadBase64 = token.split('.')[1];
+            if (!payloadBase64) return null;
+            const normalized = payloadBase64.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+            const payload = JSON.parse(atob(padded));
+            return payload.sub || null;
+        } catch (_err) {
+            return null;
+        }
+    }
+
+    function getStatusBadgeClass(status) {
+        if (status === 'online') return 'badge-online';
+        if (status === 'rejected') return 'badge-failed';
+        return 'badge-pending';
+    }
 
     // Check if user is logged in on page load
     function checkAuth() {
@@ -1027,6 +1081,7 @@
         localStorage.removeItem('vcp_username');
         authToken = null;
         currentUser = null;
+        currentUserId = null;
         checkAuth();
     }
 
@@ -1052,6 +1107,7 @@
                 currentUser = username;
                 localStorage.setItem('vcp_auth_token', authToken);
                 localStorage.setItem('vcp_username', username);
+                currentUserId = parseUserIdFromToken(authToken);
                 showToast('Login successful!');
                 checkAuth();
             } else {
@@ -1288,28 +1344,74 @@
         }
     }
 
+    async function handleEjectNode(nodeId, buttonEl) {
+        if (!authToken) {
+            showToast('Please login to eject nodes', true);
+            return;
+        }
+
+        if (!confirm(`Eject node ${nodeId}?`)) {
+            return;
+        }
+
+        const originalText = buttonEl.textContent;
+        buttonEl.textContent = 'Ejecting...';
+        buttonEl.disabled = true;
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/v1/nodes/${encodeURIComponent(nodeId)}/reject`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+            });
+
+            if (res.ok) {
+                showToast(`Node ${nodeId} ejected successfully`);
+                await fetchData();
+            } else {
+                const err = await res.json();
+                showToast(err.message || 'Failed to eject node', true);
+            }
+        } catch (err) {
+            showToast('Network error: ' + err.message, true);
+        } finally {
+            buttonEl.textContent = originalText;
+            buttonEl.disabled = false;
+        }
+    }
+
     function renderNodes(nodes) {
         const tbody = document.getElementById('nodes-table');
         if (!nodes.length) {
             tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No nodes registered yet</td></tr>';
             return;
         }
-        tbody.innerHTML = nodes.map(n => `
-            <tr>
-                <td><span class="mono">${n.node_id}</span></td>
-                <td>${n.region}</td>
-                <td>${n.node_type}</td>
-                <td>
-                    <div class="health-wrap">
-                        <span class="health-num">${n.health_score.toFixed(1)}%</span>
-                        <div class="health-bar">
-                            <div class="health-fill" style="width:${n.health_score}%"></div>
+        tbody.innerHTML = nodes.map(n => {
+            const isOwner = currentUserId && n.owner_id === currentUserId;
+            const canEject = isOwner && n.status !== 'rejected';
+            const statusClass = getStatusBadgeClass((n.status || '').toLowerCase());
+
+            return `
+                <tr>
+                    <td><span class="mono">${n.node_id}</span></td>
+                    <td>${n.region}</td>
+                    <td>${n.node_type}</td>
+                    <td>
+                        <div class="health-wrap">
+                            <span class="health-num">${n.health_score.toFixed(1)}%</span>
+                            <div class="health-bar">
+                                <div class="health-fill" style="width:${n.health_score}%"></div>
+                            </div>
                         </div>
-                    </div>
-                </td>
-                <td><span class="badge badge-online">${n.status}</span></td>
-            </tr>
-        `).join('');
+                    </td>
+                    <td>
+                        <div class="status-cell">
+                            <span class="badge ${statusClass}">${n.status}</span>
+                            ${canEject ? `<button class="eject-btn" onclick='handleEjectNode(${JSON.stringify(n.node_id)}, this)'>Eject</button>` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
     }
 
     function renderTasks(tasks) {
