@@ -513,7 +513,8 @@
         }
 
         .form-group input,
-        .form-group select {
+        .form-group select,
+        .form-group textarea {
             padding: 10px 14px;
             background: var(--surface-2);
             border: 1px solid var(--border);
@@ -534,8 +535,15 @@
             padding-right: 34px;
         }
 
+        .form-group textarea {
+            min-height: 120px;
+            resize: vertical;
+            line-height: 1.45;
+        }
+
         .form-group input:focus,
-        .form-group select:focus {
+        .form-group select:focus,
+        .form-group textarea:focus {
             border-color: var(--accent);
             box-shadow: 0 0 0 3px var(--accent-dim);
         }
@@ -586,6 +594,86 @@
 
         .toast.show { transform: translateY(0); opacity: 1; }
         .toast-icon { font-size: 15px; color: var(--accent); }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(7, 11, 18, 0.72);
+            backdrop-filter: blur(4px);
+            z-index: 1100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .modal-overlay.open { display: flex; }
+
+        .modal {
+            width: min(760px, 100%);
+            max-height: 92vh;
+            overflow-y: auto;
+            background: linear-gradient(170deg, var(--surface) 0%, #0b1220 100%);
+            border: 1px solid var(--border-hover);
+            border-radius: 14px;
+            box-shadow: 0 18px 80px rgba(0, 0, 0, 0.5), 0 0 24px var(--accent-glow);
+            padding: 22px;
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .modal-subtitle {
+            margin-top: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-dim);
+            width: 34px;
+            height: 34px;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .modal-close:hover {
+            color: var(--accent);
+            border-color: var(--border-hover);
+            background: var(--accent-dim);
+        }
+
+        .form-group.form-span-3 { grid-column: span 3; }
+        @media (max-width: 900px) { .form-group.form-span-3 { grid-column: span 2; } }
+        @media (max-width: 560px) { .form-group.form-span-3 { grid-column: span 1; } }
+
+        .inline-hint {
+            margin-top: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .inline-hint.error { color: var(--red); }
+        .inline-hint.success { color: var(--accent); }
     </style>
 </head>
 <body>
@@ -725,6 +813,7 @@
                 ⟳ Recent Tasks
                 <span class="count-badge" id="tasks-count">0</span>
             </div>
+            <button type="button" class="btn" id="open-task-modal-btn">+ Submit Task</button>
         </div>
         <div class="table-wrap">
             <table>
@@ -841,6 +930,72 @@
 <div class="toast" id="toast">
     <span class="toast-icon" id="toast-icon">✓</span>
     <span id="toast-msg">Node registered</span>
+</div>
+
+<div class="modal-overlay" id="task-modal-overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+        <div class="modal-header">
+            <div>
+                <div class="modal-title" id="task-modal-title">Submit New Task</div>
+                <div class="modal-subtitle">Stored via /api/v1/tasks and immediately reflected in your database-backed tasks list.</div>
+            </div>
+            <button type="button" class="modal-close" id="close-task-modal-btn" aria-label="Close task modal">×</button>
+        </div>
+
+        <form id="submit-task-form">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Task Type</label>
+                    <select id="task-type" required>
+                        <option value="computation">Computation</option>
+                        <option value="federated_learning">Federated Learning</option>
+                        <option value="zk_proof">ZK Proof</option>
+                        <option value="wasm_execution">WASM Execution</option>
+                    </select>
+                    <div class="inline-hint" id="task-type-hint">Smart defaults will update based on task type.</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Min Nodes</label>
+                    <input type="number" id="task-min-nodes" min="1" max="1000" value="1" required>
+                    <div class="inline-hint" id="min-nodes-hint">Must be between 1 and 1000.</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Max Execution (sec)</label>
+                    <input type="number" id="task-max-exec" min="1" max="3600" value="300" required>
+                    <div class="inline-hint" id="max-exec-hint">Must be between 1 and 3600.</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Require GPU</label>
+                    <select id="task-require-gpu" required>
+                        <option value="false" selected>No</option>
+                        <option value="true">Yes</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Require Proof</label>
+                    <select id="task-require-proof" required>
+                        <option value="false" selected>No</option>
+                        <option value="true">Yes</option>
+                    </select>
+                </div>
+
+                <div class="form-group form-span-3">
+                    <label>Inputs (JSON)</label>
+                    <textarea id="task-inputs" placeholder='{"job":"example"}' required>{}</textarea>
+                    <div class="inline-hint" id="task-inputs-hint">Valid JSON object or array (max nesting depth enforced by backend).</div>
+                </div>
+            </div>
+
+            <div class="form-footer">
+                <button type="submit" class="btn">Submit Task</button>
+                <button type="button" class="btn btn-ghost" id="cancel-task-modal-btn">Cancel</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <script>
@@ -967,6 +1122,84 @@
         document.getElementById('toast-icon').style.color = isError ? 'var(--red)' : 'var(--accent)';
         toast.classList.add('show');
         setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+
+    function openTaskModal() {
+        const modal = document.getElementById('task-modal-overlay');
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeTaskModal() {
+        const modal = document.getElementById('task-modal-overlay');
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+    }
+
+    function updateTaskDefaults() {
+        const taskType = document.getElementById('task-type').value;
+        const requireProofEl = document.getElementById('task-require-proof');
+        const requireGpuEl = document.getElementById('task-require-gpu');
+        const maxExecEl = document.getElementById('task-max-exec');
+        const hintEl = document.getElementById('task-type-hint');
+
+        if (taskType === 'zk_proof') {
+            requireProofEl.value = 'true';
+            maxExecEl.value = Math.max(parseInt(maxExecEl.value || '0'), 600);
+            hintEl.textContent = 'ZK Proof default: Require Proof = Yes, max execution >= 600s.';
+        } else if (taskType === 'federated_learning') {
+            requireGpuEl.value = 'true';
+            maxExecEl.value = Math.max(parseInt(maxExecEl.value || '0'), 900);
+            hintEl.textContent = 'Federated Learning default: Require GPU = Yes, max execution >= 900s.';
+        } else if (taskType === 'wasm_execution') {
+            hintEl.textContent = 'WASM Execution: keep inputs compact and provide module reference in inputs JSON if needed.';
+        } else {
+            hintEl.textContent = 'Computation default: quick run profile (proof/GPU optional).';
+        }
+    }
+
+    function validateTaskForm() {
+        const minNodes = parseInt(document.getElementById('task-min-nodes').value, 10);
+        const maxExec = parseInt(document.getElementById('task-max-exec').value, 10);
+        const inputsRaw = document.getElementById('task-inputs').value.trim();
+
+        const minNodesHint = document.getElementById('min-nodes-hint');
+        const maxExecHint = document.getElementById('max-exec-hint');
+        const inputsHint = document.getElementById('task-inputs-hint');
+
+        let isValid = true;
+
+        if (Number.isNaN(minNodes) || minNodes < 1 || minNodes > 1000) {
+            minNodesHint.textContent = 'Invalid: min_nodes must be between 1 and 1000.';
+            minNodesHint.className = 'inline-hint error';
+            isValid = false;
+        } else {
+            minNodesHint.textContent = 'Looks good.';
+            minNodesHint.className = 'inline-hint success';
+        }
+
+        if (Number.isNaN(maxExec) || maxExec < 1 || maxExec > 3600) {
+            maxExecHint.textContent = 'Invalid: max_execution_time_sec must be between 1 and 3600.';
+            maxExecHint.className = 'inline-hint error';
+            isValid = false;
+        } else {
+            maxExecHint.textContent = 'Looks good.';
+            maxExecHint.className = 'inline-hint success';
+        }
+
+        try {
+            JSON.parse(inputsRaw);
+            inputsHint.textContent = 'Valid JSON payload.';
+            inputsHint.className = 'inline-hint success';
+        } catch (_err) {
+            inputsHint.textContent = 'Invalid JSON syntax. Please correct before submitting.';
+            inputsHint.className = 'inline-hint error';
+            isValid = false;
+        }
+
+        return isValid;
     }
 
     function animateValue(el, end) {
@@ -1115,6 +1348,85 @@
         }
     });
 
+    document.getElementById('open-task-modal-btn').addEventListener('click', openTaskModal);
+    document.getElementById('close-task-modal-btn').addEventListener('click', closeTaskModal);
+    document.getElementById('cancel-task-modal-btn').addEventListener('click', closeTaskModal);
+    document.getElementById('task-type').addEventListener('change', updateTaskDefaults);
+    document.getElementById('task-min-nodes').addEventListener('input', validateTaskForm);
+    document.getElementById('task-max-exec').addEventListener('input', validateTaskForm);
+    document.getElementById('task-inputs').addEventListener('input', validateTaskForm);
+
+    document.getElementById('task-modal-overlay').addEventListener('click', (e) => {
+        if (e.target.id === 'task-modal-overlay') {
+            closeTaskModal();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && document.getElementById('task-modal-overlay').classList.contains('open')) {
+            closeTaskModal();
+        }
+    });
+
+    document.getElementById('submit-task-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector('[type="submit"]');
+
+        if (!validateTaskForm()) {
+            showToast('Please fix validation errors before submitting', true);
+            return;
+        }
+
+        let parsedInputs;
+        try {
+            parsedInputs = JSON.parse(document.getElementById('task-inputs').value.trim());
+        } catch (_err) {
+            showToast('Inputs must be valid JSON', true);
+            return;
+        }
+
+        const body = {
+            task_type: document.getElementById('task-type').value,
+            wasm_module: null,
+            inputs: parsedInputs,
+            requirements: {
+                min_nodes: parseInt(document.getElementById('task-min-nodes').value, 10),
+                max_execution_time_sec: parseInt(document.getElementById('task-max-exec').value, 10),
+                require_gpu: document.getElementById('task-require-gpu').value === 'true',
+                require_proof: document.getElementById('task-require-proof').value === 'true',
+            },
+        };
+
+        btn.textContent = 'Submitting...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/v1/tasks`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify(body),
+            });
+
+            if (res.ok) {
+                showToast('Task submitted successfully');
+                e.target.reset();
+                document.getElementById('task-inputs').value = '{}';
+                updateTaskDefaults();
+                validateTaskForm();
+                closeTaskModal();
+                await fetchData();
+            } else {
+                const err = await res.json();
+                showToast(err.message || 'Task submission failed', true);
+            }
+        } catch (err) {
+            showToast('Network error: ' + err.message, true);
+        } finally {
+            btn.textContent = 'Submit Task';
+            btn.disabled = false;
+        }
+    });
+
     // Auth tab switching
     function showAuthTab(tab) {
         const loginForm = document.getElementById('login-form');
@@ -1135,6 +1447,8 @@
     }
 
     // Initialize on page load
+    updateTaskDefaults();
+    validateTaskForm();
     checkAuth();
     setInterval(() => {
         if (authToken) fetchData();
