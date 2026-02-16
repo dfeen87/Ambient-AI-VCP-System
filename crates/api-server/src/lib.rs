@@ -331,14 +331,14 @@ async fn get_task(
     auth_user: auth::AuthUser,
     Path(task_id): Path<String>,
 ) -> ApiResult<Json<TaskInfo>> {
-    let task = if auth_user.role == "admin" {
-        state.get_task_unscoped(&task_id).await
-    } else {
-        let requester_id = Uuid::parse_str(&auth_user.user_id)
-            .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
-        state.get_task(&task_id, requester_id).await
-    }
-    .ok_or_else(|| ApiError::not_found(format!("Task {} not found", task_id)))?;
+    let task = state
+        .get_task(
+            &task_id,
+            Uuid::parse_str(&auth_user.user_id)
+                .map_err(|_| ApiError::internal_error("Invalid user ID format"))?,
+        )
+        .await
+        .ok_or_else(|| ApiError::not_found(format!("Task {} not found", task_id)))?;
 
     Ok(Json(task))
 }
@@ -355,14 +355,9 @@ async fn list_tasks(
     State(state): State<Arc<AppState>>,
     auth_user: auth::AuthUser,
 ) -> ApiResult<Json<Vec<TaskInfo>>> {
-    let tasks = if auth_user.role == "admin" {
-        state.list_tasks_unscoped().await
-    } else {
-        let requester_id = Uuid::parse_str(&auth_user.user_id)
-            .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
-        state.list_tasks(requester_id).await
-    };
-
+    let requester_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+    let tasks = state.list_tasks(requester_id).await;
     Ok(Json(tasks))
 }
 

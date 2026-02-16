@@ -446,69 +446,7 @@ impl AppState {
         }
     }
 
-    /// Get a specific task without ownership filtering (admin access)
-    pub async fn get_task_unscoped(&self, task_id: &str) -> Option<TaskInfo> {
-        let task_uuid = match Uuid::parse_str(task_id) {
-            Ok(uuid) => uuid,
-            Err(_) => return None,
-        };
-
-        let result = sqlx::query(
-            r#"
-            SELECT 
-                t.task_id, t.task_type, t.status, t.result, t.proof_id,
-                t.created_at, t.updated_at,
-                COALESCE(
-                    (
-                        SELECT ARRAY_AGG(ta.node_id)
-                        FROM task_assignments ta
-                        WHERE ta.task_id = t.task_id
-                    ),
-                    ARRAY[]::VARCHAR[]
-                ) as assigned_nodes
-            FROM tasks t
-            WHERE t.task_id = $1
-            "#,
-        )
-        .bind(task_uuid)
-        .fetch_optional(&self.db)
-        .await;
-
-        match result {
-            Ok(Some(row)) => {
-                let task_id_uuid: Uuid = row.get("task_id");
-                let status_text: String = row.get("status");
-                if let Err(e) = self
-                    .notify_if_task_completed(task_id_uuid, &status_text)
-                    .await
-                {
-                    tracing::warn!("Failed to send completion email: {:?}", e);
-                }
-
-                Some(TaskInfo {
-                    task_id: task_id_uuid.to_string(),
-                    task_type: row.get("task_type"),
-                    status: parse_task_status(&status_text),
-                    assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
-                    created_at: row
-                        .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-                        .to_rfc3339(),
-                    updated_at: row
-                        .get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
-                        .to_rfc3339(),
-                    result: row.try_get("result").ok(),
-                    proof_id: row.try_get("proof_id").ok(),
-                })
-            }
-            Ok(None) => None,
-            Err(e) => {
-                tracing::error!("Failed to get task {}: {:?}", task_id, e);
-                None
-            }
-        }
-    }
-
-    /// List all tasks from the database for a specific user
+    /// List all tasks from the database
     pub async fn list_tasks(&self, requester_id: Uuid) -> Vec<TaskInfo> {
         let result = sqlx::query(
             r#"
@@ -529,65 +467,6 @@ impl AppState {
             "#,
         )
         .bind(requester_id)
-        .fetch_all(&self.db)
-        .await;
-
-        let tasks: Vec<TaskInfo> = match result {
-            Ok(rows) => rows
-                .into_iter()
-                .map(|row| TaskInfo {
-                    task_id: row.get::<Uuid, _>("task_id").to_string(),
-                    task_type: row.get("task_type"),
-                    status: parse_task_status(&row.get::<String, _>("status")),
-                    assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
-                    created_at: row
-                        .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-                        .to_rfc3339(),
-                    updated_at: row
-                        .get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
-                        .to_rfc3339(),
-                    result: row.try_get("result").ok(),
-                    proof_id: row.try_get("proof_id").ok(),
-                })
-                .collect(),
-            Err(e) => {
-                tracing::error!("Failed to list tasks: {:?}", e);
-                vec![]
-            }
-        };
-
-        for task in &tasks {
-            if task.status == TaskStatus::Completed {
-                if let Ok(task_uuid) = Uuid::parse_str(&task.task_id) {
-                    if let Err(e) = self.notify_if_task_completed(task_uuid, "completed").await {
-                        tracing::warn!("Failed to send completion email: {:?}", e);
-                    }
-                }
-            }
-        }
-
-        tasks
-    }
-
-    /// List all tasks without ownership filtering (admin access)
-    pub async fn list_tasks_unscoped(&self) -> Vec<TaskInfo> {
-        let result = sqlx::query(
-            r#"
-            SELECT 
-                t.task_id, t.task_type, t.status, t.result, t.proof_id,
-                t.created_at, t.updated_at,
-                COALESCE(
-                    (
-                        SELECT ARRAY_AGG(ta.node_id)
-                        FROM task_assignments ta
-                        WHERE ta.task_id = t.task_id
-                    ),
-                    ARRAY[]::VARCHAR[]
-                ) as assigned_nodes
-            FROM tasks t
-            ORDER BY t.created_at DESC
-            "#,
-        )
         .fetch_all(&self.db)
         .await;
 
