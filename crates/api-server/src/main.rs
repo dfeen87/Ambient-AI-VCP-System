@@ -1,5 +1,5 @@
 use anyhow::Result;
-use api_server::{create_router, db, state::AppState};
+use api_server::{create_router, db, rate_limit, state::AppState};
 use std::sync::Arc;
 use tracing::{info, Level};
 
@@ -25,6 +25,10 @@ async fn main() -> Result<()> {
     db::health_check(&pool).await?;
     info!("Database connection established and verified");
 
+    // Start rate limiter cleanup task
+    rate_limit::start_cleanup_task().await;
+    info!("Rate limiter cleanup task started");
+
     // Get port from environment or use default
     let port = std::env::var("PORT")
         .ok()
@@ -44,6 +48,7 @@ async fn main() -> Result<()> {
     info!("API Server listening on http://{}", addr);
     info!("Swagger UI available at http://{}/swagger-ui", addr);
     info!("API Documentation at http://{}/api-docs/openapi.json", addr);
+    info!("Prometheus metrics at http://{}/metrics", addr);
 
     axum::serve(listener, app).await?;
 

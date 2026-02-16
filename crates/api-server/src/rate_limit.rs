@@ -11,6 +11,101 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
+use tracing::{debug, warn};
+
+/// Rate limit tier for different endpoint types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RateLimitTier {
+    /// Auth endpoints (login, register) - more restrictive
+    Auth,
+    /// Node registration - moderate limits
+    NodeRegistration,
+    /// Task submission - moderate limits
+    TaskSubmission,
+    /// Proof verification - more restrictive (computationally expensive)
+    ProofVerification,
+    /// General API endpoints
+    General,
+}
+
+impl RateLimitTier {
+    /// Get the rate limit configuration for this tier
+    pub fn config(&self) -> (u32, u32) {
+        // Returns (requests_per_minute, burst_capacity)
+        match self {
+            Self::Auth => {
+                let rpm = std::env::var("RATE_LIMIT_AUTH_RPM")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(10); // 10 requests per minute for auth
+                let burst = std::env::var("RATE_LIMIT_AUTH_BURST")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(3); // Burst of 3
+                (rpm, burst)
+            }
+            Self::NodeRegistration => {
+                let rpm = std::env::var("RATE_LIMIT_NODE_RPM")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(20);
+                let burst = std::env::var("RATE_LIMIT_NODE_BURST")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(5);
+                (rpm, burst)
+            }
+            Self::TaskSubmission => {
+                let rpm = std::env::var("RATE_LIMIT_TASK_RPM")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(30);
+                let burst = std::env::var("RATE_LIMIT_TASK_BURST")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(10);
+                (rpm, burst)
+            }
+            Self::ProofVerification => {
+                let rpm = std::env::var("RATE_LIMIT_PROOF_RPM")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(15);
+                let burst = std::env::var("RATE_LIMIT_PROOF_BURST")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(3);
+                (rpm, burst)
+            }
+            Self::General => {
+                let rpm = std::env::var("RATE_LIMIT_GENERAL_RPM")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(60);
+                let burst = std::env::var("RATE_LIMIT_GENERAL_BURST")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(10);
+                (rpm, burst)
+            }
+        }
+    }
+
+    /// Determine the tier based on request path
+    pub fn from_path(path: &str) -> Self {
+        if path.contains("/auth/login") || path.contains("/auth/register") {
+            Self::Auth
+        } else if path.contains("/nodes") && !path.contains("/heartbeat") {
+            Self::NodeRegistration
+        } else if path.contains("/tasks") {
+            Self::TaskSubmission
+        } else if path.contains("/proofs/verify") {
+            Self::ProofVerification
+        } else {
+            Self::General
+        }
+    }
+}
 
 /// Rate limiter configuration
 #[derive(Debug, Clone)]
@@ -37,6 +132,15 @@ impl RateLimitConfig {
         Self {
             requests_per_minute,
             burst_capacity,
+        }
+    }
+
+    /// Create config for a specific tier
+    pub fn for_tier(tier: RateLimitTier) -> Self {
+        let (rpm, burst) = tier.config();
+        Self {
+            requests_per_minute: rpm,
+            burst_capacity: burst,
         }
     }
 }
@@ -97,30 +201,28 @@ impl TokenBucket {
     }
 }
 
-/// Rate limiter state
+/// Rate limiter state with per-tier buckets
 #[derive(Clone)]
 pub struct RateLimiter {
-    /// Buckets per IP address
-    buckets: Arc<Mutex<HashMap<IpAddr, TokenBucket>>>,
-    /// Configuration
-    config: RateLimitConfig,
+    /// Buckets per IP address and tier
+    buckets: Arc<Mutex<HashMap<(IpAddr, RateLimitTier), TokenBucket>>>,
 }
 
 impl RateLimiter {
     /// Create a new rate limiter
-    pub fn new(config: RateLimitConfig) -> Self {
+    pub fn new() -> Self {
         Self {
             buckets: Arc::new(Mutex::new(HashMap::new())),
-            config,
         }
     }
 
-    /// Check if a request should be allowed
-    pub async fn check_rate_limit(&self, ip: IpAddr) -> Result<(), (StatusCode, String)> {
+    /// Check if a request should be allowed for a specific tier
+    pub async fn check_rate_limit(&self, ip: IpAddr, tier: RateLimitTier) -> Result<(), (StatusCode, String)> {
         let mut buckets = self.buckets.lock().await;
 
-        let bucket = buckets.entry(ip).or_insert_with(|| {
-            TokenBucket::new(self.config.requests_per_minute, self.config.burst_capacity)
+        let config = RateLimitConfig::for_tier(tier);
+        let bucket = buckets.entry((ip, tier)).or_insert_with(|| {
+            TokenBucket::new(config.requests_per_minute, config.burst_capacity)
         });
 
         if bucket.try_consume() {
@@ -130,7 +232,8 @@ impl RateLimiter {
             Err((
                 StatusCode::TOO_MANY_REQUESTS,
                 format!(
-                    "Rate limit exceeded. Retry after {} seconds",
+                    "Rate limit exceeded for {:?} endpoints. Retry after {} seconds",
+                    tier,
                     retry_after.as_secs()
                 ),
             ))
@@ -144,34 +247,42 @@ impl RateLimiter {
         // Remove buckets that haven't been used in 10 minutes
         buckets.retain(|_, bucket| bucket.last_refill.elapsed() < Duration::from_secs(600));
 
-        tracing::debug!("Rate limiter cleanup: {} active buckets", buckets.len());
+        debug!("Rate limiter cleanup: {} active buckets", buckets.len());
     }
 }
 
-/// Rate limiting middleware
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Rate limiting middleware with per-tier limits
 pub async fn rate_limit_middleware(
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, ApiError> {
+    // Determine the tier based on the request path
+    let tier = RateLimitTier::from_path(request.uri().path());
+
     // Extract IP address from request
     let ip = extract_client_ip(&request)?;
 
-    // Get rate limiter from extensions
-    let rate_limiter = request
-        .extensions()
-        .get::<RateLimiter>()
-        .ok_or_else(|| ApiError::internal_error("Rate limiter not configured"))?
-        .clone();
+    // Get or create global rate limiter
+    static GLOBAL_LIMITER: tokio::sync::OnceCell<Arc<RateLimiter>> = tokio::sync::OnceCell::const_new();
+    let rate_limiter = GLOBAL_LIMITER.get_or_init(|| async {
+        Arc::new(RateLimiter::new())
+    }).await;
 
-    // Check rate limit
-    match rate_limiter.check_rate_limit(ip).await {
+    // Check rate limit for this tier
+    match rate_limiter.check_rate_limit(ip, tier).await {
         Ok(()) => {
             // Request allowed
             Ok(next.run(request).await)
         }
         Err((status, message)) => {
             // Rate limit exceeded
-            tracing::warn!("Rate limit exceeded for IP: {}", ip);
+            warn!("Rate limit exceeded for IP: {} on tier: {:?}", ip, tier);
             Err(ApiError::new("rate_limited", message, status))
         }
     }
@@ -200,14 +311,25 @@ fn extract_client_ip(request: &Request<Body>) -> Result<IpAddr, ApiError> {
         }
     }
 
-    // Unable to determine client IP - reject the request
+    // Fallback to localhost for development (when headers are not available)
+    if cfg!(debug_assertions) {
+        warn!("Unable to determine client IP, using localhost fallback");
+        return Ok(IpAddr::from([127, 0, 0, 1]));
+    }
+
+    // Unable to determine client IP - reject the request in production
     Err(ApiError::bad_request(
         "Unable to determine client IP address. Ensure proper proxy headers are configured.",
     ))
 }
 
 /// Start a background task to periodically cleanup old rate limiter buckets
-pub fn start_cleanup_task(rate_limiter: RateLimiter) {
+pub async fn start_cleanup_task() {
+    static GLOBAL_LIMITER: tokio::sync::OnceCell<Arc<RateLimiter>> = tokio::sync::OnceCell::const_new();
+    let rate_limiter = GLOBAL_LIMITER.get_or_init(|| async {
+        Arc::new(RateLimiter::new())
+    }).await.clone();
+
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(300)); // Every 5 minutes
 
@@ -224,20 +346,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limiter() {
-        let config = RateLimitConfig {
-            requests_per_minute: 60,
-            burst_capacity: 10,
-        };
-
-        let limiter = RateLimiter::new(config);
+        let limiter = RateLimiter::new();
         let ip = IpAddr::from([127, 0, 0, 1]);
 
-        // First 10 requests should succeed (burst capacity)
-        for _ in 0..10 {
-            assert!(limiter.check_rate_limit(ip).await.is_ok());
+        // Test Auth tier (10 rpm, burst 3)
+        for _ in 0..3 {
+            assert!(limiter.check_rate_limit(ip, RateLimitTier::Auth).await.is_ok());
         }
 
-        // 11th request should fail
-        assert!(limiter.check_rate_limit(ip).await.is_err());
+        // 4th request should fail
+        assert!(limiter.check_rate_limit(ip, RateLimitTier::Auth).await.is_err());
+    }
+
+    #[test]
+    fn test_tier_from_path() {
+        assert_eq!(RateLimitTier::from_path("/api/v1/auth/login"), RateLimitTier::Auth);
+        assert_eq!(RateLimitTier::from_path("/api/v1/auth/register"), RateLimitTier::Auth);
+        assert_eq!(RateLimitTier::from_path("/api/v1/nodes"), RateLimitTier::NodeRegistration);
+        assert_eq!(RateLimitTier::from_path("/api/v1/tasks"), RateLimitTier::TaskSubmission);
+        assert_eq!(RateLimitTier::from_path("/api/v1/proofs/verify"), RateLimitTier::ProofVerification);
+        assert_eq!(RateLimitTier::from_path("/api/v1/health"), RateLimitTier::General);
     }
 }
