@@ -308,9 +308,29 @@ async fn verify_proof(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ProofVerificationRequest>,
 ) -> ApiResult<Json<ProofVerificationResponse>> {
-    info!("Verifying proof for task: {}", request.task_id);
+    // Validate request first
+    request.validate()?;
+
+    info!(
+        "Verifying proof for task: {} (proof size: {} bytes)",
+        request.task_id,
+        request.proof_data.len()
+    );
 
     let response = state.verify_proof(request).await?;
+
+    if response.valid {
+        info!(
+            "Proof verified successfully for task: {} in {}ms",
+            response.task_id, response.verification_time_ms
+        );
+    } else {
+        info!(
+            "Proof verification failed for task: {} - {}",
+            response.task_id,
+            response.error_message.as_deref().unwrap_or("unknown error")
+        );
+    }
 
     Ok(Json(response))
 }

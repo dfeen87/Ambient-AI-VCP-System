@@ -212,6 +212,68 @@ pub struct ProofVerificationRequest {
     pub task_id: String,
     pub proof_data: String,    // Base64 encoded proof
     pub public_inputs: String, // Base64 encoded public inputs
+    pub circuit_id: Option<String>, // Optional circuit identifier
+}
+
+impl ProofVerificationRequest {
+    /// Validate proof verification request
+    pub fn validate(&self) -> Result<(), ApiError> {
+        // Validate task_id
+        if self.task_id.is_empty() {
+            return Err(ApiError::bad_request("task_id cannot be empty"));
+        }
+
+        // Validate proof_data size (base64 encoded)
+        if self.proof_data.len() > 100_000 {
+            // ~75KB max proof size
+            return Err(ApiError::bad_request(
+                "proof_data exceeds maximum size of 100KB (base64 encoded)",
+            ));
+        }
+
+        // Validate public_inputs size (base64 encoded)
+        if self.public_inputs.len() > 10_000 {
+            // ~7.5KB max public inputs
+            return Err(ApiError::bad_request(
+                "public_inputs exceeds maximum size of 10KB (base64 encoded)",
+            ));
+        }
+
+        // Validate base64 encoding
+        if base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &self.proof_data)
+            .is_err()
+        {
+            return Err(ApiError::bad_request("proof_data is not valid base64"));
+        }
+
+        if base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            &self.public_inputs,
+        )
+        .is_err()
+        {
+            return Err(ApiError::bad_request(
+                "public_inputs is not valid base64",
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Decode proof data from base64
+    pub fn decode_proof_data(&self) -> Result<Vec<u8>, ApiError> {
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &self.proof_data)
+            .map_err(|_| ApiError::bad_request("Failed to decode proof_data"))
+    }
+
+    /// Decode public inputs from base64
+    pub fn decode_public_inputs(&self) -> Result<Vec<u8>, ApiError> {
+        base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            &self.public_inputs,
+        )
+        .map_err(|_| ApiError::bad_request("Failed to decode public_inputs"))
+    }
 }
 
 /// Proof verification response
@@ -221,6 +283,7 @@ pub struct ProofVerificationResponse {
     pub task_id: String,
     pub verified_at: String,
     pub verification_time_ms: u64,
+    pub error_message: Option<String>,
 }
 
 /// Cluster statistics
