@@ -1,7 +1,7 @@
 # Ambient AI + VCP System
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-48%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
+ 
 A **live online application** and implementation of a **Verifiable Computation Protocol (VCP)** for running and verifying distributed compute tasks across many machines.
 
 ## 🎯 Status: **Live in Production (Public Demo Running)**
