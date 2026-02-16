@@ -297,17 +297,45 @@ impl AppState {
         }
     }
 
-    /// Verify a ZK proof
+    /// Verify a ZK proof using actual cryptographic verification
     pub async fn verify_proof(
         &self,
         request: ProofVerificationRequest,
     ) -> ApiResult<ProofVerificationResponse> {
         use std::time::Instant;
+        use zk_prover::{ZKProof, ZKVerifier};
+
+        // Validate the request
+        request.validate()?;
 
         let start = Instant::now();
 
-        // In a real implementation, this would verify the proof using the ZK verifier
-        let valid = true; // Placeholder
+        // Decode proof data and public inputs
+        let proof_data = request.decode_proof_data()?;
+        let public_inputs_data = request.decode_public_inputs()?;
+
+        // Create ZK proof object
+        let circuit_id = request.circuit_id.unwrap_or_else(|| "default".to_string());
+        let proof = ZKProof::new(proof_data, public_inputs_data.clone(), circuit_id);
+
+        // Verify proof size constraints
+        if proof.size() > 75_000 {
+            // 75KB max decoded proof size
+            return Ok(ProofVerificationResponse {
+                valid: false,
+                task_id: request.task_id,
+                verified_at: chrono::Utc::now().to_rfc3339(),
+                verification_time_ms: start.elapsed().as_millis() as u64,
+                error_message: Some("Proof size exceeds maximum allowed size".to_string()),
+            });
+        }
+
+        // Initialize verifier with default verification key
+        // In production, you would load the appropriate verification key based on circuit_id
+        let verifier = ZKVerifier::default();
+
+        // Perform cryptographic verification
+        let valid = verifier.verify_proof(&proof, &public_inputs_data);
 
         let verification_time_ms = start.elapsed().as_millis() as u64;
 
@@ -316,6 +344,11 @@ impl AppState {
             task_id: request.task_id,
             verified_at: chrono::Utc::now().to_rfc3339(),
             verification_time_ms,
+            error_message: if !valid {
+                Some("Proof verification failed: invalid proof or public inputs".to_string())
+            } else {
+                None
+            },
         })
     }
 

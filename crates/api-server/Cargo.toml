@@ -42,8 +42,16 @@ sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid"
 jsonwebtoken = "9.3"
 bcrypt = "0.15"
 
+# Encoding/decoding
+base64 = "0.22"
+hex = "0.4"
+
 # Random number generation (for API keys and rate limiting)
 rand = "0.8"
+
+# Metrics
+prometheus = "0.13"
+lazy_static = "1.4"
 
 # Environment variables
 dotenvy = "0.15"

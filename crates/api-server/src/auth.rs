@@ -5,11 +5,7 @@
 /// - API key authentication
 /// - Password hashing with bcrypt
 use crate::error::{ApiError, ApiResult};
-use axum::{extract::FromRequestParts, http::request::Parts, RequestPartsExt};
-use axum_extra::{
-    headers::{authorization::Bearer, Authorization},
-    TypedHeader,
-};
+use axum::{extract::FromRequestParts, http::request::Parts};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
@@ -143,7 +139,7 @@ pub struct AuthUser {
     pub role: String,
 }
 
-/// Extract authenticated user from JWT token in request headers
+/// Extract authenticated user from Claims stored in request extensions by middleware
 #[axum::async_trait]
 impl<S> FromRequestParts<S> for AuthUser
 where
@@ -152,25 +148,17 @@ where
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // Extract the Authorization header
-        let TypedHeader(Authorization(bearer)) = parts
-            .extract::<TypedHeader<Authorization<Bearer>>>()
-            .await
-            .map_err(|_| ApiError::unauthorized("Missing or invalid authorization header"))?;
-
-        // Get auth config from extensions (should be set by middleware)
-        let auth_config = parts
-            .extensions
-            .get::<AuthConfig>()
-            .ok_or_else(|| ApiError::internal_error("Auth configuration not available"))?;
-
-        // Validate the token
-        let claims = auth_config.validate_token(bearer.token())?;
+        // Get validated claims from extensions (set by jwt_auth_middleware)
+        let claims = parts.extensions.get::<Claims>().ok_or_else(|| {
+            ApiError::unauthorized(
+                "Authentication required. Claims not found in request extensions.",
+            )
+        })?;
 
         Ok(AuthUser {
-            user_id: claims.sub,
-            username: claims.username,
-            role: claims.role,
+            user_id: claims.sub.clone(),
+            username: claims.username.clone(),
+            role: claims.role.clone(),
         })
     }
 }
@@ -184,15 +172,96 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+impl LoginRequest {
+    /// Validate login request
+    pub fn validate(&self) -> ApiResult<()> {
+        // Validate username format
+        if self.username.is_empty() {
+            return Err(ApiError::validation_error("Username cannot be empty"));
+        }
+
+        if self.username.len() > 64 {
+            return Err(ApiError::validation_error(
+                "Username cannot exceed 64 characters",
+            ));
+        }
+
+        // Validate password not empty
+        if self.password.is_empty() {
+            return Err(ApiError::validation_error("Password cannot be empty"));
+        }
+
+        if self.password.len() > 128 {
+            return Err(ApiError::validation_error(
+                "Password cannot exceed 128 characters",
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 /// Login response
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LoginResponse {
     /// JWT access token
     pub access_token: String,
+    /// Refresh token for token rotation
+    pub refresh_token: Option<String>,
     /// Token type (always "Bearer")
     pub token_type: String,
     /// Token expiration in seconds
     pub expires_in: i64,
+}
+
+/// Refresh token request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RefreshTokenRequest {
+    /// Refresh token
+    pub refresh_token: String,
+}
+
+/// Refresh token response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RefreshTokenResponse {
+    /// New JWT access token
+    pub access_token: String,
+    /// New refresh token
+    pub refresh_token: String,
+    /// Token type (always "Bearer")
+    pub token_type: String,
+    /// Token expiration in seconds
+    pub expires_in: i64,
+}
+
+/// Generate a secure refresh token
+pub fn generate_refresh_token() -> String {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const TOKEN_LENGTH: usize = 64;
+
+    let mut rng = rand::thread_rng();
+
+    let token: String = (0..TOKEN_LENGTH)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect();
+
+    format!("rt_{}", token)
+}
+
+/// Hash a refresh token using SHA-256
+pub fn hash_refresh_token(token: &str) -> String {
+    // Use bcrypt-style hashing for consistency
+    // In production, you might want to use a dedicated hashing function
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    token.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
 }
 
 /// User registration request

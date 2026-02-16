@@ -1,23 +1,20 @@
 use axum::{
-    body::Body,
     extract::{Path, State},
-    http::{Request, StatusCode},
-    middleware::{self, Next},
-    response::Response,
+    http::StatusCode,
+    middleware as axum_middleware,
     routing::{get, post, put},
     Json, Router,
 };
 use sqlx::Row;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
 use tracing::info;
 use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
 pub mod auth;
 pub mod db;
 pub mod error;
+pub mod middleware;
 pub mod models;
 pub mod rate_limit;
 pub mod state;
@@ -43,6 +40,7 @@ use state::AppState;
         get_cluster_stats,
         register_user,
         login,
+        refresh_token,
     ),
     components(schemas(
         HealthResponse,
@@ -58,6 +56,8 @@ use state::AppState;
         auth::RegisterRequest,
         auth::LoginRequest,
         auth::LoginResponse,
+        auth::RefreshTokenRequest,
+        auth::RefreshTokenResponse,
     ))
 )]
 struct ApiDoc;
@@ -65,6 +65,11 @@ struct ApiDoc;
 /// Serve the dashboard
 async fn dashboard() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../assets/index.html"))
+}
+
+/// Serve the custom Swagger UI
+async fn swagger_ui() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../assets/swagger.html"))
 }
 
 /// Health check endpoint
@@ -310,9 +315,29 @@ async fn verify_proof(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ProofVerificationRequest>,
 ) -> ApiResult<Json<ProofVerificationResponse>> {
-    info!("Verifying proof for task: {}", request.task_id);
+    // Validate request first
+    request.validate()?;
+
+    info!(
+        "Verifying proof for task: {} (proof size: {} bytes)",
+        request.task_id,
+        request.proof_data.len()
+    );
 
     let response = state.verify_proof(request).await?;
+
+    if response.valid {
+        info!(
+            "Proof verified successfully for task: {} in {}ms",
+            response.task_id, response.verification_time_ms
+        );
+    } else {
+        info!(
+            "Proof verification failed for task: {} - {}",
+            response.task_id,
+            response.error_message.as_deref().unwrap_or("unknown error")
+        );
+    }
 
     Ok(Json(response))
 }
@@ -403,6 +428,9 @@ async fn login(
     State(state): State<Arc<AppState>>,
     Json(request): Json<auth::LoginRequest>,
 ) -> ApiResult<Json<auth::LoginResponse>> {
+    // Validate login request
+    request.validate()?;
+
     info!("Login attempt for user: {}", request.username);
 
     let user_row = sqlx::query(
@@ -435,20 +463,122 @@ async fn login(
     let auth_config = auth::AuthConfig::from_env()?;
     let token = auth_config.generate_token(user_id.to_string(), username.clone(), role)?;
 
+    // Generate refresh token
+    let refresh_token = auth::generate_refresh_token();
+    let refresh_token_hash = auth::hash_refresh_token(&refresh_token);
+    let expires_at = chrono::Utc::now() + chrono::Duration::days(30); // 30 days
+
+    // Store refresh token in database
+    sqlx::query(
+        r#"
+        INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3)
+        "#,
+    )
+    .bind(user_id)
+    .bind(&refresh_token_hash)
+    .bind(expires_at)
+    .execute(&state.db)
+    .await?;
+
     info!("Login successful for user: {}", username);
 
     Ok(Json(auth::LoginResponse {
         access_token: token,
+        refresh_token: Some(refresh_token),
         token_type: "Bearer".to_string(),
         expires_in: auth_config.jwt_expiration_hours * 3600,
     }))
 }
 
-/// Authentication middleware
-async fn auth_middleware(mut request: Request<Body>, next: Next) -> Result<Response, ApiError> {
+/// Refresh token endpoint
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    request_body = RefreshTokenRequest,
+    responses(
+        (status = 200, description = "Token refreshed successfully", body = RefreshTokenResponse),
+        (status = 401, description = "Invalid or expired refresh token", body = ApiError)
+    )
+)]
+async fn refresh_token(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<auth::RefreshTokenRequest>,
+) -> ApiResult<Json<auth::RefreshTokenResponse>> {
+    let token_hash = auth::hash_refresh_token(&request.refresh_token);
+
+    // Fetch refresh token from database
+    let token_row = sqlx::query(
+        r#"
+        SELECT rt.user_id, rt.expires_at, rt.revoked_at, u.username, u.role
+        FROM refresh_tokens rt
+        JOIN users u ON rt.user_id = u.user_id
+        WHERE rt.token_hash = $1
+        "#,
+    )
+    .bind(&token_hash)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::unauthorized("Invalid refresh token"))?;
+
+    let user_id: Uuid = token_row.get("user_id");
+    let username: String = token_row.get("username");
+    let role: String = token_row.get("role");
+    let expires_at: chrono::DateTime<chrono::Utc> = token_row.get("expires_at");
+    let revoked_at: Option<chrono::DateTime<chrono::Utc>> = token_row.get("revoked_at");
+
+    // Check if token is revoked
+    if revoked_at.is_some() {
+        return Err(ApiError::unauthorized("Refresh token has been revoked"));
+    }
+
+    // Check if token is expired
+    if expires_at < chrono::Utc::now() {
+        return Err(ApiError::unauthorized("Refresh token has expired"));
+    }
+
+    // Revoke old refresh token
+    sqlx::query(
+        r#"
+        UPDATE refresh_tokens 
+        SET revoked_at = NOW(), revoked_reason = 'rotated'
+        WHERE token_hash = $1
+        "#,
+    )
+    .bind(&token_hash)
+    .execute(&state.db)
+    .await?;
+
+    // Generate new JWT access token
     let auth_config = auth::AuthConfig::from_env()?;
-    request.extensions_mut().insert(auth_config);
-    Ok(next.run(request).await)
+    let access_token = auth_config.generate_token(user_id.to_string(), username, role)?;
+
+    // Generate new refresh token
+    let new_refresh_token = auth::generate_refresh_token();
+    let new_token_hash = auth::hash_refresh_token(&new_refresh_token);
+    let new_expires_at = chrono::Utc::now() + chrono::Duration::days(30);
+
+    // Store new refresh token
+    sqlx::query(
+        r#"
+        INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3)
+        "#,
+    )
+    .bind(user_id)
+    .bind(&new_token_hash)
+    .bind(new_expires_at)
+    .execute(&state.db)
+    .await?;
+
+    info!("Token refreshed successfully for user_id: {}", user_id);
+
+    Ok(Json(auth::RefreshTokenResponse {
+        access_token,
+        refresh_token: new_refresh_token,
+        token_type: "Bearer".to_string(),
+        expires_in: auth_config.jwt_expiration_hours * 3600,
+    }))
 }
 
 /// Build the API router
@@ -456,7 +586,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let public_routes = Router::new()
         .route("/health", get(health_check))
         .route("/auth/register", post(register_user))
-        .route("/auth/login", post(login));
+        .route("/auth/login", post(login))
+        .route("/auth/refresh", post(refresh_token))
+        .layer(axum_middleware::from_fn(
+            middleware::auth::auth_config_middleware,
+        ));
 
     let protected_routes = Router::new()
         .route("/nodes", post(register_node).get(list_nodes))
@@ -466,15 +600,34 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/tasks/:task_id", get(get_task))
         .route("/proofs/verify", post(verify_proof))
         .route("/cluster/stats", get(get_cluster_stats))
-        .layer(middleware::from_fn(auth_middleware));
+        .layer(axum_middleware::from_fn(
+            middleware::auth::jwt_auth_middleware,
+        ));
 
     let api_routes = Router::new().merge(public_routes).merge(protected_routes);
 
+    // Create OpenAPI JSON route (still using utoipa for spec generation)
+    let openapi_json = utoipa::openapi::OpenApiBuilder::from(ApiDoc::openapi()).build();
+
+    let docs_router = Router::new().route(
+        "/api-docs/openapi.json",
+        get(|| async { Json(openapi_json) }),
+    );
+
     Router::new()
         .route("/", get(dashboard))
+        .route("/swagger-ui", get(swagger_ui))
         .nest("/api/v1", api_routes)
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .layer(CorsLayer::permissive())
+        .merge(docs_router)
+        .merge(middleware::metrics::create_metrics_router())
+        .layer(axum_middleware::from_fn(
+            middleware::logging::request_tracing_middleware,
+        ))
+        .layer(axum_middleware::from_fn(
+            middleware::headers::security_headers_middleware,
+        ))
+        .layer(axum_middleware::from_fn(rate_limit::rate_limit_middleware))
+        .layer(middleware::cors::create_cors_layer())
         .with_state(state)
 }
 
