@@ -508,6 +508,30 @@ impl AppState {
         Ok(result.rows_affected() > 0)
     }
 
+    /// Reject a node owned by the requesting user
+    pub async fn reject_node(&self, node_id: &str, owner_id: Uuid) -> ApiResult<bool> {
+        // Verify ownership
+        if !self.check_node_ownership(node_id, owner_id).await? {
+            return Ok(false);
+        }
+
+        let now = chrono::Utc::now();
+        let result = sqlx::query(
+            r#"
+            UPDATE nodes
+            SET status = 'rejected', updated_at = $1
+            WHERE node_id = $2 AND owner_id = $3 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(now)
+        .bind(node_id)
+        .bind(owner_id)
+        .execute(&self.db)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     /// List nodes owned by a specific user
     pub async fn list_user_nodes(&self, owner_id: Uuid) -> Vec<NodeInfo> {
         let result = sqlx::query(

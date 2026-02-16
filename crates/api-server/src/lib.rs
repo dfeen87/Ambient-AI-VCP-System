@@ -32,6 +32,7 @@ use state::AppState;
         list_nodes,
         get_node,
         delete_node,
+        reject_node,
         update_heartbeat,
         submit_task,
         get_task,
@@ -198,6 +199,51 @@ async fn delete_node(
     Ok(Json(serde_json::json!({
         "message": "Node deleted successfully",
         "node_id": node_id
+    })))
+}
+
+/// Reject a node (owner only)
+#[utoipa::path(
+    post,
+    path = "/api/v1/nodes/{node_id}/reject",
+    params(
+        ("node_id" = String, Path, description = "Node ID")
+    ),
+    responses(
+        (status = 200, description = "Node rejected successfully"),
+        (status = 404, description = "Node not found or you don't have permission to reject it", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn reject_node(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Path(node_id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    info!(
+        "Rejecting node: {} for user {}",
+        node_id, auth_user.username
+    );
+
+    // Parse user_id
+    let user_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+
+    let rejected = state.reject_node(&node_id, user_id).await?;
+
+    if !rejected {
+        return Err(ApiError::not_found_or_forbidden(format!(
+            "Node {} not found or you don't have permission to reject it",
+            node_id
+        )));
+    }
+
+    Ok(Json(serde_json::json!({
+        "message": "Node rejected successfully",
+        "node_id": node_id,
+        "status": "rejected"
     })))
 }
 
@@ -635,6 +681,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let protected_routes = Router::new()
         .route("/nodes", post(register_node).get(list_nodes))
         .route("/nodes/:node_id", get(get_node).delete(delete_node))
+        .route("/nodes/:node_id/reject", post(reject_node))
         .route("/nodes/:node_id/heartbeat", put(update_heartbeat))
         .route("/tasks", post(submit_task).get(list_tasks))
         .route("/tasks/:task_id", get(get_task))
