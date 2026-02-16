@@ -26,7 +26,14 @@
             --text-dim: #94a3b8;
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
 
         body {
             font-family: 'Syne', sans-serif;
@@ -101,13 +108,14 @@
             stroke: var(--accent);
         }
 
-        h1 {
+        .logo-row h1 {
             font-size: 26px;
             font-weight: 800;
             letter-spacing: -0.5px;
+            margin: 0;
         }
 
-        h1 span { color: var(--accent); }
+        .logo-row h1 span { color: var(--accent); }
 
         .subtitle {
             font-family: 'JetBrains Mono', monospace;
@@ -200,6 +208,12 @@
             font-family: 'Syne', sans-serif;
             font-size: 32px;
             color: var(--text);
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            line-height: 1.2;
+            margin: 0 0 10px 0 !important;
         }
 
         .swagger-ui .info .title small {
@@ -208,6 +222,21 @@
             border-radius: 6px;
             padding: 4px 10px;
             font-family: 'JetBrains Mono', monospace;
+            display: inline-flex;
+            align-items: center;
+            font-size: 12px;
+            line-height: 1;
+            vertical-align: middle;
+        }
+
+        .swagger-ui .info .title small pre {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            color: inherit;
+            font-family: inherit;
+            font-size: inherit;
+            line-height: inherit;
         }
 
         .swagger-ui .opblock-tag {
