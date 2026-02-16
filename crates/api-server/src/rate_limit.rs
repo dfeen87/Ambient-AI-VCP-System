@@ -217,13 +217,17 @@ impl RateLimiter {
     }
 
     /// Check if a request should be allowed for a specific tier
-    pub async fn check_rate_limit(&self, ip: IpAddr, tier: RateLimitTier) -> Result<(), (StatusCode, String)> {
+    pub async fn check_rate_limit(
+        &self,
+        ip: IpAddr,
+        tier: RateLimitTier,
+    ) -> Result<(), (StatusCode, String)> {
         let mut buckets = self.buckets.lock().await;
 
         let config = RateLimitConfig::for_tier(tier);
-        let bucket = buckets.entry((ip, tier)).or_insert_with(|| {
-            TokenBucket::new(config.requests_per_minute, config.burst_capacity)
-        });
+        let bucket = buckets
+            .entry((ip, tier))
+            .or_insert_with(|| TokenBucket::new(config.requests_per_minute, config.burst_capacity));
 
         if bucket.try_consume() {
             Ok(())
@@ -269,10 +273,11 @@ pub async fn rate_limit_middleware(
     let ip = extract_client_ip(&request)?;
 
     // Get or create global rate limiter
-    static GLOBAL_LIMITER: tokio::sync::OnceCell<Arc<RateLimiter>> = tokio::sync::OnceCell::const_new();
-    let rate_limiter = GLOBAL_LIMITER.get_or_init(|| async {
-        Arc::new(RateLimiter::new())
-    }).await;
+    static GLOBAL_LIMITER: tokio::sync::OnceCell<Arc<RateLimiter>> =
+        tokio::sync::OnceCell::const_new();
+    let rate_limiter = GLOBAL_LIMITER
+        .get_or_init(|| async { Arc::new(RateLimiter::new()) })
+        .await;
 
     // Check rate limit for this tier
     match rate_limiter.check_rate_limit(ip, tier).await {
@@ -325,10 +330,12 @@ fn extract_client_ip(request: &Request<Body>) -> Result<IpAddr, ApiError> {
 
 /// Start a background task to periodically cleanup old rate limiter buckets
 pub async fn start_cleanup_task() {
-    static GLOBAL_LIMITER: tokio::sync::OnceCell<Arc<RateLimiter>> = tokio::sync::OnceCell::const_new();
-    let rate_limiter = GLOBAL_LIMITER.get_or_init(|| async {
-        Arc::new(RateLimiter::new())
-    }).await.clone();
+    static GLOBAL_LIMITER: tokio::sync::OnceCell<Arc<RateLimiter>> =
+        tokio::sync::OnceCell::const_new();
+    let rate_limiter = GLOBAL_LIMITER
+        .get_or_init(|| async { Arc::new(RateLimiter::new()) })
+        .await
+        .clone();
 
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(300)); // Every 5 minutes
@@ -351,20 +358,44 @@ mod tests {
 
         // Test Auth tier (10 rpm, burst 3)
         for _ in 0..3 {
-            assert!(limiter.check_rate_limit(ip, RateLimitTier::Auth).await.is_ok());
+            assert!(limiter
+                .check_rate_limit(ip, RateLimitTier::Auth)
+                .await
+                .is_ok());
         }
 
         // 4th request should fail
-        assert!(limiter.check_rate_limit(ip, RateLimitTier::Auth).await.is_err());
+        assert!(limiter
+            .check_rate_limit(ip, RateLimitTier::Auth)
+            .await
+            .is_err());
     }
 
     #[test]
     fn test_tier_from_path() {
-        assert_eq!(RateLimitTier::from_path("/api/v1/auth/login"), RateLimitTier::Auth);
-        assert_eq!(RateLimitTier::from_path("/api/v1/auth/register"), RateLimitTier::Auth);
-        assert_eq!(RateLimitTier::from_path("/api/v1/nodes"), RateLimitTier::NodeRegistration);
-        assert_eq!(RateLimitTier::from_path("/api/v1/tasks"), RateLimitTier::TaskSubmission);
-        assert_eq!(RateLimitTier::from_path("/api/v1/proofs/verify"), RateLimitTier::ProofVerification);
-        assert_eq!(RateLimitTier::from_path("/api/v1/health"), RateLimitTier::General);
+        assert_eq!(
+            RateLimitTier::from_path("/api/v1/auth/login"),
+            RateLimitTier::Auth
+        );
+        assert_eq!(
+            RateLimitTier::from_path("/api/v1/auth/register"),
+            RateLimitTier::Auth
+        );
+        assert_eq!(
+            RateLimitTier::from_path("/api/v1/nodes"),
+            RateLimitTier::NodeRegistration
+        );
+        assert_eq!(
+            RateLimitTier::from_path("/api/v1/tasks"),
+            RateLimitTier::TaskSubmission
+        );
+        assert_eq!(
+            RateLimitTier::from_path("/api/v1/proofs/verify"),
+            RateLimitTier::ProofVerification
+        );
+        assert_eq!(
+            RateLimitTier::from_path("/api/v1/health"),
+            RateLimitTier::General
+        );
     }
 }

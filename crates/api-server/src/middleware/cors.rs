@@ -1,7 +1,6 @@
 /// CORS middleware with configurable origins
 ///
 /// Replaces permissive CORS with production-ready configuration
-
 use axum::http::{HeaderValue, Method};
 use tower_http::cors::CorsLayer;
 use tracing::info;

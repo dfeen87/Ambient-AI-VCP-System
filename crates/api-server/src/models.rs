@@ -210,8 +210,8 @@ pub enum TaskStatus {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ProofVerificationRequest {
     pub task_id: String,
-    pub proof_data: String,    // Base64 encoded proof
-    pub public_inputs: String, // Base64 encoded public inputs
+    pub proof_data: String,         // Base64 encoded proof
+    pub public_inputs: String,      // Base64 encoded public inputs
     pub circuit_id: Option<String>, // Optional circuit identifier
 }
 
@@ -252,9 +252,7 @@ impl ProofVerificationRequest {
         )
         .is_err()
         {
-            return Err(ApiError::bad_request(
-                "public_inputs is not valid base64",
-            ));
+            return Err(ApiError::bad_request("public_inputs is not valid base64"));
         }
 
         Ok(())

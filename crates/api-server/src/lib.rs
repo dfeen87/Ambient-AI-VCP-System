@@ -588,7 +588,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/auth/register", post(register_user))
         .route("/auth/login", post(login))
         .route("/auth/refresh", post(refresh_token))
-        .layer(axum_middleware::from_fn(middleware::auth::auth_config_middleware));
+        .layer(axum_middleware::from_fn(
+            middleware::auth::auth_config_middleware,
+        ));
 
     let protected_routes = Router::new()
         .route("/nodes", post(register_node).get(list_nodes))
@@ -598,18 +600,19 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/tasks/:task_id", get(get_task))
         .route("/proofs/verify", post(verify_proof))
         .route("/cluster/stats", get(get_cluster_stats))
-        .layer(axum_middleware::from_fn(middleware::auth::jwt_auth_middleware));
+        .layer(axum_middleware::from_fn(
+            middleware::auth::jwt_auth_middleware,
+        ));
 
     let api_routes = Router::new().merge(public_routes).merge(protected_routes);
 
     // Create OpenAPI JSON route (still using utoipa for spec generation)
-    let openapi_json = utoipa::openapi::OpenApiBuilder::from(ApiDoc::openapi())
-        .build();
-    
-    let docs_router = Router::new()
-        .route("/api-docs/openapi.json", get(|| async {
-            Json(openapi_json)
-        }));
+    let openapi_json = utoipa::openapi::OpenApiBuilder::from(ApiDoc::openapi()).build();
+
+    let docs_router = Router::new().route(
+        "/api-docs/openapi.json",
+        get(|| async { Json(openapi_json) }),
+    );
 
     Router::new()
         .route("/", get(dashboard))
@@ -617,8 +620,12 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api/v1", api_routes)
         .merge(docs_router)
         .merge(middleware::metrics::create_metrics_router())
-        .layer(axum_middleware::from_fn(middleware::logging::request_tracing_middleware))
-        .layer(axum_middleware::from_fn(middleware::headers::security_headers_middleware))
+        .layer(axum_middleware::from_fn(
+            middleware::logging::request_tracing_middleware,
+        ))
+        .layer(axum_middleware::from_fn(
+            middleware::headers::security_headers_middleware,
+        ))
         .layer(axum_middleware::from_fn(rate_limit::rate_limit_middleware))
         .layer(middleware::cors::create_cors_layer())
         .with_state(state)

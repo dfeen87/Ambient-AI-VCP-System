@@ -149,12 +149,11 @@ where
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // Get validated claims from extensions (set by jwt_auth_middleware)
-        let claims = parts
-            .extensions
-            .get::<Claims>()
-            .ok_or_else(|| {
-                ApiError::unauthorized("Authentication required. Claims not found in request extensions.")
-            })?;
+        let claims = parts.extensions.get::<Claims>().ok_or_else(|| {
+            ApiError::unauthorized(
+                "Authentication required. Claims not found in request extensions.",
+            )
+        })?;
 
         Ok(AuthUser {
             user_id: claims.sub.clone(),
@@ -259,7 +258,7 @@ pub fn hash_refresh_token(token: &str) -> String {
     // In production, you might want to use a dedicated hashing function
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    
+
     let mut hasher = DefaultHasher::new();
     token.hash(&mut hasher);
     format!("{:x}", hasher.finish())

@@ -1,7 +1,6 @@
 /// Prometheus metrics middleware and exporter
 ///
 /// Exposes /metrics endpoint and tracks per-route metrics
-
 use axum::{
     body::Body,
     extract::Request,
@@ -46,10 +45,7 @@ lazy_static! {
 }
 
 /// Metrics collection middleware
-pub async fn metrics_middleware(
-    request: Request<Body>,
-    next: Next,
-) -> Response {
+pub async fn metrics_middleware(request: Request<Body>, next: Next) -> Response {
     let start = Instant::now();
     let method = request.method().to_string();
     let path = request.uri().path().to_string();
@@ -87,10 +83,10 @@ fn normalize_endpoint(path: &str) -> String {
     let normalized: Vec<String> = parts
         .iter()
         .map(|&part| {
-            // Check if part looks like a UUID or ID
-            if part.len() == 36 && part.contains('-') {
-                "{id}".to_string()
-            } else if part.chars().all(|c| c.is_ascii_hexdigit()) && part.len() >= 8 {
+            // Check if part looks like a UUID or hex ID
+            if (part.len() == 36 && part.contains('-'))
+                || (part.chars().all(|c| c.is_ascii_hexdigit()) && part.len() >= 8)
+            {
                 "{id}".to_string()
             } else {
                 part.to_string()
@@ -124,7 +120,7 @@ async fn metrics_handler() -> impl IntoResponse {
 }
 
 /// Create metrics router
-pub fn create_metrics_router<S>() -> Router<S> 
+pub fn create_metrics_router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
