@@ -173,6 +173,35 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+impl LoginRequest {
+    /// Validate login request
+    pub fn validate(&self) -> ApiResult<()> {
+        // Validate username format
+        if self.username.is_empty() {
+            return Err(ApiError::validation_error("Username cannot be empty"));
+        }
+
+        if self.username.len() > 64 {
+            return Err(ApiError::validation_error(
+                "Username cannot exceed 64 characters",
+            ));
+        }
+
+        // Validate password not empty
+        if self.password.is_empty() {
+            return Err(ApiError::validation_error("Password cannot be empty"));
+        }
+
+        if self.password.len() > 128 {
+            return Err(ApiError::validation_error(
+                "Password cannot exceed 128 characters",
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 /// Login response
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LoginResponse {

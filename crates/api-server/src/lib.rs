@@ -9,7 +9,6 @@ use sqlx::Row;
 use std::sync::Arc;
 use tracing::info;
 use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
 pub mod auth;
@@ -66,6 +65,11 @@ struct ApiDoc;
 /// Serve the dashboard
 async fn dashboard() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../assets/index.html"))
+}
+
+/// Serve the custom Swagger UI
+async fn swagger_ui() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../assets/swagger.html"))
 }
 
 /// Health check endpoint
@@ -424,6 +428,9 @@ async fn login(
     State(state): State<Arc<AppState>>,
     Json(request): Json<auth::LoginRequest>,
 ) -> ApiResult<Json<auth::LoginResponse>> {
+    // Validate login request
+    request.validate()?;
+
     info!("Login attempt for user: {}", request.username);
 
     let user_row = sqlx::query(
@@ -595,10 +602,20 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let api_routes = Router::new().merge(public_routes).merge(protected_routes);
 
+    // Create OpenAPI JSON route (still using utoipa for spec generation)
+    let openapi_json = utoipa::openapi::OpenApiBuilder::from(ApiDoc::openapi())
+        .build();
+    
+    let docs_router = Router::new()
+        .route("/api-docs/openapi.json", get(|| async {
+            Json(openapi_json)
+        }));
+
     Router::new()
         .route("/", get(dashboard))
+        .route("/swagger-ui", get(swagger_ui))
         .nest("/api/v1", api_routes)
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .merge(docs_router)
         .merge(middleware::metrics::create_metrics_router())
         .layer(axum_middleware::from_fn(middleware::logging::request_tracing_middleware))
         .layer(axum_middleware::from_fn(middleware::headers::security_headers_middleware))

@@ -69,6 +69,18 @@ A **production-ready** implementation of a **Verifiable Computation Protocol (VC
 - ✅ **Error Handling**: Proper error propagation and user-friendly messages
 - ✅ **Type Safety**: Full Rust type system guarantees
 
+### Security & Infrastructure (LATEST)
+- 🔐 **JWT Middleware Authentication**: Global JWT enforcement at middleware layer (not handler extractors)
+- 🛡️ **Rate Limiting**: Per-endpoint tier-based rate limiting (Auth: 10rpm, Nodes: 20rpm, Tasks: 30rpm, Proofs: 15rpm)
+- 🔄 **Refresh Tokens**: JWT token rotation with 30-day refresh tokens and automatic revocation
+- 🔒 **CORS Hardening**: Configurable origin-based CORS (no wildcards in production)
+- 📊 **Prometheus Metrics**: `/metrics` endpoint with per-route latency and error tracking
+- 📝 **Audit Logging**: Comprehensive audit trail for security events
+- 🔍 **ZK Proof Verification**: Real cryptographic verification (Groth16/BN254) with strict payload validation
+- 🌐 **Security Headers**: HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy
+- 📊 **Request Tracing**: Structured logging with request IDs for all API calls
+- 💾 **Enhanced Persistence**: Migrations for task_runs, proof_artifacts, api_keys, audit_log, node_heartbeat_history
+
 ---
 
 ## 🏗️ Architecture
