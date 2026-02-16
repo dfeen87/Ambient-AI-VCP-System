@@ -165,8 +165,7 @@ async fn get_node(
     ),
     responses(
         (status = 200, description = "Node deleted successfully"),
-        (status = 403, description = "Not authorized to delete this node", body = ApiError),
-        (status = 404, description = "Node not found", body = ApiError)
+        (status = 404, description = "Node not found or you don't have permission to delete it", body = ApiError)
     ),
     security(
         ("bearer_auth" = [])
@@ -211,8 +210,7 @@ async fn delete_node(
     ),
     responses(
         (status = 200, description = "Heartbeat updated successfully"),
-        (status = 403, description = "Not authorized to update this node", body = ApiError),
-        (status = 404, description = "Node not found", body = ApiError)
+        (status = 404, description = "Node not found or you don't have permission to update it", body = ApiError)
     ),
     security(
         ("bearer_auth" = [])
