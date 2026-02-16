@@ -296,8 +296,9 @@ async fn test_pending_task_captures_newly_registered_node() {
         },
     };
 
+    let creator_id = Uuid::new_v4();
     let submitted_task = state
-        .submit_task(task)
+        .submit_task(task, creator_id)
         .await
         .expect("task should be accepted as pending even when no eligible nodes are available yet");
     assert_eq!(submitted_task.status, TaskStatus::Pending);
@@ -322,7 +323,7 @@ async fn test_pending_task_captures_newly_registered_node() {
         .expect("node registration should succeed and trigger pending task assignment");
 
     let updated_task = state
-        .get_task(&submitted_task.task_id)
+        .get_task(&submitted_task.task_id, creator_id)
         .await
         .expect("submitted task should still exist");
 
@@ -380,23 +381,27 @@ async fn test_task_assignment_uses_universal_node_type_any() {
         .await
         .expect("universal any node should register");
 
+    let creator_id = Uuid::new_v4();
     let submitted_task = state
-        .submit_task(TaskSubmission {
-            task_type: "computation".to_string(),
-            wasm_module: None,
-            inputs: serde_json::json!({"job": "universal-should-match"}),
-            requirements: TaskRequirements {
-                min_nodes: 1,
-                max_execution_time_sec: 300,
-                require_gpu: false,
-                require_proof: false,
+        .submit_task(
+            TaskSubmission {
+                task_type: "computation".to_string(),
+                wasm_module: None,
+                inputs: serde_json::json!({"job": "universal-should-match"}),
+                requirements: TaskRequirements {
+                    min_nodes: 1,
+                    max_execution_time_sec: 300,
+                    require_gpu: false,
+                    require_proof: false,
+                },
             },
-        })
+            creator_id,
+        )
         .await
         .expect("task submission should succeed");
 
     let task = state
-        .get_task(&submitted_task.task_id)
+        .get_task(&submitted_task.task_id, creator_id)
         .await
         .expect("submitted task should exist");
 
@@ -454,23 +459,27 @@ async fn test_task_assignment_excludes_non_matching_node_types() {
         .await
         .expect("gateway node should register");
 
+    let creator_id = Uuid::new_v4();
     let submitted_task = state
-        .submit_task(TaskSubmission {
-            task_type: "computation".to_string(),
-            wasm_module: None,
-            inputs: serde_json::json!({"job": "gateway-should-not-match"}),
-            requirements: TaskRequirements {
-                min_nodes: 1,
-                max_execution_time_sec: 300,
-                require_gpu: false,
-                require_proof: false,
+        .submit_task(
+            TaskSubmission {
+                task_type: "computation".to_string(),
+                wasm_module: None,
+                inputs: serde_json::json!({"job": "gateway-should-not-match"}),
+                requirements: TaskRequirements {
+                    min_nodes: 1,
+                    max_execution_time_sec: 300,
+                    require_gpu: false,
+                    require_proof: false,
+                },
             },
-        })
+            creator_id,
+        )
         .await
         .expect("task submission should succeed");
 
     let task = state
-        .get_task(&submitted_task.task_id)
+        .get_task(&submitted_task.task_id, creator_id)
         .await
         .expect("submitted task should exist");
 
