@@ -293,6 +293,114 @@
             color: var(--text-muted) !important;
         }
 
+
+        .swagger-ui,
+        .swagger-ui .info,
+        .swagger-ui .info p,
+        .swagger-ui .info li,
+        .swagger-ui .info .description,
+        .swagger-ui .markdown p,
+        .swagger-ui .markdown li,
+        .swagger-ui .opblock-description-wrapper p,
+        .swagger-ui .response-col_links,
+        .swagger-ui .tab li,
+        .swagger-ui label,
+        .swagger-ui .model-title,
+        .swagger-ui .model-toggle:after {
+            color: var(--text-dim) !important;
+        }
+
+        .swagger-ui a,
+        .swagger-ui .link,
+        .swagger-ui .renderedMarkdown a,
+        .swagger-ui .opblock-summary-path a {
+            color: var(--accent) !important;
+        }
+
+        .swagger-ui a:hover,
+        .swagger-ui .link:hover,
+        .swagger-ui .renderedMarkdown a:hover,
+        .swagger-ui .opblock-summary-path a:hover {
+            color: #2ef6cf !important;
+        }
+
+        .swagger-ui .filter-container {
+            padding: 0 0 14px 0 !important;
+            margin: 0 !important;
+        }
+
+        .swagger-ui .filter-container input[type=text] {
+            width: 100%;
+            max-width: 360px;
+            background: rgba(13, 19, 33, 0.9) !important;
+            color: var(--text) !important;
+        }
+
+        .swagger-ui .opblock-summary-control {
+            align-items: center !important;
+        }
+
+        .swagger-ui .opblock-summary-control:focus,
+        .swagger-ui button:focus,
+        .swagger-ui input:focus,
+        .swagger-ui select:focus,
+        .swagger-ui textarea:focus {
+            outline: none !important;
+            box-shadow: 0 0 0 3px var(--accent-dim) !important;
+            border-color: var(--accent) !important;
+        }
+
+        .swagger-ui .expand-operation,
+        .swagger-ui .opblock-control-arrow,
+        .swagger-ui svg {
+            fill: var(--text-dim);
+        }
+
+        .swagger-ui .execute-wrapper,
+        .swagger-ui .responses-wrapper,
+        .swagger-ui .parameters-col_description {
+            background: transparent !important;
+        }
+
+        .swagger-ui .btn,
+        .swagger-ui button,
+        .swagger-ui .authorization__btn {
+            background: transparent !important;
+            border: 1px solid var(--border-hover) !important;
+            color: var(--text) !important;
+        }
+
+        .swagger-ui .btn:hover,
+        .swagger-ui button:hover,
+        .swagger-ui .authorization__btn:hover {
+            border-color: var(--accent) !important;
+            color: var(--accent) !important;
+            background: var(--accent-dim) !important;
+        }
+
+        .swagger-ui .opblock-summary-method {
+            min-width: 72px;
+            justify-content: center;
+        }
+
+        .swagger-ui .copy-to-clipboard,
+        .swagger-ui .copy-to-clipboard button {
+            background: transparent !important;
+            color: var(--text-dim) !important;
+            border-color: var(--border) !important;
+        }
+
+        .swagger-ui .copy-to-clipboard button:hover {
+            color: var(--accent) !important;
+            border-color: var(--accent) !important;
+        }
+
+        .swagger-ui .errors-wrapper {
+            background: rgba(239, 68, 68, 0.1) !important;
+            border: 1px solid rgba(239, 68, 68, 0.35) !important;
+            border-radius: 8px !important;
+        }
+
         .swagger-ui .btn {
             font-family: 'JetBrains Mono', monospace !important;
             border-radius: 8px !important;
@@ -475,6 +583,18 @@
 
             .swagger-ui .opblock {
                 margin-bottom: 10px !important;
+            }
+
+            .swagger-ui .opblock-summary-path {
+                word-break: break-word;
+            }
+
+            .swagger-ui .opblock-summary {
+                gap: 8px;
+            }
+
+            .swagger-ui .filter-container input[type=text] {
+                max-width: 100%;
             }
         }
     </style>
