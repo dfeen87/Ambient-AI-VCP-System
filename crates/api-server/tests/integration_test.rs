@@ -335,8 +335,6 @@ async fn test_pending_task_captures_newly_registered_node() {
         .expect("cleanup tables after integration test");
 }
 
-
-
 #[tokio::test]
 async fn test_task_assignment_uses_universal_node_type_any() {
     let db_url = match std::env::var("TEST_DATABASE_URL") {
