@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 ///
 /// This module provides a connection pool and database operations
 /// for the Ambient AI VCP system. It uses sqlx for async database access.
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{postgres::PgPoolOptions, Executor, PgPool};
 use std::time::Duration;
 
 /// Database configuration
@@ -81,6 +81,10 @@ pub async fn create_pool(config: &DatabaseConfig) -> Result<PgPool> {
 /// is up to date. Should be run on application startup.
 pub async fn run_migrations(pool: &PgPool) -> Result<()> {
     tracing::info!("Running database migrations");
+
+    pool.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+        .await
+        .context("Failed to ensure pgcrypto extension exists")?;
 
     sqlx::migrate!("./migrations")
         .run(pool)
