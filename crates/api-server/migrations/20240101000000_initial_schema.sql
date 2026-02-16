@@ -1,5 +1,8 @@
 -- Add migration script to create nodes and tasks tables
 
+-- Ensure UUID generation function is available on managed PostgreSQL
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Create nodes table
 CREATE TABLE IF NOT EXISTS nodes (
     node_id VARCHAR(64) PRIMARY KEY,
@@ -76,4 +79,3 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Create index on username for login queries
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-
