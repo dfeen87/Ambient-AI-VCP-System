@@ -1226,10 +1226,14 @@
     async function fetchData() {
         const errorEl = document.getElementById('error-banner');
         try {
+            const authHeaders = authToken ? {
+                'Authorization': `Bearer ${authToken}`
+            } : {};
+
             const [statsRes, nodesRes, tasksRes] = await Promise.all([
-                fetch(`${apiBaseUrl}/api/v1/cluster/stats`),
-                fetch(`${apiBaseUrl}/api/v1/nodes`),
-                fetch(`${apiBaseUrl}/api/v1/tasks`),
+                fetch(`${apiBaseUrl}/api/v1/cluster/stats`, { headers: authHeaders }),
+                fetch(`${apiBaseUrl}/api/v1/nodes`, { headers: authHeaders }),
+                fetch(`${apiBaseUrl}/api/v1/tasks`, { headers: authHeaders }),
             ]);
 
             if (statsRes.ok) {
