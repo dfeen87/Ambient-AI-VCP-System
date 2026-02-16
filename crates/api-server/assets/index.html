@@ -854,12 +854,13 @@
                         <th>Task ID</th>
                         <th>Type</th>
                         <th>Status</th>
+                        <th>Percent Completed</th>
                         <th>Assigned Nodes</th>
                         <th>Created At</th>
                     </tr>
                 </thead>
                 <tbody id="tasks-table">
-                    <tr class="empty-row"><td colspan="5">Fetching tasks...</td></tr>
+                    <tr class="empty-row"><td colspan="6">Fetching tasks...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -1417,18 +1418,23 @@
     function renderTasks(tasks) {
         const tbody = document.getElementById('tasks-table');
         if (!tasks.length) {
-            tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No tasks submitted yet</td></tr>';
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No tasks submitted yet</td></tr>';
             return;
         }
         tbody.innerHTML = tasks.map(t => {
             const cls = t.status === 'completed' ? 'badge-completed'
                       : t.status === 'failed'    ? 'badge-failed'
                       :                            'badge-pending';
+            const percentComplete = t.status === 'completed' ? '100%'
+                                 : t.status === 'running'   ? '50%'
+                                 : t.status === 'failed'    ? '0%'
+                                 :                            '0%';
             return `
                 <tr>
                     <td><span class="mono-dim">${t.task_id.substring(0, 12)}···</span></td>
                     <td>${t.task_type}</td>
                     <td><span class="badge ${cls}">${t.status}</span></td>
+                    <td class="mono-dim">${percentComplete}</td>
                     <td class="mono-dim">${t.assigned_nodes.length} nodes</td>
                     <td class="mono-dim">${new Date(t.created_at).toLocaleString()}</td>
                 </tr>
