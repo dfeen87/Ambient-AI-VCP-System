@@ -4,7 +4,7 @@ use crate::error::ApiError;
 use axum::{
     body::Body,
     extract::Request,
-    http::{header, HeaderMap, HeaderValue},
+    http::{header, HeaderMap},
     middleware::Next,
     response::Response,
 };

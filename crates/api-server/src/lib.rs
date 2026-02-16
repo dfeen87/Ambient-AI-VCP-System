@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     middleware as axum_middleware,
-    routing::{delete, get, post, put},
+    routing::{get, post, put},
     Json, Router,
 };
 use sqlx::Row;
@@ -406,7 +406,7 @@ async fn register_user(
     )
     .bind(user_id)
     .bind(&api_key_hash)
-    .bind(&api_key.chars().take(8).collect::<String>())
+    .bind(api_key.chars().take(8).collect::<String>())
     .bind("default")
     .bind(vec!["tasks:read".to_string(), "tasks:write".to_string()])
     .execute(&state.db)
