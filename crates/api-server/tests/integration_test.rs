@@ -1,4 +1,7 @@
 use api_server::models::*;
+use api_server::state::AppState;
+use sqlx::PgPool;
+use uuid::Uuid;
 
 // Note: Database-dependent tests are commented out because they require TEST_DATABASE_URL
 // To run full integration tests with a real database:
@@ -254,6 +257,82 @@ fn test_task_validation_enforces_task_registry_runtime_limit() {
     };
 
     assert!(task_sub.validate().is_err());
+}
+
+#[tokio::test]
+async fn test_pending_task_captures_newly_registered_node() {
+    let db_url = match std::env::var("TEST_DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("Skipping test_pending_task_captures_newly_registered_node — no TEST_DATABASE_URL set");
+            return;
+        }
+    };
+
+    let pool = PgPool::connect(&db_url)
+        .await
+        .expect("connect to postgres for integration test");
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations should apply successfully for integration test");
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables before integration test");
+
+    let state = AppState::new(pool.clone());
+    let task = TaskSubmission {
+        task_type: "computation".to_string(),
+        wasm_module: None,
+        inputs: serde_json::json!({"job": "pending-capture"}),
+        requirements: TaskRequirements {
+            min_nodes: 1,
+            max_execution_time_sec: 300,
+            require_gpu: false,
+            require_proof: false,
+        },
+    };
+
+    let submitted_task = state
+        .submit_task(task)
+        .await
+        .expect("task should be accepted as pending even when no eligible nodes are available yet");
+    assert_eq!(submitted_task.status, TaskStatus::Pending);
+    assert!(submitted_task.assigned_nodes.is_empty());
+
+    let node_id = format!("pending-capture-node-{}", Uuid::new_v4());
+    let registration = NodeRegistration {
+        node_id: node_id.clone(),
+        region: "us-west".to_string(),
+        node_type: "compute".to_string(),
+        capabilities: NodeCapabilities {
+            bandwidth_mbps: 100.0,
+            cpu_cores: 8,
+            memory_gb: 16.0,
+            gpu_available: false,
+        },
+    };
+
+    state
+        .register_node(registration, Uuid::new_v4())
+        .await
+        .expect("node registration should succeed and trigger pending task assignment");
+
+    let updated_task = state
+        .get_task(&submitted_task.task_id)
+        .await
+        .expect("submitted task should still exist");
+
+    assert_eq!(updated_task.status, TaskStatus::Running);
+    assert!(updated_task.assigned_nodes.contains(&node_id));
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables after integration test");
 }
 
 // Database-dependent tests are commented out
