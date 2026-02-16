@@ -987,8 +987,8 @@
 
                 <div class="form-group form-span-3">
                     <label>Inputs (JSON)</label>
-                    <textarea id="task-inputs" placeholder='{"job":"example"}' required>{}</textarea>
-                    <div class="inline-hint" id="task-inputs-hint">Valid JSON object or array (max nesting depth enforced by backend).</div>
+                    <textarea id="task-inputs" placeholder='{"job":"example"} or plain text like summarize dataset A' required>{}</textarea>
+                    <div class="inline-hint" id="task-inputs-hint">You can paste JSON or plain text. Plain text is automatically wrapped as JSON.</div>
                 </div>
             </div>
 
@@ -1191,17 +1191,37 @@
             maxExecHint.className = 'inline-hint success';
         }
 
-        try {
-            JSON.parse(inputsRaw);
-            inputsHint.textContent = 'Valid JSON payload.';
-            inputsHint.className = 'inline-hint success';
-        } catch (_err) {
-            inputsHint.textContent = 'Invalid JSON syntax. Please correct before submitting.';
+        const parsedInputs = parseTaskInputsFlexible(inputsRaw);
+        if (parsedInputs === null) {
+            inputsHint.textContent = 'Inputs are required. Add JSON or plain text before submitting.';
             inputsHint.className = 'inline-hint error';
             isValid = false;
+        } else if (looksLikeJson(inputsRaw)) {
+            inputsHint.textContent = 'Valid JSON payload.';
+            inputsHint.className = 'inline-hint success';
+        } else {
+            inputsHint.textContent = 'Plain text detected — it will be submitted as {"prompt": "..."}.';
+            inputsHint.className = 'inline-hint success';
         }
 
         return isValid;
+    }
+
+    function looksLikeJson(raw) {
+        return /^[\[{]/.test(raw.trim());
+    }
+
+    function parseTaskInputsFlexible(rawInputs) {
+        const trimmed = (rawInputs || '').trim();
+        if (!trimmed) {
+            return null;
+        }
+
+        try {
+            return JSON.parse(trimmed);
+        } catch (_err) {
+            return { prompt: trimmed };
+        }
     }
 
     function animateValue(el, end) {
@@ -1383,11 +1403,9 @@
             return;
         }
 
-        let parsedInputs;
-        try {
-            parsedInputs = JSON.parse(document.getElementById('task-inputs').value.trim());
-        } catch (_err) {
-            showToast('Inputs must be valid JSON', true);
+        const parsedInputs = parseTaskInputsFlexible(document.getElementById('task-inputs').value);
+        if (parsedInputs === null) {
+            showToast('Please provide inputs as JSON or plain text', true);
             return;
         }
 
