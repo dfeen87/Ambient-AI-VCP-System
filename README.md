@@ -8,6 +8,16 @@ A **production-ready** implementation of a **Verifiable Computation Protocol (VC
 
 ✅ **All 48 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tested at scale** | ✅ **Production ZK Proofs (Groth16)**
 
+## 🚀 Live Demo
+
+[https://ambient-ai-vcp-system.onrender.com](https://ambient-ai-vcp-system.onrender.com)
+
+| Endpoint | URL |
+|----------|-----|
+| Dashboard | https://ambient-ai-vcp-system.onrender.com |
+| Swagger UI | https://ambient-ai-vcp-system.onrender.com/swagger-ui |
+| OpenAPI JSON | https://ambient-ai-vcp-system.onrender.com/api-docs/openapi.json |
+
 ---
 
 ## 🌟 Key Features
