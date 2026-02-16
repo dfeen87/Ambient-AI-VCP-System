@@ -10,11 +10,6 @@ pub fn create_cors_layer() -> CorsLayer {
     let allowed_origins = std::env::var("CORS_ALLOWED_ORIGINS")
         .unwrap_or_else(|_| "http://localhost:3000,http://localhost:5173".to_string());
 
-    let is_production = std::env::var("ENVIRONMENT")
-        .unwrap_or_else(|_| "development".to_string())
-        .to_lowercase()
-        == "production";
-
     if allowed_origins.contains("*") {
         panic!("CORS_ALLOWED_ORIGINS cannot contain wildcard (*)");
     }
