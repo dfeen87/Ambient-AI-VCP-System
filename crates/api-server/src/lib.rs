@@ -1,15 +1,12 @@
 use axum::{
-    body::Body,
     extract::{Path, State},
-    http::{Request, StatusCode},
-    middleware::{self, Next},
-    response::Response,
+    http::StatusCode,
+    middleware as axum_middleware,
     routing::{get, post, put},
     Json, Router,
 };
 use sqlx::Row;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
 use tracing::info;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -18,6 +15,7 @@ use uuid::Uuid;
 pub mod auth;
 pub mod db;
 pub mod error;
+pub mod middleware;
 pub mod models;
 pub mod rate_limit;
 pub mod state;
@@ -444,19 +442,13 @@ async fn login(
     }))
 }
 
-/// Authentication middleware
-async fn auth_middleware(mut request: Request<Body>, next: Next) -> Result<Response, ApiError> {
-    let auth_config = auth::AuthConfig::from_env()?;
-    request.extensions_mut().insert(auth_config);
-    Ok(next.run(request).await)
-}
-
 /// Build the API router
 pub fn create_router(state: Arc<AppState>) -> Router {
     let public_routes = Router::new()
         .route("/health", get(health_check))
         .route("/auth/register", post(register_user))
-        .route("/auth/login", post(login));
+        .route("/auth/login", post(login))
+        .layer(axum_middleware::from_fn(middleware::auth::auth_config_middleware));
 
     let protected_routes = Router::new()
         .route("/nodes", post(register_node).get(list_nodes))
@@ -466,7 +458,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/tasks/:task_id", get(get_task))
         .route("/proofs/verify", post(verify_proof))
         .route("/cluster/stats", get(get_cluster_stats))
-        .layer(middleware::from_fn(auth_middleware));
+        .layer(axum_middleware::from_fn(middleware::auth::jwt_auth_middleware));
 
     let api_routes = Router::new().merge(public_routes).merge(protected_routes);
 
@@ -474,7 +466,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/", get(dashboard))
         .nest("/api/v1", api_routes)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .layer(CorsLayer::permissive())
+        .merge(middleware::metrics::create_metrics_router())
+        .layer(axum_middleware::from_fn(middleware::logging::request_tracing_middleware))
+        .layer(axum_middleware::from_fn(middleware::headers::security_headers_middleware))
+        .layer(axum_middleware::from_fn(rate_limit::rate_limit_middleware))
+        .layer(middleware::cors::create_cors_layer())
         .with_state(state)
 }
 

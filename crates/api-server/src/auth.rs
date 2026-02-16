@@ -5,11 +5,7 @@
 /// - API key authentication
 /// - Password hashing with bcrypt
 use crate::error::{ApiError, ApiResult};
-use axum::{extract::FromRequestParts, http::request::Parts, RequestPartsExt};
-use axum_extra::{
-    headers::{authorization::Bearer, Authorization},
-    TypedHeader,
-};
+use axum::{extract::FromRequestParts, http::request::Parts};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
@@ -143,7 +139,7 @@ pub struct AuthUser {
     pub role: String,
 }
 
-/// Extract authenticated user from JWT token in request headers
+/// Extract authenticated user from Claims stored in request extensions by middleware
 #[axum::async_trait]
 impl<S> FromRequestParts<S> for AuthUser
 where
@@ -152,25 +148,18 @@ where
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // Extract the Authorization header
-        let TypedHeader(Authorization(bearer)) = parts
-            .extract::<TypedHeader<Authorization<Bearer>>>()
-            .await
-            .map_err(|_| ApiError::unauthorized("Missing or invalid authorization header"))?;
-
-        // Get auth config from extensions (should be set by middleware)
-        let auth_config = parts
+        // Get validated claims from extensions (set by jwt_auth_middleware)
+        let claims = parts
             .extensions
-            .get::<AuthConfig>()
-            .ok_or_else(|| ApiError::internal_error("Auth configuration not available"))?;
-
-        // Validate the token
-        let claims = auth_config.validate_token(bearer.token())?;
+            .get::<Claims>()
+            .ok_or_else(|| {
+                ApiError::unauthorized("Authentication required. Claims not found in request extensions.")
+            })?;
 
         Ok(AuthUser {
-            user_id: claims.sub,
-            username: claims.username,
-            role: claims.role,
+            user_id: claims.sub.clone(),
+            username: claims.username.clone(),
+            role: claims.role.clone(),
         })
     }
 }

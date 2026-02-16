@@ -45,6 +45,10 @@ bcrypt = "0.15"
 # Random number generation (for API keys and rate limiting)
 rand = "0.8"
 
+# Metrics
+prometheus = "0.13"
+lazy_static = "1.4"
+
 # Environment variables
 dotenvy = "0.15"
 
