@@ -18,19 +18,23 @@ impl AppState {
         Self { db }
     }
 
-    /// Register a new node in the database
-    pub async fn register_node(&self, registration: NodeRegistration) -> ApiResult<NodeInfo> {
+    /// Register a new node in the database with owner tracking
+    pub async fn register_node(
+        &self,
+        registration: NodeRegistration,
+        owner_id: Uuid,
+    ) -> ApiResult<NodeInfo> {
         let now = chrono::Utc::now();
 
-        // Insert node into database
+        // Insert node into database with owner_id
         sqlx::query(
             r#"
             INSERT INTO nodes (
                 node_id, region, node_type, bandwidth_mbps, cpu_cores, 
                 memory_gb, gpu_available, health_score, status, 
-                registered_at, last_seen
+                registered_at, last_seen, owner_id, last_heartbeat
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             "#,
         )
         .bind(&registration.node_id)
@@ -43,6 +47,8 @@ impl AppState {
         .bind(100.0_f64)
         .bind("online")
         .bind(now)
+        .bind(now)
+        .bind(owner_id)
         .bind(now)
         .execute(&self.db)
         .await?;
@@ -62,7 +68,7 @@ impl AppState {
         Ok(node_info)
     }
 
-    /// List all nodes from the database
+    /// List all nodes from the database (excludes soft-deleted nodes)
     pub async fn list_nodes(&self) -> Vec<NodeInfo> {
         let result = sqlx::query(
             r#"
@@ -71,6 +77,7 @@ impl AppState {
                 memory_gb, gpu_available, health_score, status,
                 registered_at, last_seen
             FROM nodes
+            WHERE deleted_at IS NULL
             ORDER BY registered_at DESC
             "#,
         )
@@ -107,7 +114,7 @@ impl AppState {
         }
     }
 
-    /// Get a specific node from the database
+    /// Get a specific node from the database (excludes soft-deleted nodes)
     pub async fn get_node(&self, node_id: &str) -> Option<NodeInfo> {
         let result = sqlx::query(
             r#"
@@ -116,7 +123,7 @@ impl AppState {
                 memory_gb, gpu_available, health_score, status,
                 registered_at, last_seen
             FROM nodes
-            WHERE node_id = $1
+            WHERE node_id = $1 AND deleted_at IS NULL
             "#,
         )
         .bind(node_id)
@@ -362,6 +369,118 @@ impl AppState {
                     avg_health_score: 0.0,
                     total_compute_capacity: 0.0,
                 }
+            }
+        }
+    }
+
+    /// Check if a user owns a specific node
+    pub async fn check_node_ownership(&self, node_id: &str, user_id: Uuid) -> ApiResult<bool> {
+        let result = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM nodes
+            WHERE node_id = $1 AND owner_id = $2 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(node_id)
+        .bind(user_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        Ok(result > 0)
+    }
+
+    /// Soft delete a node (sets deleted_at timestamp)
+    pub async fn delete_node(&self, node_id: &str, owner_id: Uuid) -> ApiResult<bool> {
+        // Verify ownership
+        if !self.check_node_ownership(node_id, owner_id).await? {
+            return Ok(false);
+        }
+
+        let now = chrono::Utc::now();
+        let result = sqlx::query(
+            r#"
+            UPDATE nodes
+            SET deleted_at = $1, status = 'offline', updated_at = $1
+            WHERE node_id = $2 AND owner_id = $3 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(now)
+        .bind(node_id)
+        .bind(owner_id)
+        .execute(&self.db)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Update node heartbeat timestamp
+    pub async fn update_node_heartbeat(&self, node_id: &str, owner_id: Uuid) -> ApiResult<bool> {
+        // Verify ownership
+        if !self.check_node_ownership(node_id, owner_id).await? {
+            return Ok(false);
+        }
+
+        let now = chrono::Utc::now();
+        let result = sqlx::query(
+            r#"
+            UPDATE nodes
+            SET last_heartbeat = $1, last_seen = $1, updated_at = $1
+            WHERE node_id = $2 AND owner_id = $3 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(now)
+        .bind(node_id)
+        .bind(owner_id)
+        .execute(&self.db)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// List nodes owned by a specific user
+    pub async fn list_user_nodes(&self, owner_id: Uuid) -> Vec<NodeInfo> {
+        let result = sqlx::query(
+            r#"
+            SELECT 
+                node_id, region, node_type, bandwidth_mbps, cpu_cores,
+                memory_gb, gpu_available, health_score, status,
+                registered_at, last_seen
+            FROM nodes
+            WHERE owner_id = $1 AND deleted_at IS NULL
+            ORDER BY registered_at DESC
+            "#,
+        )
+        .bind(owner_id)
+        .fetch_all(&self.db)
+        .await;
+
+        match result {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|row| NodeInfo {
+                    node_id: row.get("node_id"),
+                    region: row.get("region"),
+                    node_type: row.get("node_type"),
+                    capabilities: NodeCapabilities {
+                        bandwidth_mbps: row.get("bandwidth_mbps"),
+                        cpu_cores: row.get::<i32, _>("cpu_cores") as u32,
+                        memory_gb: row.get("memory_gb"),
+                        gpu_available: row.get("gpu_available"),
+                    },
+                    health_score: row.get("health_score"),
+                    status: row.get("status"),
+                    registered_at: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("registered_at")
+                        .to_rfc3339(),
+                    last_seen: row
+                        .get::<chrono::DateTime<chrono::Utc>, _>("last_seen")
+                        .to_rfc3339(),
+                })
+                .collect(),
+            Err(e) => {
+                tracing::error!("Failed to list user nodes: {:?}", e);
+                vec![]
             }
         }
     }

@@ -4,7 +4,7 @@ use axum::{
     http::{Request, StatusCode},
     middleware::{self, Next},
     response::Response,
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 use sqlx::Row;
@@ -34,6 +34,8 @@ use state::AppState;
         register_node,
         list_nodes,
         get_node,
+        delete_node,
+        update_heartbeat,
         submit_task,
         get_task,
         list_tasks,
@@ -88,21 +90,31 @@ async fn health_check() -> Json<HealthResponse> {
     request_body = NodeRegistration,
     responses(
         (status = 201, description = "Node registered successfully", body = NodeInfo),
-        (status = 400, description = "Invalid request", body = ApiError)
+        (status = 400, description = "Invalid request", body = ApiError),
+        (status = 401, description = "Unauthorized", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
     )
 )]
 async fn register_node(
     State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
     Json(registration): Json<NodeRegistration>,
 ) -> ApiResult<(StatusCode, Json<NodeInfo>)> {
     registration.validate()?;
 
     info!(
-        "Registering node: {} in region {}",
-        registration.node_id, registration.region
+        "Registering node: {} in region {} for user {}",
+        registration.node_id, registration.region, auth_user.username
     );
 
-    let node_info = state.register_node(registration).await?;
+    // Parse user_id
+    let user_id = Uuid::parse_str(&auth_user.user_id).map_err(|_| {
+        ApiError::internal_error("Invalid user ID format")
+    })?;
+
+    let node_info = state.register_node(registration, user_id).await?;
 
     Ok((StatusCode::CREATED, Json(node_info)))
 }
@@ -142,6 +154,94 @@ async fn get_node(
         .ok_or_else(|| ApiError::not_found(format!("Node {} not found", node_id)))?;
 
     Ok(Json(node))
+}
+
+/// Delete a node (soft delete)
+#[utoipa::path(
+    delete,
+    path = "/api/v1/nodes/{node_id}",
+    params(
+        ("node_id" = String, Path, description = "Node ID")
+    ),
+    responses(
+        (status = 200, description = "Node deleted successfully"),
+        (status = 403, description = "Not authorized to delete this node", body = ApiError),
+        (status = 404, description = "Node not found", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn delete_node(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Path(node_id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    info!(
+        "Deleting node: {} for user {}",
+        node_id, auth_user.username
+    );
+
+    // Parse user_id
+    let user_id = Uuid::parse_str(&auth_user.user_id).map_err(|_| {
+        ApiError::internal_error("Invalid user ID format")
+    })?;
+
+    let deleted = state.delete_node(&node_id, user_id).await?;
+
+    if !deleted {
+        return Err(ApiError::not_found_or_forbidden(format!(
+            "Node {} not found or you don't have permission to delete it",
+            node_id
+        )));
+    }
+
+    Ok(Json(serde_json::json!({
+        "message": "Node deleted successfully",
+        "node_id": node_id
+    })))
+}
+
+/// Update node heartbeat
+#[utoipa::path(
+    put,
+    path = "/api/v1/nodes/{node_id}/heartbeat",
+    params(
+        ("node_id" = String, Path, description = "Node ID")
+    ),
+    responses(
+        (status = 200, description = "Heartbeat updated successfully"),
+        (status = 403, description = "Not authorized to update this node", body = ApiError),
+        (status = 404, description = "Node not found", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn update_heartbeat(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Path(node_id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    // Parse user_id
+    let user_id = Uuid::parse_str(&auth_user.user_id).map_err(|_| {
+        ApiError::internal_error("Invalid user ID format")
+    })?;
+
+    let updated = state.update_node_heartbeat(&node_id, user_id).await?;
+
+    if !updated {
+        return Err(ApiError::not_found_or_forbidden(format!(
+            "Node {} not found or you don't have permission to update it",
+            node_id
+        )));
+    }
+
+    Ok(Json(serde_json::json!({
+        "message": "Heartbeat updated successfully",
+        "node_id": node_id,
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    })))
 }
 
 /// Submit a task
@@ -368,7 +468,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let protected_routes = Router::new()
         .route("/nodes", post(register_node).get(list_nodes))
-        .route("/nodes/:node_id", get(get_node))
+        .route("/nodes/:node_id", get(get_node).delete(delete_node))
+        .route("/nodes/:node_id/heartbeat", put(update_heartbeat))
         .route("/tasks", post(submit_task).get(list_tasks))
         .route("/tasks/:task_id", get(get_task))
         .route("/proofs/verify", post(verify_proof))
