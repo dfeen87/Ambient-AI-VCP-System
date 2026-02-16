@@ -163,6 +163,38 @@ impl AppState {
         let task_id = Uuid::new_v4();
         let now = chrono::Utc::now();
 
+        let task_registry_entry = task_type_registry_entry(&task.task_type)
+            .ok_or_else(|| crate::error::ApiError::bad_request("Unsupported task_type"))?;
+
+        // Enforce task registry requirements against active node registry.
+        let eligible_nodes: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM nodes
+            WHERE deleted_at IS NULL
+              AND status = 'online'
+              AND cpu_cores >= $1
+              AND memory_gb >= $2
+              AND bandwidth_mbps >= $3
+              AND ($4 = FALSE OR gpu_available = TRUE)
+            "#,
+        )
+        .bind(task_registry_entry.minimum_capabilities.cpu_cores as i32)
+        .bind(task_registry_entry.minimum_capabilities.memory_gb)
+        .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
+        .bind(
+            task.requirements.require_gpu || task_registry_entry.minimum_capabilities.gpu_available,
+        )
+        .fetch_one(&self.db)
+        .await?;
+
+        if eligible_nodes < task.requirements.min_nodes as i64 {
+            return Err(crate::error::ApiError::bad_request(format!(
+                "insufficient eligible nodes for task_type {}: required {}, available {}",
+                task.task_type, task.requirements.min_nodes, eligible_nodes
+            )));
+        }
+
         // Insert task into database
         sqlx::query(
             r#"

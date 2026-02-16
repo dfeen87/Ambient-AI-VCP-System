@@ -102,6 +102,19 @@ Tip: To quickly verify the public demo is reachable, run:
 - 📊 **Request Tracing**: Structured logging with request IDs for all API calls
 - 💾 **Enhanced Persistence**: Migrations for task_runs, proof_artifacts, api_keys, audit_log, node_heartbeat_history
 
+### Security Policy: Node Registry + Task Intake
+- **Capability whitelist (registration)**:
+  - `bandwidth_mbps`: `10..=100_000`
+  - `cpu_cores`: `1..=256`
+  - `memory_gb`: `1..=2_048`
+- **Task-type registry (submission)**:
+  - Canonical task types: `federated_learning`, `zk_proof`, `wasm_execution`, `computation`
+  - Per-type policies: max execution time, max payload size, and WASM allow/deny
+- **Node registry enforcement (admission control)**:
+  - Task creation checks for enough eligible online nodes that meet the task policy before insert.
+
+📖 See [`docs/NODE_SECURITY.md`](./docs/NODE_SECURITY.md) for the full security model, threat boundaries, and operator guidance.
+
 ---
 
 ## 🏗️ Architecture
@@ -191,6 +204,9 @@ Tip: To quickly verify the public demo is reachable, run:
 - ✅ **Authorization**: Users can only manage their own nodes
 - ✅ **Heartbeat Mechanism**: Track node availability and detect offline nodes
 - ✅ **Soft Delete**: Maintain audit trail when nodes are deregistered
+- ✅ **Capability Whitelist Enforcement**: Node capability claims are validated at registration (`bandwidth_mbps`, `cpu_cores`, `memory_gb`)
+- ✅ **Task-Type Registry Enforcement**: Task intake checks canonical task types, runtime limits, WASM policy, and minimum capability requirements
+- ✅ **Node Eligibility Gate**: Task submission is rejected when the online registry cannot satisfy `min_nodes` for the task policy
 - ℹ️ **Current Visibility Model**: Node/task list endpoints are authenticated (JWT required) and visible to authenticated users; node ownership controls mutation (delete/heartbeat)
 
 **Endpoints:**
@@ -210,10 +226,10 @@ Tip: To quickly verify the public demo is reachable, run:
 
 **Validation Rules:**
 - Node IDs: 1-64 chars, alphanumeric + hyphens/underscores
-- Node types: `compute`, `gateway`, `storage`, `validator`
-- Bandwidth: 0-100,000 Mbps
-- CPU cores: 1-1024
-- Memory: 0.1-10,000 GB
+- Node types: `compute`, `gateway`, `storage`, `validator`, `any`
+- Bandwidth: 10-100,000 Mbps
+- CPU cores: 1-256
+- Memory: 1-2,048 GB
 - Task types: `federated_learning`, `zk_proof`, `wasm_execution`, `computation`
 - Min nodes: 1-1000
 - Execution time: 1-3600 seconds
