@@ -41,6 +41,7 @@ use state::AppState;
         get_cluster_stats,
         register_user,
         login,
+        refresh_token,
     ),
     components(schemas(
         HealthResponse,
@@ -56,6 +57,8 @@ use state::AppState;
         auth::RegisterRequest,
         auth::LoginRequest,
         auth::LoginResponse,
+        auth::RefreshTokenRequest,
+        auth::RefreshTokenResponse,
     ))
 )]
 struct ApiDoc;
@@ -453,10 +456,119 @@ async fn login(
     let auth_config = auth::AuthConfig::from_env()?;
     let token = auth_config.generate_token(user_id.to_string(), username.clone(), role)?;
 
+    // Generate refresh token
+    let refresh_token = auth::generate_refresh_token();
+    let refresh_token_hash = auth::hash_refresh_token(&refresh_token);
+    let expires_at = chrono::Utc::now() + chrono::Duration::days(30); // 30 days
+
+    // Store refresh token in database
+    sqlx::query(
+        r#"
+        INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3)
+        "#,
+    )
+    .bind(user_id)
+    .bind(&refresh_token_hash)
+    .bind(expires_at)
+    .execute(&state.db)
+    .await?;
+
     info!("Login successful for user: {}", username);
 
     Ok(Json(auth::LoginResponse {
         access_token: token,
+        refresh_token: Some(refresh_token),
+        token_type: "Bearer".to_string(),
+        expires_in: auth_config.jwt_expiration_hours * 3600,
+    }))
+}
+
+/// Refresh token endpoint
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    request_body = RefreshTokenRequest,
+    responses(
+        (status = 200, description = "Token refreshed successfully", body = RefreshTokenResponse),
+        (status = 401, description = "Invalid or expired refresh token", body = ApiError)
+    )
+)]
+async fn refresh_token(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<auth::RefreshTokenRequest>,
+) -> ApiResult<Json<auth::RefreshTokenResponse>> {
+    let token_hash = auth::hash_refresh_token(&request.refresh_token);
+
+    // Fetch refresh token from database
+    let token_row = sqlx::query(
+        r#"
+        SELECT rt.user_id, rt.expires_at, rt.revoked_at, u.username, u.role
+        FROM refresh_tokens rt
+        JOIN users u ON rt.user_id = u.user_id
+        WHERE rt.token_hash = $1
+        "#,
+    )
+    .bind(&token_hash)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::unauthorized("Invalid refresh token"))?;
+
+    let user_id: Uuid = token_row.get("user_id");
+    let username: String = token_row.get("username");
+    let role: String = token_row.get("role");
+    let expires_at: chrono::DateTime<chrono::Utc> = token_row.get("expires_at");
+    let revoked_at: Option<chrono::DateTime<chrono::Utc>> = token_row.get("revoked_at");
+
+    // Check if token is revoked
+    if revoked_at.is_some() {
+        return Err(ApiError::unauthorized("Refresh token has been revoked"));
+    }
+
+    // Check if token is expired
+    if expires_at < chrono::Utc::now() {
+        return Err(ApiError::unauthorized("Refresh token has expired"));
+    }
+
+    // Revoke old refresh token
+    sqlx::query(
+        r#"
+        UPDATE refresh_tokens 
+        SET revoked_at = NOW(), revoked_reason = 'rotated'
+        WHERE token_hash = $1
+        "#,
+    )
+    .bind(&token_hash)
+    .execute(&state.db)
+    .await?;
+
+    // Generate new JWT access token
+    let auth_config = auth::AuthConfig::from_env()?;
+    let access_token = auth_config.generate_token(user_id.to_string(), username, role)?;
+
+    // Generate new refresh token
+    let new_refresh_token = auth::generate_refresh_token();
+    let new_token_hash = auth::hash_refresh_token(&new_refresh_token);
+    let new_expires_at = chrono::Utc::now() + chrono::Duration::days(30);
+
+    // Store new refresh token
+    sqlx::query(
+        r#"
+        INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3)
+        "#,
+    )
+    .bind(user_id)
+    .bind(&new_token_hash)
+    .bind(new_expires_at)
+    .execute(&state.db)
+    .await?;
+
+    info!("Token refreshed successfully for user_id: {}", user_id);
+
+    Ok(Json(auth::RefreshTokenResponse {
+        access_token,
+        refresh_token: new_refresh_token,
         token_type: "Bearer".to_string(),
         expires_in: auth_config.jwt_expiration_hours * 3600,
     }))
@@ -468,6 +580,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/health", get(health_check))
         .route("/auth/register", post(register_user))
         .route("/auth/login", post(login))
+        .route("/auth/refresh", post(refresh_token))
         .layer(axum_middleware::from_fn(middleware::auth::auth_config_middleware));
 
     let protected_routes = Router::new()

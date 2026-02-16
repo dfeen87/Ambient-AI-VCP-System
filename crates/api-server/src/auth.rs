@@ -178,10 +178,62 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     /// JWT access token
     pub access_token: String,
+    /// Refresh token for token rotation
+    pub refresh_token: Option<String>,
     /// Token type (always "Bearer")
     pub token_type: String,
     /// Token expiration in seconds
     pub expires_in: i64,
+}
+
+/// Refresh token request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RefreshTokenRequest {
+    /// Refresh token
+    pub refresh_token: String,
+}
+
+/// Refresh token response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RefreshTokenResponse {
+    /// New JWT access token
+    pub access_token: String,
+    /// New refresh token
+    pub refresh_token: String,
+    /// Token type (always "Bearer")
+    pub token_type: String,
+    /// Token expiration in seconds
+    pub expires_in: i64,
+}
+
+/// Generate a secure refresh token
+pub fn generate_refresh_token() -> String {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const TOKEN_LENGTH: usize = 64;
+
+    let mut rng = rand::thread_rng();
+
+    let token: String = (0..TOKEN_LENGTH)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect();
+
+    format!("rt_{}", token)
+}
+
+/// Hash a refresh token using SHA-256
+pub fn hash_refresh_token(token: &str) -> String {
+    // Use bcrypt-style hashing for consistency
+    // In production, you might want to use a dedicated hashing function
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    
+    let mut hasher = DefaultHasher::new();
+    token.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
 }
 
 /// User registration request

@@ -44,6 +44,7 @@ bcrypt = "0.15"
 
 # Encoding/decoding
 base64 = "0.22"
+hex = "0.4"
 
 # Random number generation (for API keys and rate limiting)
 rand = "0.8"
