@@ -53,7 +53,7 @@ impl WasmEngine {
     }
 
 pub async fn execute(&self, call: WasmCall) -> Result<WasmResult> {
-    let start = Instant::now();
+    let _start = Instant::now();
 
     let canonical_module_path = match canonicalize_module_path(&call.module_path) {
         Ok(p) => p,
