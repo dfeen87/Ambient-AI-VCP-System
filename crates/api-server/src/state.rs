@@ -53,6 +53,11 @@ impl AppState {
         .execute(&self.db)
         .await?;
 
+        // Attempt to attach the newly registered node to pending tasks that still
+        // need additional workers.
+        self.assign_pending_tasks_for_node(&registration.node_id)
+            .await?;
+
         // Return the created node
         let node_info = NodeInfo {
             node_id: registration.node_id,
@@ -169,35 +174,6 @@ impl AppState {
         let task_registry_entry = task_type_registry_entry(&task.task_type)
             .ok_or_else(|| crate::error::ApiError::bad_request("Unsupported task_type"))?;
 
-        // Enforce task registry requirements against active node registry.
-        let eligible_nodes: i64 = sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*)
-            FROM nodes
-            WHERE deleted_at IS NULL
-              AND status = 'online'
-              AND cpu_cores >= $1
-              AND memory_gb >= $2
-              AND bandwidth_mbps >= $3
-              AND ($4 = FALSE OR gpu_available = TRUE)
-            "#,
-        )
-        .bind(task_registry_entry.minimum_capabilities.cpu_cores as i32)
-        .bind(task_registry_entry.minimum_capabilities.memory_gb)
-        .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
-        .bind(
-            task.requirements.require_gpu || task_registry_entry.minimum_capabilities.gpu_available,
-        )
-        .fetch_one(&self.db)
-        .await?;
-
-        if eligible_nodes < task.requirements.min_nodes as i64 {
-            return Err(crate::error::ApiError::bad_request(format!(
-                "insufficient eligible nodes for task_type {}: required {}, available {}",
-                task.task_type, task.requirements.min_nodes, eligible_nodes
-            )));
-        }
-
         // Insert task into database
         sqlx::query(
             r#"
@@ -220,6 +196,14 @@ impl AppState {
         .execute(&self.db)
         .await?;
 
+        self.assign_available_nodes_for_task(
+            task_id,
+            task_registry_entry,
+            task.requirements.min_nodes,
+            task.requirements.require_gpu,
+        )
+        .await?;
+
         let task_info = TaskInfo {
             task_id: task_id.to_string(),
             task_type: task.task_type,
@@ -232,6 +216,164 @@ impl AppState {
         };
 
         Ok(task_info)
+    }
+
+    async fn assign_available_nodes_for_task(
+        &self,
+        task_id: Uuid,
+        task_registry_entry: &TaskTypeRegistryEntry,
+        min_nodes: u32,
+        require_gpu: bool,
+    ) -> ApiResult<()> {
+        let node_ids = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT node_id
+            FROM nodes
+            WHERE deleted_at IS NULL
+              AND status = 'online'
+              AND cpu_cores >= $1
+              AND memory_gb >= $2
+              AND bandwidth_mbps >= $3
+              AND ($4 = FALSE OR gpu_available = TRUE)
+            ORDER BY registered_at ASC
+            "#,
+        )
+        .bind(task_registry_entry.minimum_capabilities.cpu_cores as i32)
+        .bind(task_registry_entry.minimum_capabilities.memory_gb)
+        .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
+        .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
+        .fetch_all(&self.db)
+        .await?;
+
+        for node_id in node_ids {
+            sqlx::query(
+                r#"
+                INSERT INTO task_assignments (task_id, node_id)
+                VALUES ($1, $2)
+                ON CONFLICT (task_id, node_id) DO NOTHING
+                "#,
+            )
+            .bind(task_id)
+            .bind(node_id)
+            .execute(&self.db)
+            .await?;
+        }
+
+        self.update_task_status_from_assignments(task_id, min_nodes)
+            .await
+    }
+
+    async fn assign_pending_tasks_for_node(&self, node_id: &str) -> ApiResult<()> {
+        let pending_tasks = sqlx::query(
+            r#"
+            SELECT
+                t.task_id,
+                t.task_type,
+                t.min_nodes,
+                t.require_gpu,
+                COALESCE(COUNT(ta.node_id), 0) AS assigned_nodes
+            FROM tasks t
+            LEFT JOIN task_assignments ta ON ta.task_id = t.task_id
+            WHERE t.status = 'pending'
+            GROUP BY t.task_id, t.task_type, t.min_nodes, t.require_gpu
+            HAVING COALESCE(COUNT(ta.node_id), 0) < t.min_nodes
+            ORDER BY t.created_at ASC
+            "#,
+        )
+        .fetch_all(&self.db)
+        .await?;
+
+        for task in pending_tasks {
+            let task_id: Uuid = task.get("task_id");
+            let task_type: String = task.get("task_type");
+            let min_nodes: i32 = task.get("min_nodes");
+            let require_gpu: bool = task.get("require_gpu");
+
+            let Some(task_registry_entry) = task_type_registry_entry(&task_type) else {
+                continue;
+            };
+
+            let node_is_eligible = sqlx::query_scalar::<_, bool>(
+                r#"
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM nodes n
+                    WHERE n.node_id = $1
+                      AND n.deleted_at IS NULL
+                      AND n.status = 'online'
+                      AND n.cpu_cores >= $2
+                      AND n.memory_gb >= $3
+                      AND n.bandwidth_mbps >= $4
+                      AND ($5 = FALSE OR n.gpu_available = TRUE)
+                )
+                "#,
+            )
+            .bind(node_id)
+            .bind(task_registry_entry.minimum_capabilities.cpu_cores as i32)
+            .bind(task_registry_entry.minimum_capabilities.memory_gb)
+            .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
+            .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
+            .fetch_one(&self.db)
+            .await?;
+
+            if !node_is_eligible {
+                continue;
+            }
+
+            sqlx::query(
+                r#"
+                INSERT INTO task_assignments (task_id, node_id)
+                VALUES ($1, $2)
+                ON CONFLICT (task_id, node_id) DO NOTHING
+                "#,
+            )
+            .bind(task_id)
+            .bind(node_id)
+            .execute(&self.db)
+            .await?;
+
+            self.update_task_status_from_assignments(task_id, min_nodes as u32)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn update_task_status_from_assignments(
+        &self,
+        task_id: Uuid,
+        min_nodes: u32,
+    ) -> ApiResult<()> {
+        let assigned_nodes: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM task_assignments
+            WHERE task_id = $1
+            "#,
+        )
+        .bind(task_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        let next_status = if assigned_nodes >= min_nodes as i64 {
+            "running"
+        } else {
+            "pending"
+        };
+
+        sqlx::query(
+            r#"
+            UPDATE tasks
+            SET status = $1, updated_at = NOW()
+            WHERE task_id = $2
+            "#,
+        )
+        .bind(next_status)
+        .bind(task_id)
+        .execute(&self.db)
+        .await?;
+
+        Ok(())
     }
 
     /// Get a specific task from the database
