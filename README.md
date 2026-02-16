@@ -2,11 +2,25 @@
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-48%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A **production-ready** implementation of a **Verifiable Computation Protocol (VCP)** that orchestrates AI workloads across heterogeneous edge devices with cryptographic verification, zero-knowledge proofs, and comprehensive input validation.
+A **live online application** and implementation of a **Verifiable Computation Protocol (VCP)** for running and verifying distributed compute tasks across many machines.
 
-## 🎯 Status: **Production-Ready for Development & Testing**
+## 🎯 Status: **Live in Production (Public Demo Running)**
 
-✅ **All 48 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tested at scale** | ✅ **Production ZK Proofs (Groth16)**
+✅ **All 48 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
+
+> Yes — this app is already deployed and running online.
+> You can use it as-is, and if you self-host it, you should still tune infra/security settings for your own environment.
+
+## 🧾 In Plain English: What this app does
+
+Think of this app as a **marketplace for compute power**:
+
+- Some people have spare machines (laptops, servers, edge devices) and register them as **nodes**.
+- Other people submit **tasks** they want computed.
+- The system finds appropriate nodes, runs the work, and tracks results.
+- It can also verify that work was executed correctly using cryptographic proofs.
+
+In simple terms: one side provides machines, the other side submits jobs, and this app matches them, runs the work, and shows results in one dashboard.
 
 ## 🚀 Live Demo
 
@@ -17,6 +31,9 @@ A **production-ready** implementation of a **Verifiable Computation Protocol (VC
 | Dashboard | https://ambient-ai-vcp-system.onrender.com |
 | Swagger UI | https://ambient-ai-vcp-system.onrender.com/swagger-ui |
 | OpenAPI JSON | https://ambient-ai-vcp-system.onrender.com/api-docs/openapi.json |
+
+Tip: To quickly verify the public demo is reachable, run:
+`curl https://ambient-ai-vcp-system.onrender.com/api/v1/health`
  
 ---
 
@@ -57,7 +74,7 @@ A **production-ready** implementation of a **Verifiable Computation Protocol (VC
 - 🌐 **Ambient Node Mesh**: Self-organizing network of heterogeneous edge devices
 - 🧠 **Intelligent Orchestration**: Health-based task assignment with reputation scoring
 - 🔒 **WASM Execution Engine**: Secure sandboxed computation with strict resource limits
-- 🔐 **Zero-Knowledge Proofs**: Cryptographic verification with production Groth16 implementation (sub-second verification)
+- 🔐 **Zero-Knowledge Proofs**: Cryptographic verification with Groth16 implementation
 - 🤝 **Federated Learning**: Privacy-preserving multi-node model training with FedAvg and differential privacy
 - ✓ **Verifiable Computation**: Proof-of-Execution for trustless distributed computing
 - ⚡ **Energy Telemetry**: Verifiable sustainability metrics
@@ -76,7 +93,7 @@ A **production-ready** implementation of a **Verifiable Computation Protocol (VC
 - 🔒 **CORS Hardening**: Configurable origin-based CORS (no wildcards in production)
 - 📊 **Prometheus Metrics**: `/metrics` endpoint with per-route latency and error tracking
 - 📝 **Audit Logging**: Comprehensive audit trail for security events
-- 🔍 **ZK Proof Verification**: Real cryptographic verification (Groth16/BN254) with strict payload validation
+- 🔍 **ZK Proof Verification**: Cryptographic verification (Groth16/BN254) with strict payload validation
 - 🌐 **Security Headers**: HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy
 - 📊 **Request Tracing**: Structured logging with request IDs for all API calls
 - 💾 **Enhanced Persistence**: Migrations for task_runs, proof_artifacts, api_keys, audit_log, node_heartbeat_history
@@ -484,7 +501,7 @@ curl http://localhost:3000/api/v1/health
 render blueprint apply
 
 # Your API will be at:
-# https://ambient-vcp-api.onrender.com
+# https://ambient-ai-vcp-system.onrender.com
 ```
 
 ### Kubernetes

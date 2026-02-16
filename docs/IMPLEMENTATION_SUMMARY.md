@@ -106,7 +106,7 @@ Starts:
 render blueprint apply
 
 # Your global API:
-# https://ambient-vcp-api.onrender.com
+# https://ambient-ai-vcp-system.onrender.com
 ```
 
 ### Architecture

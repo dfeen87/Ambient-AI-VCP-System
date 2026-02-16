@@ -6,6 +6,8 @@ This guide explains how to deploy the Ambient AI VCP API Server on Render.com wi
 
 **Live URL**: https://ambient-ai-vcp-system.onrender.com
 
+> Note: Render service names (for example `ambient-ai-vcp-api`) may differ from the public URL slug.
+
 ## Prerequisites
 
 - Render.com account (free tier available)
