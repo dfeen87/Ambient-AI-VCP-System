@@ -17,7 +17,7 @@ A **production-ready** implementation of a **Verifiable Computation Protocol (VC
 | Dashboard | https://ambient-ai-vcp-system.onrender.com |
 | Swagger UI | https://ambient-ai-vcp-system.onrender.com/swagger-ui |
 | OpenAPI JSON | https://ambient-ai-vcp-system.onrender.com/api-docs/openapi.json |
-
+ 
 ---
 
 ## 🎯 Quick Concept Overview
