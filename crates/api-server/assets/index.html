@@ -231,6 +231,50 @@
             box-shadow: 0 0 12px var(--accent-glow);
         }
 
+        /* Auth Section */
+        .auth-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: 10px 20px;
+            background: transparent;
+            color: var(--text-dim);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: 'Syne', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .auth-tab.active {
+            background: var(--accent-dim);
+            color: var(--accent);
+            border-color: var(--border-hover);
+        }
+
+        .auth-tab:hover {
+            border-color: var(--border-hover);
+        }
+
+        .auth-form {
+            margin-top: 20px;
+        }
+
+        .auth-form .form-group {
+            margin-bottom: 16px;
+        }
+
+        .auth-form button[type="submit"] {
+            width: 100%;
+            margin-top: 10px;
+        }
+
         /* Stats */
         .stats-grid {
             display: grid;
@@ -575,6 +619,52 @@
         </div>
     </header>
 
+    <!-- Authentication Section -->
+    <div id="auth-section" style="display: none;">
+        <div class="section" style="max-width: 500px; margin: 40px auto;">
+            <div class="section-header">
+                <div class="section-title">🔐 Authentication Required</div>
+            </div>
+            <div class="auth-tabs">
+                <button class="auth-tab active" onclick="showAuthTab('login')">Login</button>
+                <button class="auth-tab" onclick="showAuthTab('register')">Register</button>
+            </div>
+            
+            <!-- Login Form -->
+            <form id="login-form" class="auth-form" style="display: block;" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="login-username" placeholder="Enter your username" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="login-password" placeholder="Enter your password" required>
+                </div>
+                <button type="submit" class="btn">Login</button>
+            </form>
+
+            <!-- Register Form -->
+            <form id="register-form" class="auth-form" style="display: none;" onsubmit="handleRegister(event)">
+                <div class="form-group">
+                    <label>Username (3-32 characters)</label>
+                    <input type="text" id="reg-username" placeholder="Choose a username" required minlength="3" maxlength="32">
+                </div>
+                <div class="form-group">
+                    <label>Password (min 8 characters)</label>
+                    <input type="password" id="reg-password" placeholder="Choose a password" required minlength="8">
+                </div>
+                <button type="submit" class="btn">Register</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Content (requires authentication) -->
+    <div id="main-content">
+        <div style="text-align: right; padding: 0 20px; margin-bottom: 20px;">
+            <span id="user-info" style="color: var(--text-dim); margin-right: 15px;"></span>
+            <button onclick="logout()" class="btn btn-ghost" style="font-size: 13px; padding: 6px 14px;">Logout</button>
+        </div>
+
     <div class="error-banner" id="error-banner">⚠ Unable to reach API — check endpoint or network connection</div>
 
     <div class="stats-grid">
@@ -701,7 +791,9 @@
         </form>
     </div>
 
-</div>
+    </div> <!-- Close main-content -->
+
+</div> <!-- Close layout -->
 
 <div class="toast" id="toast">
     <span class="toast-icon" id="toast-icon">✓</span>
@@ -710,6 +802,115 @@
 
 <script>
     let apiBaseUrl = 'https://ambient-ai-vcp-system.onrender.com';
+    let authToken = localStorage.getItem('vcp_auth_token');
+    let currentUser = localStorage.getItem('vcp_username');
+
+    // Check if user is logged in on page load
+    function checkAuth() {
+        const authSection = document.getElementById('auth-section');
+        const mainContent = document.getElementById('main-content');
+        const userInfo = document.getElementById('user-info');
+        
+        if (authToken && currentUser) {
+            authSection.style.display = 'none';
+            mainContent.style.display = 'block';
+            userInfo.textContent = `Logged in as: ${currentUser}`;
+            fetchData();
+        } else {
+            authSection.style.display = 'block';
+            mainContent.style.display = 'none';
+        }
+    }
+
+    function logout() {
+        localStorage.removeItem('vcp_auth_token');
+        localStorage.removeItem('vcp_username');
+        authToken = null;
+        currentUser = null;
+        checkAuth();
+    }
+
+    async function handleLogin(e) {
+        e.preventDefault();
+        const username = document.getElementById('login-username').value;
+        const password = document.getElementById('login-password').value;
+        const btn = e.target.querySelector('[type="submit"]');
+        
+        btn.textContent = 'Logging in...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/v1/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                authToken = data.access_token;
+                currentUser = username;
+                localStorage.setItem('vcp_auth_token', authToken);
+                localStorage.setItem('vcp_username', username);
+                showToast('Login successful!');
+                checkAuth();
+            } else {
+                const err = await res.json();
+                showToast(err.message || 'Login failed', true);
+            }
+        } catch (err) {
+            showToast('Network error: ' + err.message, true);
+        } finally {
+            btn.textContent = 'Login';
+            btn.disabled = false;
+        }
+    }
+
+    async function handleRegister(e) {
+        e.preventDefault();
+        const username = document.getElementById('reg-username').value;
+        const password = document.getElementById('reg-password').value;
+        const btn = e.target.querySelector('[type="submit"]');
+        
+        btn.textContent = 'Registering...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/v1/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                showToast(`Account created! API Key: ${data.api_key} (save this!)`);
+                // Auto-login after registration
+                setTimeout(() => {
+                    document.getElementById('login-username').value = username;
+                    document.getElementById('login-password').value = password;
+                    document.getElementById('login-form').dispatchEvent(new Event('submit'));
+                }, 2000);
+            } else {
+                const err = await res.json();
+                showToast(err.message || 'Registration failed', true);
+            }
+        } catch (err) {
+            showToast('Network error: ' + err.message, true);
+        } finally {
+            btn.textContent = 'Register';
+            btn.disabled = false;
+        }
+    }
+
+    function getAuthHeaders() {
+        return authToken ? {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+        } : {
+            'Content-Type': 'application/json'
+        };
+    }
 
     function updateApiUrl() {
         apiBaseUrl = document.getElementById('api-url').value.replace(/\/$/, '');
@@ -852,7 +1053,7 @@
         try {
             const res = await fetch(`${apiBaseUrl}/api/v1/nodes`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(body),
             });
             if (res.ok) {
@@ -871,8 +1072,30 @@
         }
     });
 
-    fetchData();
-    setInterval(fetchData, 5000);
+    // Auth tab switching
+    function showAuthTab(tab) {
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const tabs = document.querySelectorAll('.auth-tab');
+        
+        tabs.forEach(t => t.classList.remove('active'));
+        
+        if (tab === 'login') {
+            loginForm.style.display = 'block';
+            registerForm.style.display = 'none';
+            tabs[0].classList.add('active');
+        } else {
+            loginForm.style.display = 'none';
+            registerForm.style.display = 'block';
+            tabs[1].classList.add('active');
+        }
+    }
+
+    // Initialize on page load
+    checkAuth();
+    setInterval(() => {
+        if (authToken) fetchData();
+    }, 5000);
 </script>
 </body>
 </html>

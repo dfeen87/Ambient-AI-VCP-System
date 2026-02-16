@@ -62,6 +62,20 @@
    - **Mitigation**: 60 requests/minute default limit
    - **Future**: Implement exponential backoff for failed logins
 
+### Node Security Features
+
+**Node Ownership Tracking (NEW):**
+- ✅ Nodes are linked to user accounts via owner_id foreign key
+- ✅ Only the node owner can update or delete their nodes
+- ✅ Soft delete support with audit trail (deleted_at timestamp)
+- ✅ Heartbeat mechanism to track node availability
+
+**Node Lifecycle Management (NEW):**
+- ✅ `DELETE /api/v1/nodes/{node_id}` - Soft delete with ownership verification
+- ✅ `PUT /api/v1/nodes/{node_id}/heartbeat` - Update node heartbeat with ownership check
+- ✅ Ownership verification prevents unauthorized node operations
+- ✅ Nodes excluded from listings when soft-deleted
+
 ### Deployment Security Checklist
 
 For production deployment (e.g., Render.com):

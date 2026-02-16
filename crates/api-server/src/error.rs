@@ -89,6 +89,12 @@ impl ApiError {
             StatusCode::SERVICE_UNAVAILABLE,
         )
     }
+
+    /// 404/403 Not Found or Forbidden - Ambiguous error for security
+    /// Used when we don't want to reveal whether a resource exists
+    pub fn not_found_or_forbidden(message: impl Into<String>) -> Self {
+        Self::new("not_found", message, StatusCode::NOT_FOUND)
+    }
 }
 
 impl IntoResponse for ApiError {
