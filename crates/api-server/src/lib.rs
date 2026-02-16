@@ -110,9 +110,8 @@ async fn register_node(
     );
 
     // Parse user_id
-    let user_id = Uuid::parse_str(&auth_user.user_id).map_err(|_| {
-        ApiError::internal_error("Invalid user ID format")
-    })?;
+    let user_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
 
     let node_info = state.register_node(registration, user_id).await?;
 
@@ -176,15 +175,11 @@ async fn delete_node(
     auth_user: auth::AuthUser,
     Path(node_id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    info!(
-        "Deleting node: {} for user {}",
-        node_id, auth_user.username
-    );
+    info!("Deleting node: {} for user {}", node_id, auth_user.username);
 
     // Parse user_id
-    let user_id = Uuid::parse_str(&auth_user.user_id).map_err(|_| {
-        ApiError::internal_error("Invalid user ID format")
-    })?;
+    let user_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
 
     let deleted = state.delete_node(&node_id, user_id).await?;
 
@@ -222,9 +217,8 @@ async fn update_heartbeat(
     Path(node_id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     // Parse user_id
-    let user_id = Uuid::parse_str(&auth_user.user_id).map_err(|_| {
-        ApiError::internal_error("Invalid user ID format")
-    })?;
+    let user_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
 
     let updated = state.update_node_heartbeat(&node_id, user_id).await?;
 
