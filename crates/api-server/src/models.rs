@@ -73,31 +73,96 @@ pub struct NodeCapabilities {
 }
 
 impl NodeCapabilities {
-    /// Validate node capabilities
+    /// Validate node capabilities against capability whitelist constraints
     pub fn validate(&self) -> Result<(), ApiError> {
-        // Validate bandwidth (0-100,000 Mbps)
-        if self.bandwidth_mbps < 0.0 || self.bandwidth_mbps > 100_000.0 {
+        // Validate bandwidth (10-100,000 Mbps)
+        if !(10.0..=100_000.0).contains(&self.bandwidth_mbps) {
             return Err(ApiError::bad_request(
-                "bandwidth_mbps must be between 0 and 100,000",
+                "bandwidth_mbps must be between 10 and 100,000",
             ));
         }
 
-        // Validate CPU cores (1-1024 cores)
-        if self.cpu_cores == 0 || self.cpu_cores > 1024 {
-            return Err(ApiError::bad_request(
-                "cpu_cores must be between 1 and 1024",
-            ));
+        // Validate CPU cores (1-256 cores)
+        if !(1..=256).contains(&self.cpu_cores) {
+            return Err(ApiError::bad_request("cpu_cores must be between 1 and 256"));
         }
 
-        // Validate memory (0.1-10,000 GB)
-        if self.memory_gb < 0.1 || self.memory_gb > 10_000.0 {
+        // Validate memory (1-2,048 GB)
+        if !(1.0..=2_048.0).contains(&self.memory_gb) {
             return Err(ApiError::bad_request(
-                "memory_gb must be between 0.1 and 10,000",
+                "memory_gb must be between 1 and 2,048",
             ));
         }
 
         Ok(())
     }
+}
+
+/// Task type registry entry used to validate task submissions and scheduling feasibility.
+#[derive(Debug, Clone)]
+pub struct TaskTypeRegistryEntry {
+    pub task_type: &'static str,
+    pub minimum_capabilities: NodeCapabilities,
+    pub max_execution_time_sec: u64,
+    pub max_input_size_mb: usize,
+    pub allow_wasm_module: bool,
+}
+
+pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 4] = [
+    TaskTypeRegistryEntry {
+        task_type: "federated_learning",
+        minimum_capabilities: NodeCapabilities {
+            bandwidth_mbps: 500.0,
+            cpu_cores: 8,
+            memory_gb: 32.0,
+            gpu_available: false,
+        },
+        max_execution_time_sec: 3600,
+        max_input_size_mb: 50,
+        allow_wasm_module: false,
+    },
+    TaskTypeRegistryEntry {
+        task_type: "zk_proof",
+        minimum_capabilities: NodeCapabilities {
+            bandwidth_mbps: 100.0,
+            cpu_cores: 8,
+            memory_gb: 16.0,
+            gpu_available: false,
+        },
+        max_execution_time_sec: 1800,
+        max_input_size_mb: 25,
+        allow_wasm_module: false,
+    },
+    TaskTypeRegistryEntry {
+        task_type: "wasm_execution",
+        minimum_capabilities: NodeCapabilities {
+            bandwidth_mbps: 100.0,
+            cpu_cores: 4,
+            memory_gb: 8.0,
+            gpu_available: false,
+        },
+        max_execution_time_sec: 900,
+        max_input_size_mb: 10,
+        allow_wasm_module: true,
+    },
+    TaskTypeRegistryEntry {
+        task_type: "computation",
+        minimum_capabilities: NodeCapabilities {
+            bandwidth_mbps: 50.0,
+            cpu_cores: 4,
+            memory_gb: 8.0,
+            gpu_available: false,
+        },
+        max_execution_time_sec: 1800,
+        max_input_size_mb: 20,
+        allow_wasm_module: false,
+    },
+];
+
+pub fn task_type_registry_entry(task_type: &str) -> Option<&'static TaskTypeRegistryEntry> {
+    TASK_TYPE_REGISTRY
+        .iter()
+        .find(|entry| entry.task_type == task_type)
 }
 
 /// Node information
@@ -125,25 +190,40 @@ pub struct TaskSubmission {
 impl TaskSubmission {
     /// Validate task submission data
     pub fn validate(&self) -> Result<(), ApiError> {
-        // Validate task_type
-        const VALID_TASK_TYPES: &[&str] = &[
-            "federated_learning",
-            "zk_proof",
-            "wasm_execution",
-            "computation",
-        ];
-        if !VALID_TASK_TYPES.contains(&self.task_type.as_str()) {
-            return Err(ApiError::bad_request(format!(
+        // Validate task_type against centralized registry
+        let task_type_entry = task_type_registry_entry(&self.task_type).ok_or_else(|| {
+            ApiError::bad_request(format!(
                 "task_type must be one of: {}",
-                VALID_TASK_TYPES.join(", ")
-            )));
+                TASK_TYPE_REGISTRY
+                    .iter()
+                    .map(|entry| entry.task_type)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        })?;
+
+        // Validate WASM module policy and size if provided
+        if let Some(ref module) = self.wasm_module {
+            if !task_type_entry.allow_wasm_module {
+                return Err(ApiError::bad_request(format!(
+                    "wasm_module is not allowed for task_type {}",
+                    self.task_type
+                )));
+            }
+
+            if module.len() > task_type_entry.max_input_size_mb * 1024 * 1024 {
+                return Err(ApiError::bad_request(format!(
+                    "wasm_module cannot exceed {}MB for task_type {}",
+                    task_type_entry.max_input_size_mb, self.task_type
+                )));
+            }
         }
 
-        // Validate WASM module size if provided (max 10MB base64 encoded)
-        if let Some(ref module) = self.wasm_module {
-            if module.len() > 10 * 1024 * 1024 {
-                return Err(ApiError::bad_request("wasm_module cannot exceed 10MB"));
-            }
+        if self.requirements.max_execution_time_sec > task_type_entry.max_execution_time_sec {
+            return Err(ApiError::bad_request(format!(
+                "max_execution_time_sec cannot exceed {} for task_type {}",
+                task_type_entry.max_execution_time_sec, self.task_type
+            )));
         }
 
         // Deep validate arbitrary JSON payloads.

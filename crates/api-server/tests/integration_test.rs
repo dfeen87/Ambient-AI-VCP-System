@@ -58,6 +58,24 @@ fn test_node_validation_invalid_bandwidth() {
     assert!(node_reg.validate().is_err());
 }
 
+/// Test node validation - bandwidth below whitelist minimum
+#[test]
+fn test_node_validation_bandwidth_below_whitelist_min() {
+    let node_reg = NodeRegistration {
+        node_id: "test-node".to_string(),
+        region: "us-west".to_string(),
+        node_type: "compute".to_string(),
+        capabilities: NodeCapabilities {
+            bandwidth_mbps: 5.0,
+            cpu_cores: 8,
+            memory_gb: 16.0,
+            gpu_available: false,
+        },
+    };
+
+    assert!(node_reg.validate().is_err());
+}
+
 /// Test node validation - invalid CPU cores (zero)
 #[test]
 fn test_node_validation_invalid_cpu_cores() {
@@ -200,6 +218,42 @@ fn test_task_validation_valid() {
     };
 
     assert!(task_sub.validate().is_ok());
+}
+
+/// Test task validation - wasm module is rejected for non-wasm task types
+#[test]
+fn test_task_validation_rejects_wasm_for_non_wasm_type() {
+    let task_sub = TaskSubmission {
+        task_type: "computation".to_string(),
+        wasm_module: Some("AA==".to_string()),
+        inputs: serde_json::json!({}),
+        requirements: TaskRequirements {
+            min_nodes: 1,
+            max_execution_time_sec: 300,
+            require_gpu: false,
+            require_proof: false,
+        },
+    };
+
+    assert!(task_sub.validate().is_err());
+}
+
+/// Test task validation - runtime is capped by task-type registry
+#[test]
+fn test_task_validation_enforces_task_registry_runtime_limit() {
+    let task_sub = TaskSubmission {
+        task_type: "wasm_execution".to_string(),
+        wasm_module: Some("AA==".to_string()),
+        inputs: serde_json::json!({}),
+        requirements: TaskRequirements {
+            min_nodes: 1,
+            max_execution_time_sec: 1200,
+            require_gpu: false,
+            require_proof: false,
+        },
+    };
+
+    assert!(task_sub.validate().is_err());
 }
 
 // Database-dependent tests are commented out
