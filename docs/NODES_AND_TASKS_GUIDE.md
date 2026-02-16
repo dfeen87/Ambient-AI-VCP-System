@@ -52,7 +52,7 @@ A **node** is any device (computer, server, edge device, etc.) that joins the Am
 
 - **Unique Identity**: Each node has a unique ID (e.g., `gpu-server-001`, `laptop-42`)
 - **Geographic Location**: Nodes specify their region (e.g., `us-west`, `eu-central`)
-- **Type/Role**: Nodes have specific roles in the network (compute, gateway, storage, validator)
+- **Type/Role**: Nodes have specific roles in the network (compute, gateway, storage, validator, any)
 - **Capabilities**: Defined by hardware specs (CPU, memory, bandwidth, GPU availability)
 - **Health Score**: A dynamic score (0-100) based on performance and reliability
 
