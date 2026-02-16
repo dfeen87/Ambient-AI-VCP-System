@@ -60,6 +60,11 @@ use state::AppState;
 )]
 struct ApiDoc;
 
+/// Serve the dashboard
+async fn dashboard() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../assets/index.html"))
+}
+
 /// Health check endpoint
 #[utoipa::path(
     get,
@@ -90,7 +95,6 @@ async fn register_node(
     State(state): State<Arc<AppState>>,
     Json(registration): Json<NodeRegistration>,
 ) -> ApiResult<(StatusCode, Json<NodeInfo>)> {
-    // Validate input
     registration.validate()?;
 
     info!(
@@ -154,7 +158,6 @@ async fn submit_task(
     State(state): State<Arc<AppState>>,
     Json(task): Json<TaskSubmission>,
 ) -> ApiResult<(StatusCode, Json<TaskInfo>)> {
-    // Validate input
     task.validate()?;
 
     info!("Submitting task: {}", task.task_type);
@@ -249,18 +252,13 @@ async fn register_user(
     State(state): State<Arc<AppState>>,
     Json(request): Json<auth::RegisterRequest>,
 ) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
-    // Validate request
     request.validate()?;
 
     info!("Registering user: {}", request.username);
 
-    // Hash the password
     let password_hash = auth::hash_password(&request.password)?;
-
-    // Generate API key
     let api_key = auth::generate_api_key();
 
-    // Insert user into database
     let user_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO users (username, password_hash, api_key, role)
@@ -315,7 +313,6 @@ async fn login(
 ) -> ApiResult<Json<auth::LoginResponse>> {
     info!("Login attempt for user: {}", request.username);
 
-    // Get user from database
     let user_row = sqlx::query(
         r#"
         SELECT user_id, username, password_hash, role
@@ -333,22 +330,17 @@ async fn login(
     let password_hash: String = user_row.get("password_hash");
     let role: String = user_row.get("role");
 
-    // Verify password
     let password_valid = auth::verify_password(&request.password, &password_hash)?;
     if !password_valid {
         return Err(ApiError::unauthorized("Invalid username or password"));
     }
 
-    // Update last login
     sqlx::query("UPDATE users SET last_login = NOW() WHERE user_id = $1")
         .bind(user_id)
         .execute(&state.db)
         .await?;
 
-    // Get auth config from environment
     let auth_config = auth::AuthConfig::from_env()?;
-
-    // Generate JWT token
     let token = auth_config.generate_token(user_id.to_string(), username.clone(), role)?;
 
     info!("Login successful for user: {}", username);
@@ -361,26 +353,19 @@ async fn login(
 }
 
 /// Authentication middleware
-/// Validates JWT token and adds auth config to request extensions
 async fn auth_middleware(mut request: Request<Body>, next: Next) -> Result<Response, ApiError> {
-    // Get auth config from environment
     let auth_config = auth::AuthConfig::from_env()?;
-
-    // Add auth config to request extensions so AuthUser extractor can use it
     request.extensions_mut().insert(auth_config);
-
     Ok(next.run(request).await)
 }
 
 /// Build the API router
 pub fn create_router(state: Arc<AppState>) -> Router {
-    // Create public API routes (no authentication required)
     let public_routes = Router::new()
         .route("/health", get(health_check))
         .route("/auth/register", post(register_user))
         .route("/auth/login", post(login));
 
-    // Create protected API routes (authentication required)
     let protected_routes = Router::new()
         .route("/nodes", post(register_node).get(list_nodes))
         .route("/nodes/:node_id", get(get_node))
@@ -390,11 +375,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/cluster/stats", get(get_cluster_stats))
         .layer(middleware::from_fn(auth_middleware));
 
-    // Combine routes
     let api_routes = Router::new().merge(public_routes).merge(protected_routes);
 
-    // Create main router with API prefix
     Router::new()
+        .route("/", get(dashboard))
         .nest("/api/v1", api_routes)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
