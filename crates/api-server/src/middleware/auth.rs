@@ -1,85 +1,108 @@
-/// JWT Authentication Middleware
-///
-/// This middleware enforces JWT validation globally for all protected routes.
-/// Unlike extractor-based auth (AuthUser), this runs in the middleware layer
-/// and rejects unauthorized requests before they reach handlers.
-use crate::auth::AuthConfig;
+/// Authentication and authorization middleware
+use crate::auth::{hash_api_key, AuthConfig, Claims};
 use crate::error::ApiError;
-use axum::{body::Body, extract::Request, http::HeaderMap, middleware::Next, response::Response};
-use axum_extra::{
-    headers::{authorization::Bearer, Authorization},
-    TypedHeader,
+use axum::{
+    body::Body,
+    extract::Request,
+    http::{header, HeaderMap, HeaderValue},
+    middleware::Next,
+    response::Response,
 };
+use sqlx::Row;
 use tracing::{debug, warn};
 
-/// Extract and validate JWT token from Authorization header
+/// Extract and validate JWT token from Authorization header.
 pub async fn jwt_auth_middleware(
     headers: HeaderMap,
     mut request: Request<Body>,
     next: Next,
 ) -> Result<Response, ApiError> {
-    // Extract Authorization header
     let auth_header = headers
-        .get("authorization")
+        .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
-        .ok_or_else(|| {
-            warn!("Missing authorization header");
-            ApiError::unauthorized("Missing authorization header")
-        })?;
+        .ok_or_else(|| ApiError::unauthorized("Missing authorization header"))?;
 
-    // Parse Bearer token
-    let token = auth_header.strip_prefix("Bearer ").ok_or_else(|| {
-        warn!("Invalid authorization header format");
-        ApiError::unauthorized("Invalid authorization header format. Expected 'Bearer <token>'")
-    })?;
+    let token = auth_header
+        .strip_prefix("Bearer ")
+        .ok_or_else(|| ApiError::unauthorized("Invalid authorization header format"))?;
 
-    // Load auth config
     let auth_config = AuthConfig::from_env()?;
-
-    // Validate token
-    let claims = auth_config.validate_token(token).map_err(|e| {
-        warn!("Token validation failed: {:?}", e);
-        ApiError::unauthorized("Invalid or expired token")
-    })?;
+    let claims = auth_config
+        .validate_token(token)
+        .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
 
     debug!(
         "JWT validated for user: {} (role: {})",
         claims.username, claims.role
     );
-
-    // Store validated claims in request extensions for handlers
     request.extensions_mut().insert(claims);
 
     Ok(next.run(request).await)
 }
 
-/// Extract TypedHeader-based auth (alternative implementation)
-pub async fn jwt_auth_typed_middleware(
-    TypedHeader(auth): TypedHeader<Authorization<Bearer>>,
+/// API key auth middleware.
+/// Accepts `X-API-Key: <key>` and resolves the associated user and scopes.
+pub async fn api_key_auth_middleware(
     mut request: Request<Body>,
     next: Next,
 ) -> Result<Response, ApiError> {
-    let token = auth.token();
+    let key = request
+        .headers()
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| ApiError::unauthorized("Missing X-API-Key header"))?;
 
-    // Load auth config
-    let auth_config = AuthConfig::from_env()?;
+    let key_hash = hash_api_key(key);
 
-    // Validate token
-    let claims = auth_config.validate_token(token).map_err(|e| {
-        warn!("Token validation failed: {:?}", e);
-        ApiError::unauthorized("Invalid or expired token")
-    })?;
+    let state = request
+        .extensions()
+        .get::<std::sync::Arc<crate::state::AppState>>()
+        .cloned()
+        .ok_or_else(|| ApiError::internal_error("Application state missing from request"))?;
 
-    debug!(
-        "JWT validated for user: {} (role: {})",
-        claims.username, claims.role
-    );
+    let row = sqlx::query(
+        r#"
+        SELECT u.user_id, u.username, u.role, ak.scopes, ak.revoked_at, ak.expires_at
+        FROM api_keys ak
+        JOIN users u ON ak.user_id = u.user_id
+        WHERE ak.key_hash = $1
+        "#,
+    )
+    .bind(key_hash)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::unauthorized("Invalid API key"))?;
 
-    // Store validated claims in request extensions
+    let revoked_at: Option<chrono::DateTime<chrono::Utc>> = row.get("revoked_at");
+    if revoked_at.is_some() {
+        return Err(ApiError::unauthorized("API key has been revoked"));
+    }
+
+    let expires_at: Option<chrono::DateTime<chrono::Utc>> = row.get("expires_at");
+    if let Some(exp) = expires_at {
+        if exp < chrono::Utc::now() {
+            return Err(ApiError::unauthorized("API key has expired"));
+        }
+    }
+
+    let claims = Claims {
+        sub: row.get::<uuid::Uuid, _>("user_id").to_string(),
+        username: row.get("username"),
+        role: row.get("role"),
+        exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp(),
+        iat: chrono::Utc::now().timestamp(),
+    };
+
+    let scopes: Vec<String> = row.try_get("scopes").unwrap_or_default();
     request.extensions_mut().insert(claims);
+    request.extensions_mut().insert(ApiScopes(scopes));
 
     Ok(next.run(request).await)
 }
+
+/// Scoped permission set extracted from JWT/API key.
+#[derive(Debug, Clone)]
+pub struct ApiScopes(pub Vec<String>);
 
 /// Inject AuthConfig into request extensions (for public routes)
 pub async fn auth_config_middleware(
@@ -91,11 +114,70 @@ pub async fn auth_config_middleware(
     Ok(next.run(request).await)
 }
 
+/// Require one of the configured roles for a route.
+pub async fn require_admin_middleware(
+    request: Request<Body>,
+    next: Next,
+) -> Result<Response, ApiError> {
+    authorize_roles(&request, &["admin"])?;
+    Ok(next.run(request).await)
+}
+
+/// Require scope membership for route access.
+pub async fn require_scope_middleware(
+    request: Request<Body>,
+    next: Next,
+) -> Result<Response, ApiError> {
+    authorize_scope(&request, "admin:audit")?;
+    Ok(next.run(request).await)
+}
+
+fn authorize_roles(request: &Request<Body>, allowed: &[&str]) -> Result<(), ApiError> {
+    let claims = request
+        .extensions()
+        .get::<Claims>()
+        .ok_or_else(|| ApiError::unauthorized("Authentication required"))?;
+
+    if allowed.contains(&claims.role.as_str()) {
+        return Ok(());
+    }
+
+    warn!("RBAC deny user={} role={}", claims.username, claims.role);
+    Err(ApiError::forbidden("Insufficient role permissions"))
+}
+
+fn authorize_scope(request: &Request<Body>, required_scope: &str) -> Result<(), ApiError> {
+    if let Some(scopes) = request.extensions().get::<ApiScopes>() {
+        if scopes.0.iter().any(|s| s == required_scope || s == "*") {
+            return Ok(());
+        }
+        return Err(ApiError::forbidden("Insufficient scoped permissions"));
+    }
+
+    // JWT callers default to role-based policy if explicit scopes are absent.
+    let claims = request
+        .extensions()
+        .get::<Claims>()
+        .ok_or_else(|| ApiError::unauthorized("Authentication required"))?;
+
+    if claims.role == "admin" {
+        return Ok(());
+    }
+
+    Err(ApiError::forbidden("Insufficient scoped permissions"))
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use axum::http::Request;
+
     #[test]
-    fn test_auth_middleware_module() {
-        // Middleware tests require actual server context
-        // Integration tests should cover middleware behavior
+    fn test_scope_authorization_from_extension() {
+        let mut request = Request::builder().uri("/").body(Body::empty()).unwrap();
+        request
+            .extensions_mut()
+            .insert(ApiScopes(vec!["admin:audit".to_string()]));
+        assert!(authorize_scope(&request, "admin:audit").is_ok());
     }
 }

@@ -146,11 +146,54 @@ impl TaskSubmission {
             }
         }
 
+        // Deep validate arbitrary JSON payloads.
+        validate_json_depth(&self.inputs, 0)?;
+
         // Validate requirements
         self.requirements.validate()?;
 
         Ok(())
     }
+}
+
+fn validate_json_depth(value: &serde_json::Value, depth: usize) -> Result<(), ApiError> {
+    const MAX_DEPTH: usize = 16;
+    const MAX_ARRAY_ITEMS: usize = 1_000;
+    const MAX_OBJECT_KEYS: usize = 1_000;
+
+    if depth > MAX_DEPTH {
+        return Err(ApiError::bad_request(
+            "inputs JSON exceeds maximum nesting depth",
+        ));
+    }
+
+    match value {
+        serde_json::Value::Array(items) => {
+            if items.len() > MAX_ARRAY_ITEMS {
+                return Err(ApiError::bad_request("inputs JSON array too large"));
+            }
+            for item in items {
+                validate_json_depth(item, depth + 1)?;
+            }
+        }
+        serde_json::Value::Object(map) => {
+            if map.len() > MAX_OBJECT_KEYS {
+                return Err(ApiError::bad_request("inputs JSON object too large"));
+            }
+            for (k, v) in map {
+                if k.len() > 256 {
+                    return Err(ApiError::bad_request("inputs JSON key too long"));
+                }
+                validate_json_depth(v, depth + 1)?;
+            }
+        }
+        serde_json::Value::String(s) if s.len() > 10_000 => {
+            return Err(ApiError::bad_request("inputs JSON string value too large"));
+        }
+        _ => {}
+    }
+
+    Ok(())
 }
 
 /// Task requirements

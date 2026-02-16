@@ -21,7 +21,7 @@ use tracing::error;
 lazy_static! {
     /// HTTP request duration histogram (in seconds)
     static ref HTTP_REQUEST_DURATION: HistogramVec = register_histogram_vec!(
-        "http_request_duration_seconds",
+        "http_request_duration",
         "HTTP request latencies in seconds",
         &["method", "endpoint", "status"]
     )
@@ -29,7 +29,7 @@ lazy_static! {
 
     /// HTTP request counter
     static ref HTTP_REQUEST_COUNTER: IntCounterVec = register_int_counter_vec!(
-        "http_requests_total",
+        "http_request_count",
         "Total HTTP requests",
         &["method", "endpoint", "status"]
     )
@@ -37,7 +37,7 @@ lazy_static! {
 
     /// HTTP error counter
     static ref HTTP_ERROR_COUNTER: IntCounterVec = register_int_counter_vec!(
-        "http_errors_total",
+        "http_errors",
         "Total HTTP errors",
         &["method", "endpoint", "status"]
     )

@@ -15,8 +15,8 @@ pub fn create_cors_layer() -> CorsLayer {
         .to_lowercase()
         == "production";
 
-    if is_production && allowed_origins.contains("*") {
-        panic!("CORS_ALLOWED_ORIGINS cannot contain wildcard (*) in production mode");
+    if allowed_origins.contains("*") {
+        panic!("CORS_ALLOWED_ORIGINS cannot contain wildcard (*)");
     }
 
     let origins: Vec<HeaderValue> = allowed_origins
@@ -29,6 +29,10 @@ pub fn create_cors_layer() -> CorsLayer {
             origin.parse::<HeaderValue>().ok()
         })
         .collect();
+
+    if origins.is_empty() {
+        panic!("CORS_ALLOWED_ORIGINS must contain at least one explicit origin");
+    }
 
     info!("Configuring CORS with {} allowed origins", origins.len());
 
