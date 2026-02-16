@@ -61,6 +61,7 @@ impl AppState {
             capabilities: registration.capabilities,
             health_score: 100.0,
             status: "online".to_string(),
+            owner_id: owner_id.to_string(),
             registered_at: now.to_rfc3339(),
             last_seen: now.to_rfc3339(),
         };
@@ -73,7 +74,7 @@ impl AppState {
         let result = sqlx::query(
             r#"
             SELECT 
-                node_id, region, node_type, bandwidth_mbps, cpu_cores,
+                node_id, region, node_type, owner_id, bandwidth_mbps, cpu_cores,
                 memory_gb, gpu_available, health_score, status,
                 registered_at, last_seen
             FROM nodes
@@ -91,6 +92,7 @@ impl AppState {
                     node_id: row.get("node_id"),
                     region: row.get("region"),
                     node_type: row.get("node_type"),
+                    owner_id: row.get::<Uuid, _>("owner_id").to_string(),
                     capabilities: NodeCapabilities {
                         bandwidth_mbps: row.get("bandwidth_mbps"),
                         cpu_cores: row.get::<i32, _>("cpu_cores") as u32,
@@ -119,7 +121,7 @@ impl AppState {
         let result = sqlx::query(
             r#"
             SELECT 
-                node_id, region, node_type, bandwidth_mbps, cpu_cores,
+                node_id, region, node_type, owner_id, bandwidth_mbps, cpu_cores,
                 memory_gb, gpu_available, health_score, status,
                 registered_at, last_seen
             FROM nodes
@@ -135,6 +137,7 @@ impl AppState {
                 node_id: row.get("node_id"),
                 region: row.get("region"),
                 node_type: row.get("node_type"),
+                owner_id: row.get::<Uuid, _>("owner_id").to_string(),
                 capabilities: NodeCapabilities {
                     bandwidth_mbps: row.get("bandwidth_mbps"),
                     cpu_cores: row.get::<i32, _>("cpu_cores") as u32,
@@ -537,7 +540,7 @@ impl AppState {
         let result = sqlx::query(
             r#"
             SELECT 
-                node_id, region, node_type, bandwidth_mbps, cpu_cores,
+                node_id, region, node_type, owner_id, bandwidth_mbps, cpu_cores,
                 memory_gb, gpu_available, health_score, status,
                 registered_at, last_seen
             FROM nodes
@@ -556,6 +559,7 @@ impl AppState {
                     node_id: row.get("node_id"),
                     region: row.get("region"),
                     node_type: row.get("node_type"),
+                    owner_id: row.get::<Uuid, _>("owner_id").to_string(),
                     capabilities: NodeCapabilities {
                         bandwidth_mbps: row.get("bandwidth_mbps"),
                         cpu_cores: row.get::<i32, _>("cpu_cores") as u32,

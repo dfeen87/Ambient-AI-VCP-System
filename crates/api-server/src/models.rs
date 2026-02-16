@@ -171,6 +171,7 @@ pub struct NodeInfo {
     pub node_id: String,
     pub region: String,
     pub node_type: String,
+    pub owner_id: String,
     pub capabilities: NodeCapabilities,
     pub health_score: f64,
     pub status: String,
