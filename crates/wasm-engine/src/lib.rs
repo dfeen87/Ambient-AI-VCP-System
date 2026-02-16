@@ -52,22 +52,34 @@ impl WasmEngine {
         }
     }
 
-    pub async fn execute(&self, call: WasmCall) -> Result<WasmResult> {
-        let start = Instant::now();
+pub async fn execute(&self, call: WasmCall) -> Result<WasmResult> {
+    let start = Instant::now();
 
-        let canonical_module_path = canonicalize_module_path(&call.module_path)?;
-        let mut call = call;
-        call.module_path = canonical_module_path.to_string_lossy().to_string();
-
-        if !std::path::Path::new(&call.module_path).exists() {
+    let canonical_module_path = match canonicalize_module_path(&call.module_path) {
+        Ok(p) => p,
+        Err(_) => {
             return Ok(WasmResult {
                 output: vec![],
                 execution_time_ms: 0,
                 gas_used: 0,
                 success: false,
                 error: Some(format!("Module not found: {}", call.module_path)),
-            });
+            })
         }
+    };
+
+    let mut call = call;
+    call.module_path = canonical_module_path.to_string_lossy().to_string();
+
+    if !std::path::Path::new(&call.module_path).exists() {
+        return Ok(WasmResult {
+            output: vec![],
+            execution_time_ms: 0,
+            gas_used: 0,
+            success: false,
+            error: Some(format!("Module not found: {}", call.module_path)),
+        });
+    }
 
         #[cfg(feature = "wasm-runtime")]
         {
