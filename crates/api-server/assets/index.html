@@ -1202,21 +1202,54 @@
         const requireProofEl = document.getElementById('task-require-proof');
         const requireGpuEl = document.getElementById('task-require-gpu');
         const maxExecEl = document.getElementById('task-max-exec');
+        const minNodesEl = document.getElementById('task-min-nodes');
+        const inputsEl = document.getElementById('task-inputs');
         const hintEl = document.getElementById('task-type-hint');
 
-        if (taskType === 'zk_proof') {
-            requireProofEl.value = 'true';
-            maxExecEl.value = Math.max(parseInt(maxExecEl.value || '0'), 600);
-            hintEl.textContent = 'ZK Proof default: Require Proof = Yes, max execution >= 600s.';
-        } else if (taskType === 'federated_learning') {
-            requireGpuEl.value = 'true';
-            maxExecEl.value = Math.max(parseInt(maxExecEl.value || '0'), 900);
-            hintEl.textContent = 'Federated Learning default: Require GPU = Yes, max execution >= 900s.';
-        } else if (taskType === 'wasm_execution') {
-            hintEl.textContent = 'WASM Execution: keep inputs compact and provide module reference in inputs JSON if needed.';
-        } else {
-            hintEl.textContent = 'Computation default: quick run profile (proof/GPU optional).';
-        }
+        const taskPresets = {
+            computation: {
+                minNodes: 1,
+                maxExec: 300,
+                requireGpu: 'false',
+                requireProof: 'false',
+                inputs: '{"job":"quick-compute"}',
+                hint: 'Computation preset applied. You can still change any field before submit.'
+            },
+            federated_learning: {
+                minNodes: 3,
+                maxExec: 900,
+                requireGpu: 'true',
+                requireProof: 'false',
+                inputs: '{"rounds":10,"dataset":"client-partitioned"}',
+                hint: 'Federated Learning preset applied (GPU + longer runtime). Fields remain editable.'
+            },
+            zk_proof: {
+                minNodes: 1,
+                maxExec: 600,
+                requireGpu: 'false',
+                requireProof: 'true',
+                inputs: '{"circuit":"sha256","public_inputs":[]}',
+                hint: 'ZK Proof preset applied (proof required). Fields remain editable.'
+            },
+            wasm_execution: {
+                minNodes: 1,
+                maxExec: 450,
+                requireGpu: 'false',
+                requireProof: 'false',
+                inputs: '{"module":"my-module","entrypoint":"main"}',
+                hint: 'WASM preset applied. Keep inputs compact; you can adjust everything.'
+            }
+        };
+
+        const preset = taskPresets[taskType] || taskPresets.computation;
+        minNodesEl.value = preset.minNodes;
+        maxExecEl.value = preset.maxExec;
+        requireGpuEl.value = preset.requireGpu;
+        requireProofEl.value = preset.requireProof;
+        inputsEl.value = preset.inputs;
+        hintEl.textContent = preset.hint;
+
+        validateTaskForm();
     }
 
     function validateTaskForm() {
