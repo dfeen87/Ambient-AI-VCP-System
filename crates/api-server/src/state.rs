@@ -84,6 +84,7 @@ impl AppState {
                 registered_at, last_seen
             FROM nodes
             WHERE deleted_at IS NULL
+              AND status != 'rejected'
             ORDER BY registered_at DESC
             "#,
         )
@@ -540,11 +541,12 @@ impl AppState {
         let node_stats = sqlx::query(
             r#"
             SELECT 
-                COUNT(*) as total_nodes,
+                COUNT(*) FILTER (WHERE status != 'rejected') as total_nodes,
                 COUNT(*) FILTER (WHERE status = 'online' AND health_score >= 70.0) as healthy_nodes,
-                COALESCE(AVG(health_score), 0.0) as avg_health_score,
-                COALESCE(SUM(cpu_cores * memory_gb), 0.0) as total_compute_capacity
+                COALESCE(AVG(health_score) FILTER (WHERE status != 'rejected'), 0.0) as avg_health_score,
+                COALESCE(SUM(cpu_cores * memory_gb) FILTER (WHERE status != 'rejected'), 0.0) as total_compute_capacity
             FROM nodes
+            WHERE deleted_at IS NULL
             "#,
         )
         .fetch_one(&self.db)
@@ -687,6 +689,7 @@ impl AppState {
                 registered_at, last_seen
             FROM nodes
             WHERE owner_id = $1 AND deleted_at IS NULL
+              AND status != 'rejected'
             ORDER BY registered_at DESC
             "#,
         )
