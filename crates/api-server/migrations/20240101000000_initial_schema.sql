@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS users (
     user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(64) UNIQUE NOT NULL,
     password_hash VARCHAR(128) NOT NULL,
+    api_key VARCHAR(128) UNIQUE,
     role VARCHAR(32) NOT NULL DEFAULT 'user',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     last_login TIMESTAMP WITH TIME ZONE
@@ -76,3 +77,6 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Create index on username for login queries
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+
+-- Create index on api_key for API key authentication
+CREATE INDEX IF NOT EXISTS idx_users_api_key ON users(api_key);
