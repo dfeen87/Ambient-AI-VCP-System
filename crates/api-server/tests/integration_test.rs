@@ -296,9 +296,10 @@ async fn test_pending_task_captures_newly_registered_node() {
         },
     };
 
-    let submitted_task = state.submit_task(task).await.expect(
-        "task should be accepted as pending even when no eligible nodes are available yet",
-    );
+    let submitted_task = state
+        .submit_task(task)
+        .await
+        .expect("task should be accepted as pending even when no eligible nodes are available yet");
     assert_eq!(submitted_task.status, TaskStatus::Pending);
     assert!(submitted_task.assigned_nodes.is_empty());
 
