@@ -34,6 +34,38 @@ ALTER TABLE nodes ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE;
 
 ### Security Features
 
+#### 0. Capability Whitelist (Recommended)
+
+To reduce trust on self-reported node metadata, enforce a capability whitelist at registration time.
+
+What to whitelist:
+- **Allowed capability keys** (e.g., `cpu_cores`, `memory_gb`, `gpu_available`, `bandwidth_mbps`)
+- **Value ranges** (e.g., `cpu_cores` between 1 and 256)
+- **Enumerated values** for controlled fields (e.g., `node_type` in `compute`, `storage`, `gateway`)
+
+Suggested policy behavior:
+- Reject unknown capability fields with `400 Bad Request`
+- Reject out-of-range values with clear validation messages
+- Version the policy so nodes can migrate safely (for example, `capability_policy_version`)
+
+Example policy snippet (conceptual):
+```json
+{
+  "allowed_keys": ["bandwidth_mbps", "cpu_cores", "memory_gb", "gpu_available"],
+  "constraints": {
+    "bandwidth_mbps": { "min": 10, "max": 100000 },
+    "cpu_cores": { "min": 1, "max": 256 },
+    "memory_gb": { "min": 1, "max": 2048 },
+    "gpu_available": { "type": "boolean" }
+  }
+}
+```
+
+Benefits:
+- Prevents malformed or inflated capability claims
+- Makes task routing deterministic
+- Simplifies auditing and abuse detection
+
 #### 1. Node Ownership Verification
 
 All node operations now verify ownership:
@@ -103,6 +135,40 @@ Response:
 }
 ```
 
+#### 5. Task-Type Registry (Recommended)
+
+Define a centralized task-type registry to control which workloads are valid and what capabilities they require.
+
+Each task type should include:
+- **Stable ID** (for example, `inference.llm.small`)
+- **Required capabilities** (minimum CPU, RAM, GPU, network)
+- **Optional capabilities** (accelerators, model caches)
+- **Security profile** (allowed network egress, filesystem scope, max runtime)
+- **SLA/SLO hints** (latency and throughput classes)
+
+Why this matters:
+- Prevents arbitrary or undefined task types from being scheduled
+- Avoids under-provisioned execution by validating requirements before assignment
+- Enables explicit deny/allow controls for sensitive workloads
+
+Example registry entry (conceptual):
+```json
+{
+  "task_type": "inference.llm.small",
+  "requires": {
+    "cpu_cores": 8,
+    "memory_gb": 32,
+    "gpu_available": false,
+    "bandwidth_mbps": 200
+  },
+  "security": {
+    "egress": "restricted",
+    "max_runtime_seconds": 120,
+    "input_size_mb_max": 25
+  }
+}
+```
+
 ### API Changes
 
 #### New Endpoints
@@ -121,6 +187,31 @@ Response:
 | GET | /api/v1/nodes/{node_id} | Excludes soft-deleted nodes |
 
 ### Security Best Practices
+
+#### Safety Model Section for Documentation (Recommended)
+
+Add and maintain a dedicated "Safety Model" section in architecture and security docs. This should make assumptions and controls explicit for operators and auditors.
+
+Suggested structure:
+1. **Threat model**
+   - Adversaries: malicious node operator, compromised user account, rogue client
+   - Assets: task payloads, model artifacts, credentials, routing metadata
+2. **Trust boundaries**
+   - API boundary (JWT-authenticated control plane)
+   - Node runtime boundary (sandbox/container/process isolation)
+   - Data boundary (encrypted at rest/in transit)
+3. **Control matrix**
+   - Authentication & authorization controls
+   - Input validation and capability/task-type policy checks
+   - Runtime controls (timeouts, egress rules, resource quotas)
+   - Detection & response (audit logs, anomaly alerts, revocation)
+4. **Residual risk and mitigations**
+   - Known limitations, compensating controls, and roadmap items
+
+Documentation outputs to include:
+- A one-page diagram of trust boundaries
+- A table mapping threats to controls
+- Operational runbooks for node compromise and credential leakage
 
 #### For Node Operators
 
