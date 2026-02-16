@@ -334,8 +334,13 @@ impl AppState {
         // In production, you would load the appropriate verification key based on circuit_id
         let verifier = ZKVerifier::default();
 
-        // Perform cryptographic verification
-        let valid = verifier.verify_proof(&proof, &public_inputs_data);
+        // Perform cryptographic verification off the async runtime worker.
+        let public_inputs_for_verify = public_inputs_data.clone();
+        let valid = tokio::task::spawn_blocking(move || {
+            verifier.verify_proof(&proof, &public_inputs_for_verify)
+        })
+        .await
+        .map_err(|_| crate::error::ApiError::internal_error("Proof verification task failed"))?;
 
         let verification_time_ms = start.elapsed().as_millis() as u64;
 

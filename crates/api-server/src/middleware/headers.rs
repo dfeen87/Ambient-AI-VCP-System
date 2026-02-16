@@ -29,10 +29,13 @@ pub async fn security_headers_middleware(request: Request<Body>, next: Next) -> 
     // X-XSS-Protection (legacy but still useful)
     headers.insert("X-XSS-Protection", "1; mode=block".parse().unwrap());
 
+    // Expect-CT
+    headers.insert("Expect-CT", "max-age=86400, enforce".parse().unwrap());
+
     // Content-Security-Policy
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+        "default-src 'self'; script-src 'self'; style-src 'self'"
             .parse()
             .unwrap(),
     );

@@ -1,5 +1,4 @@
 -- Migration: Add api_keys table for programmatic access
--- Created: 2024-01-06
 
 CREATE TABLE IF NOT EXISTS api_keys (
     key_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -13,15 +12,10 @@ CREATE TABLE IF NOT EXISTS api_keys (
     last_used_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     revoked_at TIMESTAMP WITH TIME ZONE,
-    revoked_reason VARCHAR(255),
-    INDEX idx_api_keys_user_id (user_id),
-    INDEX idx_api_keys_key_hash (key_hash),
-    INDEX idx_api_keys_key_prefix (key_prefix),
-    INDEX idx_api_keys_expires_at (expires_at)
+    revoked_reason VARCHAR(255)
 );
 
-COMMENT ON TABLE api_keys IS 'API keys for programmatic access to the system';
-COMMENT ON COLUMN api_keys.key_hash IS 'SHA-256 hash of the API key';
-COMMENT ON COLUMN api_keys.key_prefix IS 'First 8 characters of the key for display purposes';
-COMMENT ON COLUMN api_keys.scopes IS 'Array of permission scopes (e.g., ["tasks:read", "nodes:write"])';
-COMMENT ON COLUMN api_keys.rate_limit_tier IS 'Rate limiting tier for this key';
+CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_key_prefix ON api_keys(key_prefix);
+CREATE INDEX IF NOT EXISTS idx_api_keys_expires_at ON api_keys(expires_at);

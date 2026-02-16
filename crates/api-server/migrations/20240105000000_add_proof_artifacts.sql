@@ -1,5 +1,4 @@
 -- Migration: Add proof_artifacts table for ZK proof storage
--- Created: 2024-01-05
 
 CREATE TABLE IF NOT EXISTS proof_artifacts (
     proof_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -12,15 +11,10 @@ CREATE TABLE IF NOT EXISTS proof_artifacts (
     verified BOOLEAN NOT NULL DEFAULT FALSE,
     verification_time_ms BIGINT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    verified_at TIMESTAMP WITH TIME ZONE,
-    INDEX idx_proof_artifacts_task_id (task_id),
-    INDEX idx_proof_artifacts_run_id (run_id),
-    INDEX idx_proof_artifacts_verified (verified),
-    INDEX idx_proof_artifacts_created_at (created_at)
+    verified_at TIMESTAMP WITH TIME ZONE
 );
 
-COMMENT ON TABLE proof_artifacts IS 'Stores ZK proofs generated during task execution';
-COMMENT ON COLUMN proof_artifacts.proof_data IS 'Serialized proof bytes';
-COMMENT ON COLUMN proof_artifacts.public_inputs IS 'Public inputs for proof verification';
-COMMENT ON COLUMN proof_artifacts.circuit_id IS 'Identifier for the ZK circuit used';
-COMMENT ON COLUMN proof_artifacts.verified IS 'Whether the proof has been cryptographically verified';
+CREATE INDEX IF NOT EXISTS idx_proof_artifacts_task_id ON proof_artifacts(task_id);
+CREATE INDEX IF NOT EXISTS idx_proof_artifacts_run_id ON proof_artifacts(run_id);
+CREATE INDEX IF NOT EXISTS idx_proof_artifacts_verified ON proof_artifacts(verified);
+CREATE INDEX IF NOT EXISTS idx_proof_artifacts_created_at ON proof_artifacts(created_at);

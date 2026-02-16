@@ -89,3 +89,30 @@ jobs:
         with:
           name: ambient-vcp
           path: target/release/ambient-vcp
+
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: ambient_vcp_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Verify migrations apply
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/ambient_vcp_ci
+        run: cargo test -p api-server --test migration_sql_smoke -- --nocapture

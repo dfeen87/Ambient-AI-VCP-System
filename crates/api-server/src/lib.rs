@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     middleware as axum_middleware,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use sqlx::Row;
@@ -375,17 +375,17 @@ async fn register_user(
 
     let password_hash = auth::hash_password(&request.password)?;
     let api_key = auth::generate_api_key();
+    let api_key_hash = auth::hash_api_key(&api_key);
 
     let user_id: Uuid = sqlx::query_scalar(
         r#"
-        INSERT INTO users (username, password_hash, api_key, role)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO users (username, password_hash, role)
+        VALUES ($1, $2, $3)
         RETURNING user_id
         "#,
     )
     .bind(&request.username)
     .bind(&password_hash)
-    .bind(&api_key)
     .bind("user")
     .fetch_one(&state.db)
     .await
@@ -397,6 +397,20 @@ async fn register_user(
         }
         ApiError::from(e)
     })?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO api_keys (user_id, key_hash, key_prefix, name, scopes)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+    )
+    .bind(user_id)
+    .bind(&api_key_hash)
+    .bind(&api_key.chars().take(8).collect::<String>())
+    .bind("default")
+    .bind(vec!["tasks:read".to_string(), "tasks:write".to_string()])
+    .execute(&state.db)
+    .await?;
 
     info!(
         "User registered successfully: {} ({})",
@@ -450,7 +464,8 @@ async fn login(
     let password_hash: String = user_row.get("password_hash");
     let role: String = user_row.get("role");
 
-    let password_valid = auth::verify_password(&request.password, &password_hash)?;
+    let password_valid =
+        auth::verify_password_async(request.password.clone(), password_hash).await?;
     if !password_valid {
         return Err(ApiError::unauthorized("Invalid username or password"));
     }
@@ -581,6 +596,31 @@ async fn refresh_token(
     }))
 }
 
+async fn validate_api_key(auth_user: auth::AuthUser) -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(serde_json::json!({
+        "user_id": auth_user.user_id,
+        "username": auth_user.username,
+        "role": auth_user.role,
+        "authenticated_via": "api_key"
+    })))
+}
+
+async fn admin_users() -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(
+        serde_json::json!({"message": "admin user management"}),
+    ))
+}
+
+async fn admin_throttle_overrides() -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(
+        serde_json::json!({"message": "admin global throttle overrides"}),
+    ))
+}
+
+async fn admin_audit_log() -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(serde_json::json!({"message": "admin audit logs"})))
+}
+
 /// Build the API router
 pub fn create_router(state: Arc<AppState>) -> Router {
     let public_routes = Router::new()
@@ -604,7 +644,31 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             middleware::auth::jwt_auth_middleware,
         ));
 
-    let api_routes = Router::new().merge(public_routes).merge(protected_routes);
+    let api_key_routes = Router::new()
+        .route("/auth/api-key/validate", get(validate_api_key))
+        .layer(axum_middleware::from_fn(
+            middleware::auth::api_key_auth_middleware,
+        ));
+
+    let admin_routes = Router::new()
+        .route("/admin/users", get(admin_users))
+        .route("/admin/throttle-overrides", post(admin_throttle_overrides))
+        .route("/admin/audit-log", get(admin_audit_log))
+        .layer(axum_middleware::from_fn(
+            middleware::auth::require_scope_middleware,
+        ))
+        .layer(axum_middleware::from_fn(
+            middleware::auth::require_admin_middleware,
+        ))
+        .layer(axum_middleware::from_fn(
+            middleware::auth::jwt_auth_middleware,
+        ));
+
+    let api_routes = Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
+        .merge(api_key_routes)
+        .merge(admin_routes);
 
     // Create OpenAPI JSON route (still using utoipa for spec generation)
     let openapi_json = utoipa::openapi::OpenApiBuilder::from(ApiDoc::openapi()).build();
@@ -620,6 +684,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api/v1", api_routes)
         .merge(docs_router)
         .merge(middleware::metrics::create_metrics_router())
+        .layer(axum_middleware::from_fn(
+            middleware::metrics::metrics_middleware,
+        ))
         .layer(axum_middleware::from_fn(
             middleware::logging::request_tracing_middleware,
         ))

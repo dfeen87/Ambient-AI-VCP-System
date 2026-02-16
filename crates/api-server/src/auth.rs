@@ -7,9 +7,13 @@
 use crate::error::{ApiError, ApiResult};
 use axum::{extract::FromRequestParts, http::request::Parts};
 use chrono::{Duration, Utc};
+use hmac::{Hmac, Mac};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use utoipa::ToSchema;
+
+type HmacSha256 = Hmac<Sha256>;
 
 /// JWT Claims structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -254,14 +258,26 @@ pub fn generate_refresh_token() -> String {
 
 /// Hash a refresh token using SHA-256
 pub fn hash_refresh_token(token: &str) -> String {
-    // Use bcrypt-style hashing for consistency
-    // In production, you might want to use a dedicated hashing function
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    let pepper = std::env::var("REFRESH_TOKEN_PEPPER")
+        .or_else(|_| std::env::var("AUTH_HASH_PEPPER"))
+        .unwrap_or_else(|_| "dev-refresh-pepper-change-me".to_string());
 
-    let mut hasher = DefaultHasher::new();
-    token.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+    hash_with_hmac_sha256(token, &pepper)
+}
+
+/// Hash API keys for storage and lookup.
+pub fn hash_api_key(key: &str) -> String {
+    let pepper = std::env::var("API_KEY_PEPPER")
+        .or_else(|_| std::env::var("AUTH_HASH_PEPPER"))
+        .unwrap_or_else(|_| "dev-api-key-pepper-change-me".to_string());
+    hash_with_hmac_sha256(key, &pepper)
+}
+
+fn hash_with_hmac_sha256(input: &str, pepper: &str) -> String {
+    let mut mac = HmacSha256::new_from_slice(pepper.as_bytes())
+        .expect("HMAC accepts keys of any size for SHA256");
+    mac.update(input.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
 }
 
 /// User registration request
@@ -320,6 +336,13 @@ pub fn verify_password(password: &str, hash: &str) -> ApiResult<bool> {
     })
 }
 
+/// Verify a password using a blocking thread pool.
+pub async fn verify_password_async(password: String, hash: String) -> ApiResult<bool> {
+    tokio::task::spawn_blocking(move || verify_password(&password, &hash))
+        .await
+        .map_err(|_| ApiError::internal_error("Password verification task failed"))?
+}
+
 /// Generate a secure API key
 pub fn generate_api_key() -> String {
     use rand::Rng;
@@ -356,5 +379,15 @@ mod tests {
         let key = generate_api_key();
         assert!(key.starts_with("vcp_"));
         assert_eq!(key.len(), 36); // "vcp_" + 32 characters
+    }
+
+    #[test]
+    fn test_refresh_hash_stable_and_non_plaintext() {
+        std::env::set_var("REFRESH_TOKEN_PEPPER", "test-pepper");
+        let h1 = hash_refresh_token("token-value");
+        let h2 = hash_refresh_token("token-value");
+        assert_eq!(h1, h2);
+        assert_ne!(h1, "token-value");
+        assert_eq!(h1.len(), 64);
     }
 }

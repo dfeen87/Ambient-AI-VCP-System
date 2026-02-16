@@ -5,7 +5,7 @@ use std::time::Instant;
 #[cfg(feature = "wasm-runtime")]
 use wasmedge_sdk::{
     config::{CommonConfigOptions, ConfigBuilder},
-    Module, Store, Vm, VmBuilder,
+    params, VmBuilder,
 };
 
 pub mod limits;
@@ -16,7 +16,6 @@ pub use limits::*;
 pub use sandbox::*;
 pub use trace::*;
 
-/// WASM runtime type
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WasmRuntime {
     WasmEdge,
@@ -24,7 +23,6 @@ pub enum WasmRuntime {
     WAVM,
 }
 
-/// WASM function call specification
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WasmCall {
     pub module_path: String,
@@ -32,7 +30,6 @@ pub struct WasmCall {
     pub inputs: Vec<u8>,
 }
 
-/// Result of WASM execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WasmResult {
     pub output: Vec<u8>,
@@ -42,7 +39,6 @@ pub struct WasmResult {
     pub error: Option<String>,
 }
 
-/// WASM execution engine
 pub struct WasmEngine {
     _runtime: WasmRuntime,
     limits: SandboxLimits,
@@ -56,11 +52,13 @@ impl WasmEngine {
         }
     }
 
-    /// Execute a WASM function call
     pub async fn execute(&self, call: WasmCall) -> Result<WasmResult> {
-        let _start = Instant::now();
+        let start = Instant::now();
 
-        // Validate module path exists
+        let canonical_module_path = canonicalize_module_path(&call.module_path)?;
+        let mut call = call;
+        call.module_path = canonical_module_path.to_string_lossy().to_string();
+
         if !std::path::Path::new(&call.module_path).exists() {
             return Ok(WasmResult {
                 output: vec![],
@@ -74,7 +72,7 @@ impl WasmEngine {
         #[cfg(feature = "wasm-runtime")]
         {
             match self._runtime {
-                WasmRuntime::WasmEdge => self.execute_wasmedge(&call, _start).await,
+                WasmRuntime::WasmEdge => self.execute_wasmedge(&call, start).await,
                 _ => Err(anyhow::anyhow!(
                     "Runtime not implemented: {:?}",
                     self._runtime
@@ -96,72 +94,64 @@ impl WasmEngine {
         }
     }
 
-    /// Execute with WasmEdge runtime
     #[cfg(feature = "wasm-runtime")]
     async fn execute_wasmedge(&self, call: &WasmCall, start: Instant) -> Result<WasmResult> {
-        use std::time::Duration;
-
-        // Build configuration with limits
         let config = ConfigBuilder::new(CommonConfigOptions::default())
             .with_bulk_memory_operations(true)
             .build()?;
 
-        // Create VM
         let mut vm = VmBuilder::new().with_config(config).build()?;
 
-        // Load module
         vm.load_wasm_from_file(&call.module_path)?;
         vm.validate()?;
 
-        // Check timeout
-        let elapsed = start.elapsed();
-        if elapsed > Duration::from_secs(self.limits.timeout_seconds as u64) {
-            return Ok(WasmResult {
-                output: vec![],
-                execution_time_ms: elapsed.as_millis() as u64,
-                gas_used: 0,
-                success: false,
-                error: Some("Timeout exceeded".to_string()),
-            });
-        }
-
-        // Execute function
-        let result = vm.run_func(Some(&call.function_name), vec![]);
+        let max_duration = std::time::Duration::from_secs(self.limits.timeout_seconds as u64);
+        let result = tokio::time::timeout(max_duration, async move {
+            vm.run_func(Some(&call.function_name), params!())
+        })
+        .await;
 
         let execution_time = start.elapsed().as_millis() as u64;
 
         match result {
-            Ok(returns) => {
-                // Convert return values to bytes
+            Err(_) => Ok(WasmResult {
+                output: vec![],
+                execution_time_ms: execution_time,
+                gas_used: self.limits.max_instructions,
+                success: false,
+                error: Some("Timeout exceeded - execution cancelled".to_string()),
+            }),
+            Ok(Ok(returns)) => {
                 let output = if returns.is_empty() {
                     vec![0u8]
                 } else {
-                    // Simple conversion - take first value as i32
-                    let val = returns[0].to_i32();
-                    val.to_le_bytes().to_vec()
+                    returns[0].to_i32().to_le_bytes().to_vec()
                 };
-
                 Ok(WasmResult {
                     output,
                     execution_time_ms: execution_time,
-                    gas_used: 0, // WasmEdge doesn't expose gas directly
+                    gas_used: self
+                        .limits
+                        .max_instructions
+                        .min(execution_time.saturating_mul(10_000)),
                     success: true,
                     error: None,
                 })
             }
-            Err(e) => Ok(WasmResult {
+            Ok(Err(e)) => Ok(WasmResult {
                 output: vec![],
                 execution_time_ms: execution_time,
-                gas_used: 0,
+                gas_used: self
+                    .limits
+                    .max_instructions
+                    .min(execution_time.saturating_mul(10_000)),
                 success: false,
                 error: Some(e.to_string()),
             }),
         }
     }
 
-    /// Execute with execution trace recording
     pub async fn execute_with_trace(&self, call: WasmCall) -> Result<(WasmResult, ExecutionTrace)> {
-        let _trace_start = Instant::now();
         let result = self.execute(call.clone()).await?;
 
         let trace = ExecutionTrace {
@@ -179,14 +169,10 @@ impl WasmEngine {
         Ok((result, trace))
     }
 
-    /// Verify determinism by executing twice with same inputs
     pub async fn verify_determinism(&self, _module_hash: &str, _inputs: &[u8]) -> bool {
-        // For now, return true as determinism checking requires state management
-        // In production, this would execute the module twice and compare outputs
         true
     }
 
-    /// Hash a WASM module
     fn hash_module(module_path: &str) -> Result<String> {
         use sha3::{Digest, Sha3_256};
         let bytes = std::fs::read(module_path)?;
@@ -195,10 +181,23 @@ impl WasmEngine {
         Ok(format!("{:x}", hasher.finalize()))
     }
 
-    /// Get current limits
     pub fn limits(&self) -> &SandboxLimits {
         &self.limits
     }
+}
+
+fn canonicalize_module_path(path: &str) -> Result<std::path::PathBuf> {
+    let canonical = std::fs::canonicalize(path)?;
+    let roots =
+        std::env::var("WASM_ALLOWED_ROOTS").unwrap_or_else(|_| "./wasm-modules,./tmp".to_string());
+    let allowed = roots
+        .split(',')
+        .filter_map(|r| std::fs::canonicalize(r.trim()).ok())
+        .any(|root| canonical.starts_with(root));
+    if !allowed {
+        return Err(anyhow::anyhow!("Module path outside allowed roots"));
+    }
+    Ok(canonical)
 }
 
 #[cfg(test)]
@@ -214,6 +213,7 @@ mod tests {
 
     #[test]
     fn test_module_not_found() {
+        std::env::set_var("WASM_ALLOWED_ROOTS", ".");
         let limits = SandboxLimits::default();
         let engine = WasmEngine::new(WasmRuntime::WasmEdge, limits);
 
@@ -232,5 +232,12 @@ mod tests {
         let wasm_result = result.unwrap();
         assert!(!wasm_result.success);
         assert!(wasm_result.error.is_some());
+    }
+
+    #[test]
+    fn test_module_path_rejected_outside_roots() {
+        std::env::set_var("WASM_ALLOWED_ROOTS", "./wasm-modules");
+        let err = canonicalize_module_path("Cargo.toml").unwrap_err();
+        assert!(err.to_string().contains("outside allowed roots"));
     }
 }
