@@ -353,21 +353,64 @@ cargo test --test integration_test
 
 ## 🔒 Security & Validation
 
-### Input Validation ⭐ NEW
+### Authentication & Authorization ⭐ **NEW**
 
-All API endpoints now validate input data before processing:
+**Node Ownership & Lifecycle:**
+- ✅ **JWT Authentication**: All node operations require valid JWT tokens
+- ✅ **User Registration**: Secure account creation with bcrypt password hashing
+- ✅ **Node Ownership**: Nodes linked to user accounts via foreign key constraint
+- ✅ **Authorization**: Users can only manage their own nodes
+- ✅ **Soft Delete**: Nodes can be deregistered with audit trail (deleted_at timestamp)
+- ✅ **Heartbeat Tracking**: Detect stale/offline nodes via last_heartbeat timestamp
+
+**Security Best Practices:**
+- ✅ Parameterized SQL queries prevent injection attacks
+- ✅ Error messages sanitized to prevent information leakage
+- ✅ 404 responses for both missing and unauthorized resources
+- ✅ Foreign key constraints ensure referential integrity
+- ✅ Production mode enforces strong JWT secrets (min 32 characters)
+
+**Protected Endpoints:**
+```
+POST   /api/v1/nodes              - Register node (requires JWT)
+DELETE /api/v1/nodes/{id}         - Delete node (requires ownership)
+PUT    /api/v1/nodes/{id}/heartbeat - Update heartbeat (requires ownership)
+POST   /api/v1/tasks              - Submit task (requires JWT)
+POST   /api/v1/proofs/verify      - Verify proof (requires JWT)
+```
+
+**Public Endpoints:**
+```
+GET  /api/v1/health               - Health check
+POST /api/v1/auth/register        - Register account
+POST /api/v1/auth/login           - Login and get JWT
+GET  /api/v1/nodes                - List nodes
+GET  /api/v1/cluster/stats        - Cluster statistics
+```
+
+### Input Validation
+
+All API endpoints validate input data before processing:
 
 **Node Registration:**
 - ✅ Node ID length and character validation
 - ✅ Region name validation
 - ✅ Node type whitelist enforcement
 - ✅ Capability range validation
+- ✅ User authentication required
 
 **Task Submission:**
 - ✅ Task type whitelist enforcement
 - ✅ WASM module size limits (10MB)
 - ✅ Min/max node count validation
 - ✅ Execution time limits
+- ✅ User authentication required
+
+**User Registration:**
+- ✅ Username: 3-32 characters, alphanumeric + underscores
+- ✅ Password: Minimum 8 characters
+- ✅ Unique username enforcement
+- ✅ Password strength requirements
 
 **Error Responses:**
 ```json
@@ -444,6 +487,61 @@ kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/service.yaml
 ```
 
+### Production Security Checklist
+
+**Before deploying to production:**
+
+- [ ] Set `ENVIRONMENT=production` environment variable
+- [ ] Generate secure `JWT_SECRET` (min 32 chars): `openssl rand -base64 32`
+- [ ] Configure `DATABASE_URL` with PostgreSQL connection string
+- [ ] Use managed PostgreSQL with SSL/TLS enabled
+- [ ] Enable HTTPS (automatic with Render.com, configure for self-hosted)
+- [ ] Configure proper CORS origins (not `*` in production)
+- [ ] Set appropriate rate limits for your traffic
+- [ ] Configure database backups
+- [ ] Monitor logs for security events
+- [ ] Never commit `.env` or secrets to git
+- [ ] Review and run database migrations
+- [ ] Test authentication flow in production environment
+
+**Environment Variables Required:**
+```bash
+# Authentication (REQUIRED)
+JWT_SECRET=<generate-with-openssl-rand-base64-32>
+JWT_EXPIRATION_HOURS=24
+
+# Database (REQUIRED)
+DATABASE_URL=postgres://user:password@host:5432/dbname
+DB_MAX_CONNECTIONS=10
+DB_MIN_CONNECTIONS=2
+
+# Environment
+ENVIRONMENT=production
+
+# Optional
+PORT=3000
+HOST=0.0.0.0
+```
+
+**First-Time Setup:**
+```bash
+# 1. Run database migrations
+cargo run --bin api-server
+
+# 2. Create admin user
+curl -X POST https://your-api.com/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"secure-password"}'
+
+# 3. Test authentication
+curl -X POST https://your-api.com/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"secure-password"}'
+
+# 4. Access dashboard
+# Visit https://your-api.com and login
+```
+
 ---
 
 ## 📊 Performance Targets
@@ -491,14 +589,27 @@ kubectl apply -f k8s/service.yaml
 - ✅ **Enhanced documentation**
 - ✅ **Production ZK proofs with Groth16**
 
+### ⭐ Phase 2.6 - Security & Authentication (COMPLETED) **NEW**
+- ✅ **JWT Authentication** - Secure token-based auth with configurable expiration
+- ✅ **User Registration & Login** - Account creation with bcrypt password hashing
+- ✅ **Node Ownership** - Foreign key linking nodes to user accounts
+- ✅ **Authorization** - Users can only manage their own nodes
+- ✅ **Node Lifecycle Management** - Delete nodes with ownership verification
+- ✅ **Heartbeat Mechanism** - Track node availability and detect offline nodes
+- ✅ **Dashboard Authentication** - Integrated login/logout with JWT storage
+- ✅ **Security Documentation** - Comprehensive guides and best practices
+- ✅ **Data Persistence** - PostgreSQL with migrations
+
 ### 🔄 Phase 3 - Advanced Features (IN PROGRESS)
-- [ ] Authentication & authorization (JWT/API keys)
-- [ ] Rate limiting
-- [ ] Data persistence (PostgreSQL/SQLite)
+- [x] Authentication & authorization (JWT/API keys) ✅ **COMPLETED**
+- [x] Data persistence (PostgreSQL) ✅ **COMPLETED**
+- [ ] Rate limiting (basic implementation exists, needs enhancement)
 - [ ] Metrics & monitoring (Prometheus)
 - [ ] Byzantine fault tolerance
 - [ ] P2P networking layer (libp2p)
 - [ ] Production security audit
+- [ ] Token refresh mechanism
+- [ ] Multi-factor authentication
 
 ### 🔮 Future Phases
 - [ ] Mobile node support
