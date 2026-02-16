@@ -232,13 +232,15 @@ impl AppState {
             FROM nodes
             WHERE deleted_at IS NULL
               AND status = 'online'
-              AND cpu_cores >= $1
-              AND memory_gb >= $2
-              AND bandwidth_mbps >= $3
-              AND ($4 = FALSE OR gpu_available = TRUE)
+              AND (node_type = $1 OR node_type = 'any')
+              AND cpu_cores >= $2
+              AND memory_gb >= $3
+              AND bandwidth_mbps >= $4
+              AND ($5 = FALSE OR gpu_available = TRUE)
             ORDER BY registered_at ASC
             "#,
         )
+        .bind(task_registry_entry.preferred_node_type)
         .bind(task_registry_entry.minimum_capabilities.cpu_cores as i32)
         .bind(task_registry_entry.minimum_capabilities.memory_gb)
         .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
@@ -302,14 +304,16 @@ impl AppState {
                     WHERE n.node_id = $1
                       AND n.deleted_at IS NULL
                       AND n.status = 'online'
-                      AND n.cpu_cores >= $2
-                      AND n.memory_gb >= $3
-                      AND n.bandwidth_mbps >= $4
-                      AND ($5 = FALSE OR n.gpu_available = TRUE)
+                      AND (n.node_type = $2 OR n.node_type = 'any')
+                      AND n.cpu_cores >= $3
+                      AND n.memory_gb >= $4
+                      AND n.bandwidth_mbps >= $5
+                      AND ($6 = FALSE OR n.gpu_available = TRUE)
                 )
                 "#,
             )
             .bind(node_id)
+            .bind(task_registry_entry.preferred_node_type)
             .bind(task_registry_entry.minimum_capabilities.cpu_cores as i32)
             .bind(task_registry_entry.minimum_capabilities.memory_gb)
             .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)

@@ -102,6 +102,7 @@ impl NodeCapabilities {
 #[derive(Debug, Clone)]
 pub struct TaskTypeRegistryEntry {
     pub task_type: &'static str,
+    pub preferred_node_type: &'static str,
     pub minimum_capabilities: NodeCapabilities,
     pub max_execution_time_sec: u64,
     pub max_input_size_mb: usize,
@@ -111,6 +112,7 @@ pub struct TaskTypeRegistryEntry {
 pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 4] = [
     TaskTypeRegistryEntry {
         task_type: "federated_learning",
+        preferred_node_type: "compute",
         minimum_capabilities: NodeCapabilities {
             bandwidth_mbps: 500.0,
             cpu_cores: 8,
@@ -123,6 +125,7 @@ pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 4] = [
     },
     TaskTypeRegistryEntry {
         task_type: "zk_proof",
+        preferred_node_type: "compute",
         minimum_capabilities: NodeCapabilities {
             bandwidth_mbps: 100.0,
             cpu_cores: 8,
@@ -135,6 +138,7 @@ pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 4] = [
     },
     TaskTypeRegistryEntry {
         task_type: "wasm_execution",
+        preferred_node_type: "compute",
         minimum_capabilities: NodeCapabilities {
             bandwidth_mbps: 100.0,
             cpu_cores: 4,
@@ -147,6 +151,7 @@ pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 4] = [
     },
     TaskTypeRegistryEntry {
         task_type: "computation",
+        preferred_node_type: "compute",
         minimum_capabilities: NodeCapabilities {
             bandwidth_mbps: 50.0,
             cpu_cores: 4,

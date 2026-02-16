@@ -335,6 +335,156 @@ async fn test_pending_task_captures_newly_registered_node() {
         .expect("cleanup tables after integration test");
 }
 
+
+
+#[tokio::test]
+async fn test_task_assignment_uses_universal_node_type_any() {
+    let db_url = match std::env::var("TEST_DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("Skipping test_task_assignment_uses_universal_node_type_any — no TEST_DATABASE_URL set");
+            return;
+        }
+    };
+
+    let pool = PgPool::connect(&db_url)
+        .await
+        .expect("connect to postgres for integration test");
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations should apply successfully for integration test");
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables before integration test");
+
+    let state = AppState::new(pool.clone());
+    let universal_node_id = format!("universal-any-node-{}", Uuid::new_v4());
+
+    state
+        .register_node(
+            NodeRegistration {
+                node_id: universal_node_id.clone(),
+                region: "us-west".to_string(),
+                node_type: "any".to_string(),
+                capabilities: NodeCapabilities {
+                    bandwidth_mbps: 1000.0,
+                    cpu_cores: 16,
+                    memory_gb: 64.0,
+                    gpu_available: false,
+                },
+            },
+            Uuid::new_v4(),
+        )
+        .await
+        .expect("universal any node should register");
+
+    let submitted_task = state
+        .submit_task(TaskSubmission {
+            task_type: "computation".to_string(),
+            wasm_module: None,
+            inputs: serde_json::json!({"job": "universal-should-match"}),
+            requirements: TaskRequirements {
+                min_nodes: 1,
+                max_execution_time_sec: 300,
+                require_gpu: false,
+                require_proof: false,
+            },
+        })
+        .await
+        .expect("task submission should succeed");
+
+    let task = state
+        .get_task(&submitted_task.task_id)
+        .await
+        .expect("submitted task should exist");
+
+    assert_eq!(task.status, TaskStatus::Running);
+    assert!(task.assigned_nodes.contains(&universal_node_id));
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables after integration test");
+}
+
+#[tokio::test]
+async fn test_task_assignment_excludes_non_matching_node_types() {
+    let db_url = match std::env::var("TEST_DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("Skipping test_task_assignment_excludes_non_matching_node_types — no TEST_DATABASE_URL set");
+            return;
+        }
+    };
+
+    let pool = PgPool::connect(&db_url)
+        .await
+        .expect("connect to postgres for integration test");
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations should apply successfully for integration test");
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables before integration test");
+
+    let state = AppState::new(pool.clone());
+    let gateway_node_id = format!("gateway-node-{}", Uuid::new_v4());
+
+    state
+        .register_node(
+            NodeRegistration {
+                node_id: gateway_node_id.clone(),
+                region: "us-west".to_string(),
+                node_type: "gateway".to_string(),
+                capabilities: NodeCapabilities {
+                    bandwidth_mbps: 1000.0,
+                    cpu_cores: 16,
+                    memory_gb: 64.0,
+                    gpu_available: false,
+                },
+            },
+            Uuid::new_v4(),
+        )
+        .await
+        .expect("gateway node should register");
+
+    let submitted_task = state
+        .submit_task(TaskSubmission {
+            task_type: "computation".to_string(),
+            wasm_module: None,
+            inputs: serde_json::json!({"job": "gateway-should-not-match"}),
+            requirements: TaskRequirements {
+                min_nodes: 1,
+                max_execution_time_sec: 300,
+                require_gpu: false,
+                require_proof: false,
+            },
+        })
+        .await
+        .expect("task submission should succeed");
+
+    let task = state
+        .get_task(&submitted_task.task_id)
+        .await
+        .expect("submitted task should exist");
+
+    assert_eq!(task.status, TaskStatus::Pending);
+    assert!(!task.assigned_nodes.contains(&gateway_node_id));
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables after integration test");
+}
+
 // Database-dependent tests are commented out
 // Uncomment and run with TEST_DATABASE_URL set to test with real database
 
