@@ -20,6 +20,28 @@ A **production-ready** implementation of a **Verifiable Computation Protocol (VC
 
 ---
 
+## 🎯 Quick Concept Overview
+
+**New to the system?** Here's what you need to know:
+
+- **Nodes** = Devices that join the network to contribute computing power (your laptop, server, etc.)
+  - **4 Node Types**: Compute (run tasks), Gateway (route traffic), Storage (store data), Validator (verify proofs)
+  - 👉 [Learn more about node types →](./docs/NODES_AND_TASKS_GUIDE.md#node-types-explained)
+
+- **Tasks** = Work submitted to the network for execution (train a model, run a computation, etc.)
+  - **4 Task Types**: Federated Learning, ZK Proof, WASM Execution, General Computation
+  - 👉 [Learn more about task types →](./docs/NODES_AND_TASKS_GUIDE.md#task-types-explained)
+
+- **The Dashboard** (https://ambient-ai-vcp-system.onrender.com) lets you:
+  - ✅ Register your device as a node
+  - ✅ View all registered nodes and their health
+  - ✅ Monitor submitted tasks and their status
+  - ✅ See real-time cluster statistics
+
+📖 **For a complete guide on nodes and tasks, see**: [NODES_AND_TASKS_GUIDE.md](./docs/NODES_AND_TASKS_GUIDE.md)
+
+---
+
 ## 🌟 Key Features
 
 ### Core Capabilities
@@ -592,6 +614,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## ⚡ Quick Links
 
 - [**What You Get By Cloning This Repo**](./docs/USER_BENEFITS.md) ⭐ **NEW**
+- [**Understanding Nodes & Tasks**](./docs/NODES_AND_TASKS_GUIDE.md) 📚 **NEW** - What are node types & tasks?
 - [Getting Started Guide](./GETTING_STARTED.md)
 - [API Documentation (Swagger)](http://localhost:3000/swagger-ui)
 - [Robustness Analysis](./ROBUSTNESS_ANALYSIS.md)
