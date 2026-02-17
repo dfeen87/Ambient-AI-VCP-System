@@ -248,7 +248,6 @@ mod tests {
         with_allowed_roots(".", || {
             let limits = SandboxLimits::default();
             let engine = WasmEngine::new(WasmRuntime::WasmEdge, limits);
-
             let rt = tokio::runtime::Runtime::new().unwrap();
             let result = rt.block_on(async {
                 engine
