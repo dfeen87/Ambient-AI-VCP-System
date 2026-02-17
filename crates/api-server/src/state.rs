@@ -1044,6 +1044,80 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
     }
 }
 
+fn analyze_federated_learning_payload(
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    let participant_count = map
+        .get("participant_count")
+        .and_then(|v| v.as_u64())
+        .or_else(|| map.get("clients").and_then(|v| v.as_array()).map(|v| v.len() as u64));
+
+    let round_count = map
+        .get("rounds")
+        .and_then(|v| v.as_u64())
+        .or_else(|| map.get("num_rounds").and_then(|v| v.as_u64()));
+
+    serde_json::json!({
+        "task_type": "federated_learning",
+        "analysis_mode": "federated_learning",
+        "summary": "Federated learning payload analyzed successfully.",
+        "participant_count": participant_count,
+        "round_count": round_count,
+        "has_model_config": map.contains_key("model") || map.contains_key("model_config"),
+        "has_aggregation_strategy": map.contains_key("aggregation") || map.contains_key("aggregation_strategy"),
+        "top_level_keys": map.keys().cloned().collect::<Vec<String>>()
+    })
+}
+
+fn analyze_zk_proof_payload(map: &serde_json::Map<String, serde_json::Value>) -> serde_json::Value {
+    let circuit_name = map
+        .get("circuit")
+        .and_then(|v| v.as_str())
+        .or_else(|| map.get("circuit_name").and_then(|v| v.as_str()));
+
+    let public_input_count = map
+        .get("public_inputs")
+        .and_then(|v| v.as_array())
+        .map(|v| v.len())
+        .or_else(|| map.get("public_input_count").and_then(|v| v.as_u64()).map(|v| v as usize));
+
+    serde_json::json!({
+        "task_type": "zk_proof",
+        "analysis_mode": "zk_proof",
+        "summary": "Zero-knowledge proof payload analyzed successfully.",
+        "circuit": circuit_name,
+        "public_input_count": public_input_count,
+        "has_witness": map.contains_key("witness") || map.contains_key("private_inputs"),
+        "has_proof_system": map.contains_key("proof_system") || map.contains_key("protocol"),
+        "top_level_keys": map.keys().cloned().collect::<Vec<String>>()
+    })
+}
+
+fn analyze_wasm_execution_payload(
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    let module_size_bytes = map
+        .get("module_size_bytes")
+        .and_then(|v| v.as_u64())
+        .or_else(|| map.get("wasm_size_bytes").and_then(|v| v.as_u64()));
+
+    let function_name = map
+        .get("entrypoint")
+        .and_then(|v| v.as_str())
+        .or_else(|| map.get("function").and_then(|v| v.as_str()));
+
+    serde_json::json!({
+        "task_type": "wasm_execution",
+        "analysis_mode": "wasm_execution",
+        "summary": "WASM execution payload analyzed successfully.",
+        "entrypoint": function_name,
+        "module_size_bytes": module_size_bytes,
+        "has_wasm_module": map.contains_key("wasm_module") || map.contains_key("module_bytes") || map.contains_key("module"),
+        "has_runtime_limits": map.contains_key("limits") || map.contains_key("timeout_ms") || map.contains_key("memory_limit_mb"),
+        "top_level_keys": map.keys().cloned().collect::<Vec<String>>()
+    })
+}
+
 fn evaluate_arithmetic_expression(expression: &str) -> Option<f64> {
     let normalized = expression
         .trim()
@@ -1248,5 +1322,44 @@ mod tests {
         let result = analyze_task_payload("computation", &value);
 
         assert_eq!(result["analysis_mode"], "json");
+    }
+
+    #[test]
+    fn analyzes_federated_learning_payload() {
+        let value = serde_json::json!({
+            "participant_count": 12,
+            "rounds": 20,
+            "aggregation_strategy": "fedavg"
+        });
+        let result = analyze_task_payload("federated_learning", &value);
+
+        assert_eq!(result["analysis_mode"], "federated_learning");
+        assert_eq!(result["participant_count"], 12);
+    }
+
+    #[test]
+    fn analyzes_zk_proof_payload() {
+        let value = serde_json::json!({
+            "circuit": "range_check",
+            "public_inputs": [1, 2, 3],
+            "proof_system": "groth16"
+        });
+        let result = analyze_task_payload("zk_proof", &value);
+
+        assert_eq!(result["analysis_mode"], "zk_proof");
+        assert_eq!(result["public_input_count"], 3);
+    }
+
+    #[test]
+    fn analyzes_wasm_execution_payload() {
+        let value = serde_json::json!({
+            "entrypoint": "run",
+            "module_size_bytes": 2048,
+            "timeout_ms": 5000
+        });
+        let result = analyze_task_payload("wasm_execution", &value);
+
+        assert_eq!(result["analysis_mode"], "wasm_execution");
+        assert_eq!(result["entrypoint"], "run");
     }
 }
