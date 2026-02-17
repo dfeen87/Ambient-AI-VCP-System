@@ -2227,11 +2227,13 @@
 
             if (res.ok) {
                 showToast('Task submitted successfully');
+                // Close immediately on success so follow-up UI refresh work cannot
+                // keep the task window open if any later step errors.
+                closeTaskModal();
                 e.target.reset();
                 document.getElementById('task-inputs').value = '';
                 updateTaskDefaults();
                 validateTaskForm();
-                closeTaskModal();
                 await fetchData();
             } else {
                 const err = await res.json().catch(() => ({}));
