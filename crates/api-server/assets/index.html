@@ -1200,7 +1200,7 @@
             </div>
 
             <div class="form-footer">
-                <button type="submit" class="btn">Submit Task</button>
+                <button type="button" class="btn" id="submit-task-btn">Submit Task</button>
                 <button type="button" class="btn btn-ghost" id="cancel-task-modal-btn">Cancel</button>
             </div>
         </form>
@@ -2250,9 +2250,8 @@
     document.getElementById('download-task-result-btn').addEventListener('click', downloadSelectedTaskResult);
     document.getElementById('send-task-result-email-btn').addEventListener('click', sendSelectedTaskResultEmail);
 
-    document.getElementById('submit-task-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = e.target.querySelector('[type="submit"]');
+    async function submitTaskForm(formEl) {
+        const btn = document.getElementById('submit-task-btn');
 
         if (!authToken) {
             showToast('Please login before submitting a task', true);
@@ -2297,14 +2296,15 @@
                 // Close immediately on success so follow-up UI refresh work cannot
                 // keep the task window open if any later step errors.
                 closeTaskModal();
-                e.target.reset();
+                formEl.reset();
                 document.getElementById('task-inputs').value = '';
                 updateTaskDefaults();
                 validateTaskForm();
                 await fetchData();
             } else {
                 const err = await res.json().catch(() => ({}));
-                showToast(err.message || `Task submission failed (HTTP ${res.status})`, true);
+                const serverMsg = err.message || err.error || '';
+                showToast(serverMsg || `Task submission failed (HTTP ${res.status})`, true);
             }
         } catch (err) {
             showToast('Network error: ' + err.message, true);
@@ -2312,6 +2312,16 @@
             btn.textContent = 'Submit Task';
             btn.disabled = false;
         }
+    }
+
+    const submitTaskFormEl = document.getElementById('submit-task-form');
+    document.getElementById('submit-task-btn').addEventListener('click', async () => {
+        await submitTaskForm(submitTaskFormEl);
+    });
+
+    submitTaskFormEl.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await submitTaskForm(e.target);
     });
 
     // Auth tab switching
