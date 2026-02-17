@@ -1102,7 +1102,7 @@
 
                 <div class="form-group form-span-3">
                     <label>Inputs (JSON)</label>
-                    <textarea id="task-inputs" placeholder='{"job":"example"} or plain text like summarize dataset A' required>{}</textarea>
+                    <textarea id="task-inputs" placeholder="Enter JSON or plain text task inputs" required></textarea>
                     <div style="display: flex; gap: 12px; margin-top: 10px; margin-bottom: 8px;">
                         <button type="button" class="btn btn-ghost" id="convert-inputs-btn">Convert Plain Text → JSON</button>
                     </div>
@@ -1427,7 +1427,7 @@
                 maxExec: 300,
                 requireGpu: 'false',
                 requireProof: 'false',
-                inputs: '{"job":"quick-compute"}',
+                inputs: '',
                 hint: 'Computation preset applied. You can still change any field before submit.'
             },
             federated_learning: {
@@ -1435,7 +1435,7 @@
                 maxExec: 900,
                 requireGpu: 'true',
                 requireProof: 'false',
-                inputs: '{}',
+                inputs: '',
                 hint: 'Federated Learning preset applied (GPU + longer runtime). Fields remain editable.'
             },
             zk_proof: {
@@ -1443,7 +1443,7 @@
                 maxExec: 600,
                 requireGpu: 'false',
                 requireProof: 'true',
-                inputs: '{"circuit":"sha256","public_inputs":[]}',
+                inputs: '',
                 hint: 'ZK Proof preset applied (proof required). Fields remain editable.'
             },
             wasm_execution: {
@@ -1451,7 +1451,7 @@
                 maxExec: 450,
                 requireGpu: 'false',
                 requireProof: 'false',
-                inputs: '{"module":"my-module","entrypoint":"main"}',
+                inputs: '',
                 hint: 'WASM preset applied. Keep inputs compact; you can adjust everything.'
             }
         };
@@ -2047,7 +2047,7 @@
             if (res.ok) {
                 showToast('Task submitted successfully');
                 e.target.reset();
-                document.getElementById('task-inputs').value = '{}';
+                document.getElementById('task-inputs').value = '';
                 updateTaskDefaults();
                 validateTaskForm();
                 closeTaskModal();

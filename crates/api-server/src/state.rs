@@ -1144,79 +1144,11 @@ fn infer_expression_from_prompt(prompt: &str) -> Option<String> {
         break;
     }
 
-    if seen_digit
-        && expression
-            .chars()
-            .any(|c| matches!(c, '+' | '-' | '*' | '/' | 'x' | 'X' | '÷'))
-    {
+    if seen_digit && expression.chars().any(|c| matches!(c, '+' | '-' | '*' | '/' | 'x' | 'X' | '÷')) {
         Some(expression.trim().to_string())
     } else {
         None
     }
-}
-
-fn analyze_federated_learning_payload(
-    map: &serde_json::Map<String, serde_json::Value>,
-) -> serde_json::Value {
-    let participants = map
-        .get("participants")
-        .and_then(|v| v.as_u64())
-        .or_else(|| {
-            map.get("client_updates")
-                .and_then(|v| v.as_array())
-                .map(|v| v.len() as u64)
-        })
-        .unwrap_or(0);
-    let rounds = map.get("rounds").and_then(|v| v.as_u64()).unwrap_or(1);
-
-    serde_json::json!({
-        "task_type": "federated_learning",
-        "analysis_mode": "federated_learning",
-        "summary": "Federated learning payload validated for aggregation.",
-        "participants": participants,
-        "rounds": rounds,
-        "top_level_keys": map.keys().cloned().collect::<Vec<String>>(),
-        "recommendation": "Provide `client_updates` and optional `model_config` for richer aggregation reports."
-    })
-}
-
-fn analyze_zk_proof_payload(map: &serde_json::Map<String, serde_json::Value>) -> serde_json::Value {
-    let public_input_count = map
-        .get("public_inputs")
-        .and_then(|v| v.as_array())
-        .map(|inputs| inputs.len())
-        .unwrap_or(0);
-
-    serde_json::json!({
-        "task_type": "zk_proof",
-        "analysis_mode": "zk_proof",
-        "summary": "ZK proof payload validated and ready for proof generation.",
-        "circuit": map.get("circuit").cloned().unwrap_or(serde_json::json!("unspecified")),
-        "public_input_count": public_input_count,
-        "top_level_keys": map.keys().cloned().collect::<Vec<String>>(),
-        "recommendation": "Include `circuit`, `witness`, and `public_inputs` for end-to-end proving."
-    })
-}
-
-fn analyze_wasm_execution_payload(
-    map: &serde_json::Map<String, serde_json::Value>,
-) -> serde_json::Value {
-    let arg_count = map
-        .get("args")
-        .and_then(|v| v.as_array())
-        .map(|args| args.len())
-        .unwrap_or(0);
-
-    serde_json::json!({
-        "task_type": "wasm_execution",
-        "analysis_mode": "wasm_execution",
-        "summary": "WASM execution payload validated for sandbox runtime.",
-        "module": map.get("module").cloned().unwrap_or(serde_json::json!("unspecified")),
-        "entrypoint": map.get("entrypoint").cloned().unwrap_or(serde_json::json!("main")),
-        "arg_count": arg_count,
-        "top_level_keys": map.keys().cloned().collect::<Vec<String>>(),
-        "recommendation": "Include `module`, `entrypoint`, and optional `args` for deterministic execution."
-    })
 }
 
 fn summarize_prompt(prompt: &str) -> String {
@@ -1308,35 +1240,6 @@ mod tests {
         assert_eq!(result["analysis_mode"], "computation");
         assert_eq!(result["expression"], "5 + 5");
         assert_eq!(result["result"], 10.0);
-    }
-
-    #[test]
-    fn analyzes_federated_learning_payload() {
-        let value = serde_json::json!({"participants": 3, "rounds": 5});
-        let result = analyze_task_payload("federated_learning", &value);
-
-        assert_eq!(result["analysis_mode"], "federated_learning");
-        assert_eq!(result["participants"], 3);
-        assert_eq!(result["rounds"], 5);
-    }
-
-    #[test]
-    fn analyzes_zk_proof_payload() {
-        let value = serde_json::json!({"circuit": "sha256", "public_inputs": [1, 2, 3]});
-        let result = analyze_task_payload("zk_proof", &value);
-
-        assert_eq!(result["analysis_mode"], "zk_proof");
-        assert_eq!(result["public_input_count"], 3);
-    }
-
-    #[test]
-    fn analyzes_wasm_execution_payload() {
-        let value =
-            serde_json::json!({"module": "my-module", "entrypoint": "main", "args": ["--fast"]});
-        let result = analyze_task_payload("wasm_execution", &value);
-
-        assert_eq!(result["analysis_mode"], "wasm_execution");
-        assert_eq!(result["arg_count"], 1);
     }
 
     #[test]
