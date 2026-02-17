@@ -24,7 +24,7 @@ wasm-engine = { path = "../wasm-engine" }
 # Web framework
 axum = "0.7"
 axum-extra = { version = "0.9", features = ["typed-header"] }
-tower = "0.4"
+tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # API utilities
