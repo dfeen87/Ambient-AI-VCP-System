@@ -14,6 +14,9 @@ async fn main() -> Result<()> {
     info!("Starting Ambient AI VCP API Server");
     info!("Version: {}", env!("CARGO_PKG_VERSION"));
 
+    // Validate secret configuration before startup proceeds in production
+    api_server::auth::validate_hash_pepper_configuration()?;
+
     // Initialize database connection
     let db_config = db::DatabaseConfig::from_env()?;
     let pool = db::create_pool(&db_config).await?;

@@ -15,6 +15,89 @@ use utoipa::ToSchema;
 
 type HmacSha256 = Hmac<Sha256>;
 
+const DEV_REFRESH_TOKEN_PEPPER: &str = "dev-refresh-pepper-change-me";
+const DEV_API_KEY_PEPPER: &str = "dev-api-key-pepper-change-me";
+const MIN_PEPPER_LENGTH: usize = 32;
+
+fn is_production_environment() -> bool {
+    std::env::var("ENVIRONMENT")
+        .unwrap_or_else(|_| "development".to_string())
+        .to_lowercase()
+        == "production"
+}
+
+fn pepper_is_weak(value: &str) -> bool {
+    let normalized = value.to_lowercase();
+    value.len() < MIN_PEPPER_LENGTH
+        || normalized.contains("change-me")
+        || normalized.contains("dev")
+        || normalized.contains("test")
+        || normalized.contains("local")
+}
+
+fn read_pepper(primary_var: &str) -> Option<String> {
+    std::env::var(primary_var)
+        .ok()
+        .or_else(|| std::env::var("AUTH_HASH_PEPPER").ok())
+}
+
+fn resolve_hash_pepper(primary_var: &str, dev_default: &str, label: &str) -> String {
+    if let Some(pepper) = read_pepper(primary_var) {
+        if is_production_environment() && pepper_is_weak(&pepper) {
+            panic!(
+                "PRODUCTION ERROR: {label} is weak. Configure {primary_var} (or AUTH_HASH_PEPPER) with a strong random value (min {MIN_PEPPER_LENGTH} chars)."
+            );
+        }
+
+        return pepper;
+    }
+
+    if is_production_environment() {
+        panic!(
+            "PRODUCTION ERROR: {label} is not configured. Set {primary_var} (or AUTH_HASH_PEPPER)."
+        );
+    }
+
+    tracing::warn!(
+        "{} is not configured; using development-only fallback pepper. Set {} (or AUTH_HASH_PEPPER) to silence this warning.",
+        label,
+        primary_var
+    );
+    dev_default.to_string()
+}
+
+pub fn validate_hash_pepper_configuration() -> ApiResult<()> {
+    if !is_production_environment() {
+        return Ok(());
+    }
+
+    let refresh_pepper = read_pepper("REFRESH_TOKEN_PEPPER").ok_or_else(|| {
+        ApiError::internal_error(
+            "PRODUCTION ERROR: REFRESH_TOKEN_PEPPER (or AUTH_HASH_PEPPER) must be configured.",
+        )
+    })?;
+
+    if pepper_is_weak(&refresh_pepper) {
+        return Err(ApiError::internal_error(
+            "PRODUCTION ERROR: REFRESH_TOKEN_PEPPER (or AUTH_HASH_PEPPER) is weak. Use a random secret with at least 32 characters.",
+        ));
+    }
+
+    let api_key_pepper = read_pepper("API_KEY_PEPPER").ok_or_else(|| {
+        ApiError::internal_error(
+            "PRODUCTION ERROR: API_KEY_PEPPER (or AUTH_HASH_PEPPER) must be configured.",
+        )
+    })?;
+
+    if pepper_is_weak(&api_key_pepper) {
+        return Err(ApiError::internal_error(
+            "PRODUCTION ERROR: API_KEY_PEPPER (or AUTH_HASH_PEPPER) is weak. Use a random secret with at least 32 characters.",
+        ));
+    }
+
+    Ok(())
+}
+
 /// JWT Claims structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
@@ -62,10 +145,7 @@ impl AuthConfig {
             .map_err(|_| ApiError::internal_error("JWT_SECRET not configured"))?;
 
         // Check if we're in production mode
-        let is_production = std::env::var("ENVIRONMENT")
-            .unwrap_or_else(|_| "development".to_string())
-            .to_lowercase()
-            == "production";
+        let is_production = is_production_environment();
 
         // In production, reject insecure default secrets
         if is_production
@@ -258,18 +338,18 @@ pub fn generate_refresh_token() -> String {
 
 /// Hash a refresh token using SHA-256
 pub fn hash_refresh_token(token: &str) -> String {
-    let pepper = std::env::var("REFRESH_TOKEN_PEPPER")
-        .or_else(|_| std::env::var("AUTH_HASH_PEPPER"))
-        .unwrap_or_else(|_| "dev-refresh-pepper-change-me".to_string());
+    let pepper = resolve_hash_pepper(
+        "REFRESH_TOKEN_PEPPER",
+        DEV_REFRESH_TOKEN_PEPPER,
+        "REFRESH_TOKEN_PEPPER",
+    );
 
     hash_with_hmac_sha256(token, &pepper)
 }
 
 /// Hash API keys for storage and lookup.
 pub fn hash_api_key(key: &str) -> String {
-    let pepper = std::env::var("API_KEY_PEPPER")
-        .or_else(|_| std::env::var("AUTH_HASH_PEPPER"))
-        .unwrap_or_else(|_| "dev-api-key-pepper-change-me".to_string());
+    let pepper = resolve_hash_pepper("API_KEY_PEPPER", DEV_API_KEY_PEPPER, "API_KEY_PEPPER");
     hash_with_hmac_sha256(key, &pepper)
 }
 
@@ -391,6 +471,41 @@ pub fn generate_api_key() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let original = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, original }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let original = std::env::var(key).ok();
+            std::env::remove_var(key);
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(value) = &self.original {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
 
     #[test]
     fn test_password_hashing() {
@@ -410,11 +525,44 @@ mod tests {
 
     #[test]
     fn test_refresh_hash_stable_and_non_plaintext() {
-        std::env::set_var("REFRESH_TOKEN_PEPPER", "test-pepper");
+        let _guard = env_test_lock().lock().unwrap();
+        let _refresh = EnvVarGuard::set(
+            "REFRESH_TOKEN_PEPPER",
+            "test-pepper-test-pepper-test-pepper!",
+        );
+        let _environment = EnvVarGuard::set("ENVIRONMENT", "development");
+
         let h1 = hash_refresh_token("token-value");
         let h2 = hash_refresh_token("token-value");
         assert_eq!(h1, h2);
         assert_ne!(h1, "token-value");
         assert_eq!(h1.len(), 64);
+    }
+
+    #[test]
+    fn test_production_startup_guard_rejects_missing_peppers() {
+        let _guard = env_test_lock().lock().unwrap();
+        let _environment = EnvVarGuard::set("ENVIRONMENT", "production");
+        let _refresh = EnvVarGuard::remove("REFRESH_TOKEN_PEPPER");
+        let _api = EnvVarGuard::remove("API_KEY_PEPPER");
+        let _shared = EnvVarGuard::remove("AUTH_HASH_PEPPER");
+
+        let result = validate_hash_pepper_configuration();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_production_startup_guard_accepts_strong_shared_pepper() {
+        let _guard = env_test_lock().lock().unwrap();
+        let _environment = EnvVarGuard::set("ENVIRONMENT", "production");
+        let _refresh = EnvVarGuard::remove("REFRESH_TOKEN_PEPPER");
+        let _api = EnvVarGuard::remove("API_KEY_PEPPER");
+        let _shared = EnvVarGuard::set(
+            "AUTH_HASH_PEPPER",
+            "ThisIsAStrongSharedPepperValueForProd123!",
+        );
+
+        let result = validate_hash_pepper_configuration();
+        assert!(result.is_ok());
     }
 }
