@@ -1249,6 +1249,7 @@
     let authToken = localStorage.getItem('vcp_auth_token');
     let currentUser = localStorage.getItem('vcp_username');
     let currentUserId = parseUserIdFromToken(authToken);
+    let isApiConnected = false;
     const taskProgressMemory = new Map();
     const TASK_COMPLETION_LOCKS_STORAGE_KEY = 'vcp_task_completion_locks_v1';
     let taskCompletionLocks = loadTaskCompletionLocks();
@@ -1347,6 +1348,8 @@
         authToken = null;
         currentUser = null;
         currentUserId = null;
+        isApiConnected = false;
+        setConnectionStatus(false);
         taskCompletionLocks = loadTaskCompletionLocks();
         checkAuth();
     }
@@ -1441,6 +1444,7 @@
     }
 
     function setConnectionStatus(isConnected) {
+        isApiConnected = isConnected;
         const liveBadge = document.getElementById('live-badge');
         const liveLabel = document.getElementById('live-label');
 
@@ -1451,6 +1455,15 @@
         const statusLabel = isConnected ? 'Live / Connected' : 'Live / Disconnected';
         liveLabel.textContent = statusLabel;
         liveBadge.classList.toggle('connected', isConnected);
+    }
+
+    function requireApiConnection(actionLabel = 'perform this action') {
+        if (isApiConnected) {
+            return true;
+        }
+
+        showToast(`Please connect to the API first to ${actionLabel}.`, true);
+        return false;
     }
 
     async function updateApiUrl() {
@@ -1779,6 +1792,10 @@
     }
 
     async function fetchData() {
+        if (!isApiConnected) {
+            return;
+        }
+
         const errorEl = document.getElementById('error-banner');
         try {
             const authHeaders = authToken ? {
@@ -1824,6 +1841,10 @@
     }
 
     async function handleEjectNode(nodeId, buttonEl) {
+        if (!requireApiConnection('eject nodes')) {
+            return;
+        }
+
         if (!authToken) {
             showToast('Please login to eject nodes', true);
             return;
@@ -2099,6 +2120,11 @@
 
     document.getElementById('register-node-form').addEventListener('submit', async (e) => {
         e.preventDefault();
+
+        if (!requireApiConnection('register a node')) {
+            return;
+        }
+
         const btn = e.target.querySelector('[type="submit"]');
         btn.textContent = 'Registering...';
         btn.disabled = true;
@@ -2171,6 +2197,10 @@
     });
 
     async function handleClearTask(taskId, status, assignedNodes, buttonEl) {
+        if (!requireApiConnection('clear tasks')) {
+            return;
+        }
+
         const isPending = status === 'pending';
 
         if (!isPending) {
@@ -2221,6 +2251,10 @@
         if (!trigger) return;
 
         const taskId = trigger.getAttribute('data-task-view');
+        if (!requireApiConnection('view completed task results')) {
+            return;
+        }
+
         fetch(`${apiBaseUrl}/api/v1/tasks`, { headers: getAuthHeaders() })
             .then((res) => res.ok ? res.json() : Promise.reject(new Error('Failed to fetch tasks')))
             .then((tasks) => {
@@ -2244,6 +2278,10 @@
 
     async function submitTaskForm(formEl) {
         const btn = document.getElementById('submit-task-btn');
+
+        if (!requireApiConnection('submit tasks')) {
+            return;
+        }
 
         if (!authToken) {
             showToast('Please login before submitting a task', true);
@@ -2349,7 +2387,7 @@
     validateTaskForm();
     checkAuth();
     setInterval(() => {
-        if (authToken) fetchData();
+        if (authToken && isApiConnected) fetchData();
     }, 5000);
 </script>
 </body>
