@@ -727,7 +727,7 @@
             <div class="connect-bar">
                 <label>Endpoint</label>
                 <input type="text" id="api-url" value="https://ambient-ai-vcp-system.onrender.com" spellcheck="false">
-                <button onclick="updateApiUrl()" class="btn">Connect</button>
+                <button type="button" id="connect-btn" onclick="updateApiUrl()" class="btn">Connect</button>
             </div>
         </div>
         <div class="header-right">
@@ -1034,7 +1034,8 @@
 </div>
 
 <script>
-    let apiBaseUrl = 'https://ambient-ai-vcp-system.onrender.com';
+    const DEFAULT_API_BASE_URL = 'https://ambient-ai-vcp-system.onrender.com';
+    let apiBaseUrl = localStorage.getItem('vcp_api_base_url') || DEFAULT_API_BASE_URL;
     let authToken = localStorage.getItem('vcp_auth_token');
     let currentUser = localStorage.getItem('vcp_username');
     let currentUserId = parseUserIdFromToken(authToken);
@@ -1177,9 +1178,49 @@
         };
     }
 
-    function updateApiUrl() {
-        apiBaseUrl = document.getElementById('api-url').value.replace(/\/$/, '');
-        fetchData();
+    function normalizeApiBaseUrl(url) {
+        const trimmed = (url || '').trim().replace(/\/$/, '');
+        return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    }
+
+    async function updateApiUrl() {
+        const connectBtn = document.getElementById('connect-btn');
+        const inputEl = document.getElementById('api-url');
+        const candidateUrl = normalizeApiBaseUrl(inputEl.value);
+
+        if (!candidateUrl || candidateUrl === 'https://') {
+            showToast('Please provide a valid API endpoint URL', true);
+            return;
+        }
+
+        const previousUrl = apiBaseUrl;
+        connectBtn.disabled = true;
+        connectBtn.textContent = 'Connecting...';
+
+        try {
+            const probeRes = await fetch(`${candidateUrl}/api/v1/cluster/stats`, {
+                headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+            });
+
+            if (!probeRes.ok && probeRes.status !== 401 && probeRes.status !== 403) {
+                throw new Error(`endpoint responded with HTTP ${probeRes.status}`);
+            }
+
+            apiBaseUrl = candidateUrl;
+            inputEl.value = candidateUrl;
+            localStorage.setItem('vcp_api_base_url', candidateUrl);
+            showToast(`Connected to ${candidateUrl}`);
+
+            if (authToken) {
+                await fetchData();
+            }
+        } catch (err) {
+            apiBaseUrl = previousUrl;
+            showToast(`Unable to connect: ${err.message}`, true);
+        } finally {
+            connectBtn.disabled = false;
+            connectBtn.textContent = 'Connect';
+        }
     }
 
     function showToast(msg, isError = false) {
@@ -1689,6 +1730,14 @@
     }
 
     // Initialize on page load
+    document.getElementById('api-url').value = apiBaseUrl;
+    document.getElementById('api-url').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            updateApiUrl();
+        }
+    });
+
     updateTaskDefaults();
     validateTaskForm();
     checkAuth();
