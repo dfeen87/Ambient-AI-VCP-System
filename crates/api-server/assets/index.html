@@ -140,26 +140,20 @@
             color: var(--text-dim);
         }
 
-        .connection-indicator {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            border: 1px solid var(--border);
-            font-size: 12px;
-            font-weight: 700;
-            background: rgba(148, 163, 184, 0.14);
+        .connection-state-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
             color: var(--text-muted);
-            transition: all 0.2s ease;
         }
 
-        .connection-indicator.active {
-            border-color: rgba(45, 212, 191, 0.55);
+        .connection-state-text.connected {
             color: var(--accent);
-            box-shadow: 0 0 10px rgba(45, 212, 191, 0.35);
-            background: rgba(45, 212, 191, 0.16);
+        }
+
+        .connection-state-text.disconnected {
+            color: var(--red);
         }
 
         .connect-bar.form-connect-bar {
@@ -229,17 +223,29 @@
             padding: 7px 16px;
             font-family: 'JetBrains Mono', monospace;
             font-size: 11px;
-            color: var(--accent);
+            color: var(--red);
             letter-spacing: 0.1em;
+            transition: border-color 0.2s ease, color 0.2s ease;
         }
 
         .live-dot {
             width: 7px;
             height: 7px;
             border-radius: 50%;
+            background: var(--red);
+            box-shadow: 0 0 8px var(--red);
+            animation: blink 2s ease-in-out infinite;
+            transition: background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .live-badge.connected {
+            color: var(--accent);
+            border-color: rgba(45, 212, 191, 0.45);
+        }
+
+        .live-badge.connected .live-dot {
             background: var(--accent);
             box-shadow: 0 0 8px var(--accent);
-            animation: blink 2s ease-in-out infinite;
         }
 
         @keyframes blink {
@@ -875,14 +881,13 @@
                 <button type="button" id="connect-btn" onclick="updateApiUrl()" class="btn">Connect</button>
             </div>
             <div class="connected-endpoint-badge" id="connected-endpoint-badge" title="https://ambient-ai-vcp-system.onrender.com">
-                <span class="connection-indicator" id="connection-x" aria-label="Disconnected">✕</span>
-                <span class="connection-indicator" id="connection-check" aria-label="Connected">✓</span>
+                <span class="connection-state-text disconnected" id="connection-state-text">Live / Disconnected</span>
             </div>
         </div>
         <div class="header-right">
-            <div class="live-badge">
+            <div class="live-badge" id="live-badge" aria-live="polite">
                 <div class="live-dot"></div>
-                LIVE
+                <span id="live-label">Live / Disconnected</span>
             </div>
             <div class="refresh-info" id="last-updated">—</div>
         </div>
@@ -1428,14 +1433,21 @@
     }
 
     function setConnectionStatus(isConnected) {
-        const xIndicator = document.getElementById('connection-x');
-        const checkIndicator = document.getElementById('connection-check');
-        if (!xIndicator || !checkIndicator) {
+        const connectionStateText = document.getElementById('connection-state-text');
+        const liveBadge = document.getElementById('live-badge');
+        const liveLabel = document.getElementById('live-label');
+
+        if (!connectionStateText || !liveBadge || !liveLabel) {
             return;
         }
 
-        xIndicator.classList.toggle('active', !isConnected);
-        checkIndicator.classList.toggle('active', isConnected);
+        const statusLabel = isConnected ? 'Live / Connected' : 'Live / Disconnected';
+        connectionStateText.textContent = statusLabel;
+        liveLabel.textContent = statusLabel;
+
+        connectionStateText.classList.toggle('connected', isConnected);
+        connectionStateText.classList.toggle('disconnected', !isConnected);
+        liveBadge.classList.toggle('connected', isConnected);
     }
 
     async function updateApiUrl() {
