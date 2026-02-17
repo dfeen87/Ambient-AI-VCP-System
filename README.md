@@ -55,7 +55,7 @@ Tip: To quickly verify the public demo is reachable, run:
   - 👉 [Learn more about node types →](./docs/NODES_AND_TASKS_GUIDE.md#node-types-explained)
 
 **Tasks** = Work submitted to the network for execution (train a model, run a computation, etc.)
-  - **4 Task Types**: Federated Learning, ZK Proof, WASM Execution, General Computation
+  - **5 Task Types**: Federated Learning, ZK Proof, WASM Execution, General Computation, Connect-Only
   - **Who creates tasks?** App developers, data scientists, researchers, businesses - anyone who needs computation
   - 👉 [Learn more about task types →](./docs/NODES_AND_TASKS_GUIDE.md#task-types-explained)
   - 👉 [Who creates tasks and why? →](./docs/WHO_CREATES_TASKS.md)
@@ -226,11 +226,11 @@ Tip: To quickly verify the public demo is reachable, run:
 
 **Validation Rules:**
 - Node IDs: 1-64 chars, alphanumeric + hyphens/underscores
-- Node types: `compute`, `gateway`, `storage`, `validator`, `any`
+- Node types: `compute`, `gateway`, `storage`, `validator`, `open_internet`, `any`
 - Bandwidth: 10-100,000 Mbps
 - CPU cores: 1-256
 - Memory: 1-2,048 GB
-- Task types: `federated_learning`, `zk_proof`, `wasm_execution`, `computation`
+- Task types: `federated_learning`, `zk_proof`, `wasm_execution`, `computation`, `connect_only`
 - Min nodes: 1-1000
 - Execution time: 1-3600 seconds
 
@@ -248,7 +248,7 @@ ambient-vcp coordinator --cluster-id cluster-001 --strategy weighted
 ambient-vcp health
 ```
 
-### 8. **Web Dashboard** (`dashboard`)
+### 8. **Web Dashboard** (`api-server/assets`)
 **Purpose**: Real-time monitoring interface
 
 - 📊 Real-time cluster metrics visualization
@@ -348,12 +348,14 @@ cargo run --bin api-server
 
 ### Accessing the Dashboard
 
-```bash
-# Open the web dashboard
-open dashboard/index.html
+The dashboard is served by the API server itself:
 
-# Configure API URL to http://localhost:3000
-# View real-time cluster metrics and manage nodes
+```bash
+# Start API server first
+cargo run --bin api-server
+
+# Open dashboard
+open http://localhost:3000/
 ```
 
 ---
@@ -424,10 +426,17 @@ cargo test --test integration_test
 **Protected Endpoints:**
 ```
 POST   /api/v1/nodes              - Register node (requires JWT)
+POST   /api/v1/nodes/{id}/reject   - Reject node (requires ownership)
 DELETE /api/v1/nodes/{id}         - Delete node (requires ownership)
 PUT    /api/v1/nodes/{id}/heartbeat - Update heartbeat (requires ownership)
 POST   /api/v1/tasks              - Submit task (requires JWT)
+DELETE /api/v1/tasks/{id}         - Delete task (requires owner/admin)
 POST   /api/v1/proofs/verify      - Verify proof (requires JWT)
+GET    /metrics                   - Prometheus metrics (admin JWT required)
+GET    /api/v1/admin/users        - Admin users endpoint (admin JWT required)
+POST   /api/v1/admin/throttle-overrides - Admin throttle override endpoint
+GET    /api/v1/admin/audit-log    - Admin audit endpoint (admin JWT required)
+GET    /api/v1/auth/api-key/validate - API-key validation endpoint (API key required)
 ```
 
 **Public Endpoints:**
@@ -435,7 +444,15 @@ POST   /api/v1/proofs/verify      - Verify proof (requires JWT)
 GET  /api/v1/health               - Health check
 POST /api/v1/auth/register        - Register account
 POST /api/v1/auth/login           - Login and get JWT
+POST /api/v1/auth/refresh         - Rotate refresh token / issue new access token
+```
+
+**Authenticated JWT Endpoints (non-admin):**
+```
 GET  /api/v1/nodes                - List nodes
+GET  /api/v1/nodes/{id}           - Get node details
+GET  /api/v1/tasks                - List tasks
+GET  /api/v1/tasks/{id}           - Get task details
 GET  /api/v1/cluster/stats        - Cluster statistics
 ```
 
@@ -654,12 +671,12 @@ curl -X POST https://your-api.com/api/v1/auth/login \
 ### 🔄 Phase 3 - Advanced Features (IN PROGRESS)
 - [x] Authentication & authorization (JWT/API keys) ✅ **COMPLETED**
 - [x] Data persistence (PostgreSQL) ✅ **COMPLETED**
-- [ ] Rate limiting (basic implementation exists, needs enhancement)
+- [x] Rate limiting (tiered endpoint limits) ✅ **COMPLETED**
 - [ ] Metrics & monitoring (Prometheus)
 - [ ] Byzantine fault tolerance
 - [ ] P2P networking layer (libp2p)
 - [ ] Production security audit
-- [ ] Token refresh mechanism
+- [x] Token refresh mechanism ✅ **COMPLETED**
 - [ ] Multi-factor authentication
 
 ### 🔮 Future Phases
@@ -678,7 +695,6 @@ ambient-vcp/
 ├── Cargo.lock                      # Dependency lock file
 ├── README.md                       # This file
 ├── CITATION.cff                    # Citation metadata for research
-├── ROBUSTNESS_ANALYSIS.md          # Detailed robustness analysis
 ├── LICENSE                         # MIT License
 ├── Dockerfile                      # Docker container configuration
 ├── docker-compose.yml              # Multi-container orchestration
@@ -714,9 +730,6 @@ ambient-vcp/
 │   └── workflows/                  # CI/CD pipelines
 │       └── ci.yml                  # Main CI workflow (tests, lint, build)
 │
-├── dashboard/                      # Web monitoring UI
-│   └── index.html                  # Real-time dashboard (HTML/JS)
-│
 ├── demo/                           # Demonstration scripts
 │   ├── README.md                   # Demo documentation
 │   └── run-demo.sh                 # Multi-node demo script
@@ -743,7 +756,7 @@ ambient-vcp/
 - `crates/` - Core Rust implementation with 48 passing tests
 - `docs/` - Comprehensive documentation and whitepapers
 - `.github/workflows/` - Automated CI/CD with tests, linting, and builds
-- `dashboard/` - Real-time monitoring interface
+- `crates/api-server/assets/` - Embedded dashboard + custom Swagger UI assets
 - `scripts/` - Deployment and utility scripts
 
 ---
@@ -793,9 +806,9 @@ MIT License - see [LICENSE](LICENSE) file for details
 - [**What You Get By Cloning This Repo**](./docs/USER_BENEFITS.md) ⭐ **NEW**
 - [**Understanding Nodes & Tasks**](./docs/NODES_AND_TASKS_GUIDE.md) 📚 **NEW** - What are node types & tasks?
 - [**Node Security & Lifecycle Management**](./docs/NODE_SECURITY.md) 🔒 **NEW** - Ownership, authentication & offline handling
-- [Getting Started Guide](./GETTING_STARTED.md)
+- [Getting Started Guide](./docs/GETTING_STARTED.md)
 - [API Documentation (Swagger)](http://localhost:3000/swagger-ui)
-- [Robustness Analysis](./ROBUSTNESS_ANALYSIS.md)
+- [Robustness Analysis](./docs/ROBUSTNESS_ANALYSIS.md)
 - [Clone Trait Benefits Analysis](./docs/CLONER_BENEFITS_ANALYSIS.md) (Rust technical deep-dive)
 - [Phase 2 Summary](./docs/PHASE2_SUMMARY.md)
 - [Implementation Summary](./docs/IMPLEMENTATION_SUMMARY.md)
