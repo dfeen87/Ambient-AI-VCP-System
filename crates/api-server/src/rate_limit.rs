@@ -225,7 +225,10 @@ pub async fn rate_limit_middleware(
     // integration testing, or rapid restarts. Avoid blocking loopback node
     // registration traffic while preserving limits for all non-loopback clients.
     if tier == RateLimitTier::NodeRegistration && ip.is_loopback() {
-        debug!("Skipping node registration rate limit for loopback IP: {}", ip);
+        debug!(
+            "Skipping node registration rate limit for loopback IP: {}",
+            ip
+        );
         return Ok(next.run(request).await);
     }
 
