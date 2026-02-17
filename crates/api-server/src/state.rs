@@ -1042,9 +1042,15 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
             if task_type == "computation" {
                 if let Some(expression) = map.get("expression").and_then(|v| v.as_str()) {
                     if let Some(result) = evaluate_arithmetic_expression(expression) {
+                        tracing::info!(
+                            task_type,
+                            compute_path = "expression",
+                            "Computation task routed to arithmetic expression executor"
+                        );
                         return serde_json::json!({
                             "task_type": task_type,
                             "analysis_mode": "computation",
+                            "compute_path": "expression",
                             "summary": "Arithmetic expression evaluated successfully.",
                             "expression": expression,
                             "result": result
@@ -1057,9 +1063,15 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
                 if task_type == "computation" {
                     if let Some(expression) = infer_expression_from_prompt(prompt) {
                         if let Some(result) = evaluate_arithmetic_expression(&expression) {
+                            tracing::info!(
+                                task_type,
+                                compute_path = "expression",
+                                "Computation task routed to inferred arithmetic expression executor"
+                            );
                             return serde_json::json!({
                                 "task_type": task_type,
                                 "analysis_mode": "computation",
+                                "compute_path": "expression",
                                 "summary": "Arithmetic expression inferred from prompt and evaluated successfully.",
                                 "prompt": prompt,
                                 "expression": expression,
@@ -1067,8 +1079,23 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
                             });
                         }
                     }
+
+                    if let Some(operation) = parse_compute_operation_from_prompt(prompt) {
+                        tracing::info!(
+                            task_type,
+                            compute_path = "algorithmic",
+                            operation = ?operation,
+                            "Computation task routed to algorithmic compute executor"
+                        );
+                        return execute_compute_operation(task_type, prompt, &operation);
+                    }
                 }
 
+                tracing::info!(
+                    task_type,
+                    compute_path = "analysis",
+                    "Computation task routed to plain-text analysis"
+                );
                 analyze_plain_text_prompt(task_type, prompt)
             } else {
                 serde_json::json!({
@@ -1102,6 +1129,160 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
             "summary": "Primitive payload analyzed successfully.",
             "value": primitive
         }),
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+enum ComputeOperation {
+    ArithmeticExpression(String),
+    MonteCarloPi { samples: u64 },
+    MlInference,
+    ZkProof,
+    WasmExecution,
+}
+
+fn parse_compute_operation_from_prompt(prompt: &str) -> Option<ComputeOperation> {
+    if let Some(expression) = infer_expression_from_prompt(prompt) {
+        return Some(ComputeOperation::ArithmeticExpression(expression));
+    }
+
+    let lower = prompt.to_lowercase();
+    let mentions_monte_carlo = lower.contains("monte carlo");
+    let mentions_pi = lower.contains('π') || lower.contains("pi");
+    let mentions_simulation = lower.contains("simulation") || lower.contains("estimate");
+
+    if mentions_monte_carlo && mentions_pi && mentions_simulation {
+        let samples = extract_sample_count_from_prompt(prompt).unwrap_or(100_000);
+        return Some(ComputeOperation::MonteCarloPi { samples });
+    }
+
+    None
+}
+
+fn extract_sample_count_from_prompt(prompt: &str) -> Option<u64> {
+    let sanitized = prompt.replace(',', "");
+    let mut previous: Option<String> = None;
+
+    for token in sanitized.split_whitespace() {
+        let lowered = token.to_lowercase();
+        let normalized = lowered.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+
+        if normalized == "samples" || normalized == "sample" {
+            if let Some(prev) = previous.as_deref() {
+                if let Some(value) = parse_u64_token(prev) {
+                    return Some(value.max(1));
+                }
+            }
+        }
+
+        if let Some(rest) = normalized.strip_prefix("samples=") {
+            if let Some(value) = parse_u64_token(rest) {
+                return Some(value.max(1));
+            }
+        }
+
+        previous = Some(normalized.to_string());
+    }
+
+    sanitized
+        .split(|c: char| !c.is_ascii_digit())
+        .find_map(|token| parse_u64_token(token))
+        .map(|v| v.max(1))
+}
+
+fn parse_u64_token(token: &str) -> Option<u64> {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    trimmed.parse::<u64>().ok()
+}
+
+fn execute_compute_operation(
+    task_type: &str,
+    prompt: &str,
+    operation: &ComputeOperation,
+) -> serde_json::Value {
+    match operation {
+        ComputeOperation::ArithmeticExpression(expression) => {
+            if let Some(result) = evaluate_arithmetic_expression(expression) {
+                serde_json::json!({
+                    "task_type": task_type,
+                    "analysis_mode": "computation",
+                    "compute_path": "expression",
+                    "summary": "Arithmetic expression inferred from prompt and evaluated successfully.",
+                    "prompt": prompt,
+                    "expression": expression,
+                    "result": result
+                })
+            } else {
+                analyze_plain_text_prompt(task_type, prompt)
+            }
+        }
+        ComputeOperation::MonteCarloPi { samples } => {
+            let simulation = execute_monte_carlo_pi(*samples, monte_carlo_seed());
+            serde_json::json!({
+                "task_type": task_type,
+                "analysis_mode": "computation",
+                "compute_path": "algorithmic",
+                "operation": "monte_carlo_pi",
+                "summary": "Monte Carlo π simulation executed successfully.",
+                "prompt": prompt,
+                "estimated_pi": simulation.estimated_pi,
+                "samples": simulation.samples,
+                "duration_ms": simulation.duration_ms,
+                "seed": simulation.seed
+            })
+        }
+        _ => analyze_plain_text_prompt(task_type, prompt),
+    }
+}
+
+fn monte_carlo_seed() -> Option<u64> {
+    std::env::var("COMPUTE_MONTE_CARLO_SEED")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+}
+
+struct MonteCarloPiResult {
+    estimated_pi: f64,
+    samples: u64,
+    duration_ms: u128,
+    seed: Option<u64>,
+}
+
+fn execute_monte_carlo_pi(samples: u64, seed: Option<u64>) -> MonteCarloPiResult {
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+
+    let started = std::time::Instant::now();
+    let mut inside_circle: u64 = 0;
+
+    let mut rng = match seed {
+        Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        None => StdRng::from_entropy(),
+    };
+
+    for _ in 0..samples {
+        let x: f64 = rng.gen_range(0.0..1.0);
+        let y: f64 = rng.gen_range(0.0..1.0);
+        if x * x + y * y <= 1.0 {
+            inside_circle += 1;
+        }
+    }
+
+    let estimated_pi = if samples == 0 {
+        0.0
+    } else {
+        4.0 * inside_circle as f64 / samples as f64
+    };
+
+    MonteCarloPiResult {
+        estimated_pi,
+        samples,
+        duration_ms: started.elapsed().as_millis(),
+        seed,
     }
 }
 
@@ -1542,6 +1723,32 @@ mod tests {
         assert_eq!(result["analysis_mode"], "json");
     }
 
+    #[test]
+    fn executes_monte_carlo_pi_from_prompt_payload() {
+        std::env::set_var("COMPUTE_MONTE_CARLO_SEED", "42");
+        let value = serde_json::json!({
+            "prompt": "compute a Monte Carlo simulation estimating π using 1,000,000 random samples"
+        });
+        let result = analyze_task_payload("computation", &value);
+        std::env::remove_var("COMPUTE_MONTE_CARLO_SEED");
+
+        assert_eq!(result["analysis_mode"], "computation");
+        assert_eq!(result["compute_path"], "algorithmic");
+        assert_eq!(result["operation"], "monte_carlo_pi");
+        assert_eq!(result["samples"], 1_000_000);
+        let estimated_pi = result["estimated_pi"].as_f64().unwrap_or_default();
+        assert!(estimated_pi > 3.10 && estimated_pi < 3.18);
+    }
+
+    #[test]
+    fn unknown_compute_prompt_falls_back_to_analysis() {
+        let value =
+            serde_json::json!({"prompt": "compute a deep causal graph about patient trajectories"});
+        let result = analyze_task_payload("computation", &value);
+
+        assert_eq!(result["analysis_mode"], "plain_text");
+        assert_eq!(result["task_type"], "computation");
+    }
     #[test]
     fn analyzes_federated_learning_payload() {
         let value = serde_json::json!({
