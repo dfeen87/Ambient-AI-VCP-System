@@ -1332,18 +1332,32 @@ fn parse_task_status(status: &str) -> TaskStatus {
 mod tests {
     use super::*;
 
-
     #[test]
     fn parses_max_active_task_attachments_env_value() {
-        assert_eq!(AppState::parse_max_active_task_attachments_per_node(Some("75")), 75);
+        assert_eq!(
+            AppState::parse_max_active_task_attachments_per_node(Some("75")),
+            75
+        );
     }
 
     #[test]
     fn falls_back_to_default_on_invalid_or_non_positive_attachment_limits() {
-        assert_eq!(AppState::parse_max_active_task_attachments_per_node(Some("0")), 50);
-        assert_eq!(AppState::parse_max_active_task_attachments_per_node(Some("-12")), 50);
-        assert_eq!(AppState::parse_max_active_task_attachments_per_node(Some("abc")), 50);
-        assert_eq!(AppState::parse_max_active_task_attachments_per_node(None), 50);
+        assert_eq!(
+            AppState::parse_max_active_task_attachments_per_node(Some("0")),
+            50
+        );
+        assert_eq!(
+            AppState::parse_max_active_task_attachments_per_node(Some("-12")),
+            50
+        );
+        assert_eq!(
+            AppState::parse_max_active_task_attachments_per_node(Some("abc")),
+            50
+        );
+        assert_eq!(
+            AppState::parse_max_active_task_attachments_per_node(None),
+            50
+        );
     }
 
     #[test]
