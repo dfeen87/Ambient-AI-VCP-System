@@ -124,6 +124,11 @@
             flex-wrap: wrap;
         }
 
+        .connect-bar.form-connect-bar {
+            margin-top: 12px;
+            justify-content: flex-start;
+        }
+
         .connect-bar label {
             font-family: 'JetBrains Mono', monospace;
             font-size: 10px;
@@ -805,11 +810,6 @@
                 <h1>Ambient <span>AI</span> VCP</h1>
             </div>
             <div class="subtitle">DECENTRALIZED COMPUTE NETWORK DASHBOARD</div>
-            <div class="connect-bar">
-                <label>Endpoint</label>
-                <input type="text" id="api-url" value="https://ambient-ai-vcp-system.onrender.com" spellcheck="false">
-                <button type="button" id="connect-btn" onclick="updateApiUrl()" class="btn">Connect</button>
-            </div>
         </div>
         <div class="header-right">
             <div class="live-badge">
@@ -993,6 +993,11 @@
             <div class="form-footer">
                 <button type="submit" class="btn">Register Node</button>
                 <button type="reset" class="btn btn-ghost">Clear</button>
+            </div>
+            <div class="connect-bar form-connect-bar">
+                <label for="api-url">Endpoint</label>
+                <input type="text" id="api-url" value="https://ambient-ai-vcp-system.onrender.com" spellcheck="false">
+                <button type="button" id="connect-btn" onclick="updateApiUrl()" class="btn">Connect</button>
             </div>
         </form>
     </div>
