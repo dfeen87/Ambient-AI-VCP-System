@@ -1081,7 +1081,7 @@
             <button type="button" class="modal-close" id="close-task-modal-btn" aria-label="Close task modal">×</button>
         </div>
 
-        <form id="submit-task-form">
+        <form id="submit-task-form" novalidate>
             <div class="form-grid">
                 <div class="form-group">
                     <label>Task Type</label>
@@ -2096,6 +2096,11 @@
         e.preventDefault();
         const btn = e.target.querySelector('[type="submit"]');
 
+        if (!authToken) {
+            showToast('Please login before submitting a task', true);
+            return;
+        }
+
         if (!validateTaskForm()) {
             showToast('Please fix validation errors before submitting', true);
             return;
@@ -2138,8 +2143,8 @@
                 closeTaskModal();
                 await fetchData();
             } else {
-                const err = await res.json();
-                showToast(err.message || 'Task submission failed', true);
+                const err = await res.json().catch(() => ({}));
+                showToast(err.message || `Task submission failed (HTTP ${res.status})`, true);
             }
         } catch (err) {
             showToast('Network error: ' + err.message, true);
