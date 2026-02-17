@@ -228,6 +228,19 @@ impl AppState {
 
             let mut tx = self.db.begin().await?;
 
+            let assigned_nodes_for_completed_task =
+                sqlx::query_scalar::<_, String>(
+                    r#"
+                    SELECT node_id
+                    FROM task_assignments
+                    WHERE task_id = $1
+                      AND disconnected_at IS NULL
+                    "#,
+                )
+                .bind(task_id)
+                .fetch_all(&mut *tx)
+                .await?;
+
             sqlx::query(
                 r#"
                 UPDATE tasks
@@ -243,6 +256,10 @@ impl AppState {
             self.disconnect_task_assignments(task_id, &mut tx).await?;
 
             tx.commit().await?;
+
+            for node_id in assigned_nodes_for_completed_task {
+                self.assign_pending_tasks_for_node(&node_id).await?;
+            }
 
             (TaskStatus::Completed, Some(result))
         } else {
