@@ -33,9 +33,11 @@ pub async fn security_headers_middleware(request: Request<Body>, next: Next) -> 
     headers.insert("Expect-CT", "max-age=86400, enforce".parse().unwrap());
 
     // Content-Security-Policy
+    // Dashboard HTML is currently shipped with inline <style> and <script> blocks,
+    // so we explicitly allow inline styles/scripts to avoid blank rendering.
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
-        "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:"
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:"
             .parse()
             .unwrap(),
     );
@@ -75,7 +77,8 @@ mod tests {
             .expect("CSP should be valid UTF-8");
 
         assert!(csp.contains("script-src 'self'"));
-        assert!(!csp.contains("unsafe-inline"));
+        assert!(csp.contains("script-src 'self' 'unsafe-inline'"));
+        assert!(csp.contains("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"));
         assert!(!csp.contains("https://unpkg.com"));
     }
 }
