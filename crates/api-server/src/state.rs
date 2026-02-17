@@ -13,6 +13,18 @@ pub struct AppState {
 }
 
 impl AppState {
+    fn parse_max_active_task_attachments_per_node(value: Option<&str>) -> i64 {
+        value
+            .and_then(|raw| raw.parse::<i64>().ok())
+            .filter(|parsed| *parsed > 0)
+            .unwrap_or(50)
+    }
+
+    fn max_active_task_attachments_per_node() -> i64 {
+        let configured = std::env::var("MAX_ACTIVE_TASK_ATTACHMENTS_PER_NODE").ok();
+        Self::parse_max_active_task_attachments_per_node(configured.as_deref())
+    }
+
     /// Create new application state with database pool
     pub fn new(db: PgPool) -> Self {
         Self { db }
@@ -353,6 +365,28 @@ impl AppState {
     }
 
     async fn assign_pending_tasks_for_node(&self, node_id: &str) -> ApiResult<()> {
+        let max_attachments = Self::max_active_task_attachments_per_node();
+        let mut current_attachments = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM task_assignments
+            WHERE node_id = $1
+              AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(node_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        if current_attachments >= max_attachments {
+            tracing::warn!(
+                node_id,
+                max_attachments,
+                "Node reached active task attachment limit; skipping pending task attachment"
+            );
+            return Ok(());
+        }
+
         let pending_tasks = sqlx::query(
             r#"
             SELECT
@@ -373,6 +407,15 @@ impl AppState {
         .await?;
 
         for task in pending_tasks {
+            if current_attachments >= max_attachments {
+                tracing::info!(
+                    node_id,
+                    max_attachments,
+                    "Stopped attaching node to pending tasks after reaching active task attachment limit"
+                );
+                break;
+            }
+
             let task_id: Uuid = task.get("task_id");
             let task_type: String = task.get("task_type");
             let min_nodes: i32 = task.get("min_nodes");
@@ -423,6 +466,8 @@ impl AppState {
             .bind(node_id)
             .execute(&self.db)
             .await?;
+
+            current_attachments += 1;
 
             self.update_task_status_from_assignments(task_id, min_nodes as u32)
                 .await?;
@@ -1286,6 +1331,20 @@ fn parse_task_status(status: &str) -> TaskStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    #[test]
+    fn parses_max_active_task_attachments_env_value() {
+        assert_eq!(AppState::parse_max_active_task_attachments_per_node(Some("75")), 75);
+    }
+
+    #[test]
+    fn falls_back_to_default_on_invalid_or_non_positive_attachment_limits() {
+        assert_eq!(AppState::parse_max_active_task_attachments_per_node(Some("0")), 50);
+        assert_eq!(AppState::parse_max_active_task_attachments_per_node(Some("-12")), 50);
+        assert_eq!(AppState::parse_max_active_task_attachments_per_node(Some("abc")), 50);
+        assert_eq!(AppState::parse_max_active_task_attachments_per_node(None), 50);
+    }
 
     #[test]
     fn analyzes_plain_text_prompt_payload() {
