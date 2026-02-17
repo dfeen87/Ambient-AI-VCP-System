@@ -965,6 +965,13 @@ Content-Type: text/plain; charset=\"utf-8\"
 fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_json::Value {
     match inputs {
         serde_json::Value::Object(map) => {
+            match task_type {
+                "federated_learning" => return analyze_federated_learning_payload(map),
+                "zk_proof" => return analyze_zk_proof_payload(map),
+                "wasm_execution" => return analyze_wasm_execution_payload(map),
+                _ => {}
+            }
+
             if task_type == "computation" {
                 if let Some(expression) = map.get("expression").and_then(|v| v.as_str()) {
                     if let Some(result) = evaluate_arithmetic_expression(expression) {
