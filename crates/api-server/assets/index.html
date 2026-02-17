@@ -1703,13 +1703,16 @@
             const cls = effectiveStatus === 'completed' ? 'badge-completed'
                       : effectiveStatus === 'failed'    ? 'badge-failed'
                       :                                  'badge-pending';
+            const nodeDisplay = effectiveStatus === 'completed'
+                ? 'Disconnected to nodes'
+                : `${t.assigned_nodes.length} nodes`;
             return `
                 <tr>
                     <td><span class="mono-dim">${t.task_id.substring(0, 12)}···</span></td>
                     <td>${t.task_type}</td>
                     <td><span class="badge ${cls}">${effectiveStatus}</span></td>
                     <td class="mono-dim">${projection.progressLabel}<br><span title="${projection.etaTooltip}">${projection.etaLabel}</span></td>
-                    <td class="mono-dim">${t.assigned_nodes.length} nodes</td>
+                    <td class="mono-dim">${nodeDisplay}</td>
                     <td class="mono-dim">${new Date(t.created_at).toLocaleString()}</td>
                     <td class="task-action-cell">
                         ${effectiveStatus === 'completed'

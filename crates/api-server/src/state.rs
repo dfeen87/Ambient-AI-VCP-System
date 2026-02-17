@@ -208,11 +208,12 @@ impl AppState {
         )
         .await?;
 
-        let assigned_nodes = self.get_assigned_nodes(task_id).await?;
         let task_status = self.get_task_status(task_id).await?;
 
         let (status, result) = if task_status == "running" {
             let result = analyze_task_payload(&task_type, &task_inputs);
+
+            let mut tx = self.db.begin().await?;
 
             sqlx::query(
                 r#"
@@ -223,13 +224,19 @@ impl AppState {
             )
             .bind(&result)
             .bind(task_id)
-            .execute(&self.db)
+            .execute(&mut *tx)
             .await?;
+
+            self.disconnect_task_assignments(task_id, &mut tx).await?;
+
+            tx.commit().await?;
 
             (TaskStatus::Completed, Some(result))
         } else {
             (parse_task_status(&task_status), None)
         };
+
+        let assigned_nodes = self.get_assigned_nodes(task_id).await?;
 
         let task_info = TaskInfo {
             task_id: task_id.to_string(),
@@ -251,6 +258,7 @@ impl AppState {
             SELECT node_id
             FROM task_assignments
             WHERE task_id = $1
+              AND disconnected_at IS NULL
             ORDER BY node_id ASC
             "#,
         )
@@ -274,6 +282,26 @@ impl AppState {
         .await?;
 
         Ok(status)
+    }
+
+    async fn disconnect_task_assignments(
+        &self,
+        task_id: Uuid,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ) -> ApiResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE task_assignments
+            SET disconnected_at = NOW()
+            WHERE task_id = $1
+              AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(task_id)
+        .execute(&mut **tx)
+        .await?;
+
+        Ok(())
     }
 
     async fn assign_available_nodes_for_task(
@@ -310,7 +338,8 @@ impl AppState {
                 r#"
                 INSERT INTO task_assignments (task_id, node_id)
                 VALUES ($1, $2)
-                ON CONFLICT (task_id, node_id) DO NOTHING
+                ON CONFLICT (task_id, node_id)
+                DO UPDATE SET assigned_at = NOW(), disconnected_at = NULL
                 "#,
             )
             .bind(task_id)
@@ -333,7 +362,7 @@ impl AppState {
                 t.require_gpu,
                 COALESCE(COUNT(ta.node_id), 0) AS assigned_nodes
             FROM tasks t
-            LEFT JOIN task_assignments ta ON ta.task_id = t.task_id
+            LEFT JOIN task_assignments ta ON ta.task_id = t.task_id AND ta.disconnected_at IS NULL
             WHERE t.status = 'pending'
             GROUP BY t.task_id, t.task_type, t.min_nodes, t.require_gpu
             HAVING COALESCE(COUNT(ta.node_id), 0) < t.min_nodes
@@ -386,7 +415,8 @@ impl AppState {
                 r#"
                 INSERT INTO task_assignments (task_id, node_id)
                 VALUES ($1, $2)
-                ON CONFLICT (task_id, node_id) DO NOTHING
+                ON CONFLICT (task_id, node_id)
+                DO UPDATE SET assigned_at = NOW(), disconnected_at = NULL
                 "#,
             )
             .bind(task_id)
@@ -411,6 +441,7 @@ impl AppState {
             SELECT COUNT(*)
             FROM task_assignments
             WHERE task_id = $1
+              AND disconnected_at IS NULL
             "#,
         )
         .bind(task_id)
@@ -455,6 +486,7 @@ impl AppState {
                         SELECT ARRAY_AGG(ta.node_id)
                         FROM task_assignments ta
                         WHERE ta.task_id = t.task_id
+                          AND ta.disconnected_at IS NULL
                     ),
                     ARRAY[]::VARCHAR[]
                 ) as assigned_nodes
@@ -514,6 +546,7 @@ impl AppState {
                         SELECT ARRAY_AGG(ta.node_id)
                         FROM task_assignments ta
                         WHERE ta.task_id = t.task_id
+                          AND ta.disconnected_at IS NULL
                     ),
                     ARRAY[]::VARCHAR[]
                 ) as assigned_nodes
