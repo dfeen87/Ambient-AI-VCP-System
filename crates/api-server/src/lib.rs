@@ -780,12 +780,20 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         get(|| async { Json(openapi_json) }),
     );
 
+    let metrics_routes = middleware::metrics::create_metrics_router()
+        .layer(axum_middleware::from_fn(
+            middleware::auth::require_admin_middleware,
+        ))
+        .layer(axum_middleware::from_fn(
+            middleware::auth::jwt_auth_middleware,
+        ));
+
     Router::new()
         .route("/", get(dashboard))
         .route("/swagger-ui", get(swagger_ui))
         .nest("/api/v1", api_routes)
         .merge(docs_router)
-        .merge(middleware::metrics::create_metrics_router())
+        .merge(metrics_routes)
         .layer(axum_middleware::from_fn(
             middleware::metrics::metrics_middleware,
         ))
