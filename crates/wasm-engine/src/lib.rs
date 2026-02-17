@@ -53,7 +53,7 @@ impl WasmEngine {
     }
 
     pub async fn execute(&self, call: WasmCall) -> Result<WasmResult> {
-        let _start = Instant::now();
+        let start = Instant::now();
 
         let canonical_module_path = match canonicalize_module_path(&call.module_path) {
             Ok(p) => p,
@@ -94,9 +94,10 @@ impl WasmEngine {
 
         #[cfg(not(feature = "wasm-runtime"))]
         {
+            let execution_time = start.elapsed().as_millis() as u64;
             Ok(WasmResult {
                 output: vec![],
-                execution_time_ms: 0,
+                execution_time_ms: execution_time,
                 gas_used: 0,
                 success: false,
                 error: Some(
@@ -266,6 +267,34 @@ mod tests {
         });
     }
 
+
+    #[test]
+    fn test_wasm_runtime_disabled_path_returns_runtime_error_for_existing_module() {
+        with_allowed_roots(".", || {
+            let limits = SandboxLimits::default();
+            let engine = WasmEngine::new(WasmRuntime::WasmEdge, limits);
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let result = rt.block_on(async {
+                engine
+                    .execute(WasmCall {
+                        module_path: "Cargo.toml".to_string(),
+                        function_name: "test".to_string(),
+                        inputs: vec![],
+                    })
+                    .await
+            });
+
+            assert!(result.is_ok());
+            let wasm_result = result.unwrap();
+            assert!(!wasm_result.success);
+            assert!(wasm_result
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("WASM runtime not enabled"));
+        });
+    }
     #[test]
     fn test_module_path_rejected_outside_roots() {
         with_allowed_roots("./wasm-modules", || {
