@@ -1047,14 +1047,7 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
                     }
                 }
 
-                serde_json::json!({
-                    "task_type": task_type,
-                    "analysis_mode": "plain_text",
-                    "summary": summarize_prompt(prompt),
-                    "input_characters": prompt.chars().count(),
-                    "keyword_signals": extract_keywords(prompt),
-                    "recommendation": "Use JSON object inputs for richer structured outputs when possible."
-                })
+                analyze_plain_text_prompt(task_type, prompt)
             } else {
                 serde_json::json!({
                     "task_type": task_type,
@@ -1078,7 +1071,8 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
             "analysis_mode": "string",
             "summary": summarize_prompt(value),
             "input_characters": value.chars().count(),
-            "keyword_signals": extract_keywords(value)
+            "keyword_signals": extract_keywords(value),
+            "recommendation": "Use an object payload with a `prompt` key for deeper text analysis."
         }),
         primitive => serde_json::json!({
             "task_type": task_type,
@@ -1115,6 +1109,35 @@ fn analyze_federated_learning_payload(
         "has_model_config": map.contains_key("model") || map.contains_key("model_config"),
         "has_aggregation_strategy": map.contains_key("aggregation") || map.contains_key("aggregation_strategy"),
         "top_level_keys": map.keys().cloned().collect::<Vec<String>>()
+    })
+}
+
+fn analyze_plain_text_prompt(task_type: &str, prompt: &str) -> serde_json::Value {
+    let words: Vec<&str> = prompt.split_whitespace().collect();
+    let sentence_count = prompt
+        .split(['.', '!', '?'])
+        .filter(|s| !s.trim().is_empty())
+        .count();
+    let estimated_reading_time_sec = ((words.len() as f64 / 3.0).ceil() as u64).max(1);
+
+    let extracted_numbers = extract_number_literals(prompt);
+    let looks_like_instruction = contains_instructional_language(prompt);
+    let has_question = prompt.contains('?');
+
+    serde_json::json!({
+        "task_type": task_type,
+        "analysis_mode": "plain_text",
+        "summary": summarize_prompt(prompt),
+        "input_characters": prompt.chars().count(),
+        "word_count": words.len(),
+        "sentence_count": sentence_count,
+        "has_question": has_question,
+        "looks_like_instruction": looks_like_instruction,
+        "estimated_reading_time_sec": estimated_reading_time_sec,
+        "keyword_signals": extract_keywords(prompt),
+        "extracted_numbers": extracted_numbers,
+        "suggested_json_shape": suggested_json_shape_for_task(task_type, prompt),
+        "recommendation": task_specific_plain_text_recommendation(task_type)
     })
 }
 
@@ -1297,9 +1320,9 @@ fn summarize_prompt(prompt: &str) -> String {
         .join(" ");
 
     if words.len() > 18 {
-        format!("{}... ({} words total)", preview, words.len())
+        format!("{}... ({} words)", preview, words.len())
     } else {
-        format!("{} ({} words total)", preview, words.len())
+        format!("{} ({} words)", preview, words.len())
     }
 }
 
@@ -1315,6 +1338,92 @@ fn extract_keywords(prompt: &str) -> Vec<String> {
     }
 
     unique.into_iter().take(8).collect()
+}
+
+fn extract_number_literals(prompt: &str) -> Vec<f64> {
+    prompt
+        .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+        .filter_map(|token| {
+            let trimmed = token.trim();
+            if trimmed.is_empty() || trimmed == "-" || trimmed == "." {
+                return None;
+            }
+            trimmed.parse::<f64>().ok()
+        })
+        .take(8)
+        .collect()
+}
+
+fn contains_instructional_language(prompt: &str) -> bool {
+    let lower = prompt.to_lowercase();
+    [
+        "compute",
+        "calculate",
+        "analyze",
+        "summarize",
+        "classify",
+        "extract",
+        "generate",
+        "predict",
+        "verify",
+    ]
+    .iter()
+    .any(|kw| lower.contains(kw))
+}
+
+fn task_specific_plain_text_recommendation(task_type: &str) -> &'static str {
+    match task_type {
+        "computation" => {
+            "Provide JSON with `expression` for deterministic math or include `prompt` plus `operation`/`target` fields for richer compute analysis."
+        }
+        "federated_learning" => {
+            "Provide JSON with `participant_count`, `rounds`, and `aggregation_strategy` to get federated-learning specific analysis."
+        }
+        "zk_proof" => {
+            "Provide JSON with `circuit`, `public_inputs`, and `proof_system` for precise proof-task analysis."
+        }
+        "wasm_execution" => {
+            "Provide JSON with `entrypoint`, module details, and runtime limits for actionable WASM execution analysis."
+        }
+        _ => "Use JSON object inputs for richer structured outputs when possible.",
+    }
+}
+
+fn suggested_json_shape_for_task(task_type: &str, prompt: &str) -> serde_json::Value {
+    match task_type {
+        "computation" => {
+            if let Some(expression) = infer_expression_from_prompt(prompt) {
+                serde_json::json!({
+                    "expression": expression,
+                    "operation": "evaluate"
+                })
+            } else {
+                serde_json::json!({
+                    "prompt": prompt,
+                    "operation": "analyze"
+                })
+            }
+        }
+        "federated_learning" => serde_json::json!({
+            "prompt": prompt,
+            "participant_count": null,
+            "rounds": null,
+            "aggregation_strategy": "fedavg"
+        }),
+        "zk_proof" => serde_json::json!({
+            "prompt": prompt,
+            "circuit": null,
+            "public_inputs": [],
+            "proof_system": null
+        }),
+        "wasm_execution" => serde_json::json!({
+            "prompt": prompt,
+            "entrypoint": null,
+            "module_size_bytes": null,
+            "timeout_ms": null
+        }),
+        _ => serde_json::json!({ "prompt": prompt }),
+    }
 }
 
 /// Helper function to parse task status from string
@@ -1370,7 +1479,9 @@ mod tests {
         assert!(result["summary"]
             .as_str()
             .unwrap_or_default()
-            .contains("words total"));
+            .contains("words"));
+        assert!(result["word_count"].as_u64().unwrap_or_default() > 0);
+        assert!(result["suggested_json_shape"].is_object());
     }
 
     #[test]
