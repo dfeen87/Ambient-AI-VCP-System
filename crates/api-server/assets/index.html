@@ -1157,6 +1157,8 @@
     let currentUser = localStorage.getItem('vcp_username');
     let currentUserId = parseUserIdFromToken(authToken);
     const taskProgressMemory = new Map();
+    const TASK_COMPLETION_LOCKS_STORAGE_KEY = 'vcp_task_completion_locks_v1';
+    let taskCompletionLocks = loadTaskCompletionLocks();
     let selectedCompletedTask = null;
 
     const taskDurationByTypeSec = {
@@ -1180,6 +1182,36 @@
             return payload.sub || null;
         } catch (_err) {
             return null;
+        }
+    }
+
+    function loadTaskCompletionLocks() {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(TASK_COMPLETION_LOCKS_STORAGE_KEY) || '{}');
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (_err) {
+            return {};
+        }
+    }
+
+    function saveTaskCompletionLocks() {
+        localStorage.setItem(TASK_COMPLETION_LOCKS_STORAGE_KEY, JSON.stringify(taskCompletionLocks));
+    }
+
+    function getTaskCompletionScope() {
+        return `${apiBaseUrl}::${currentUserId || currentUser || 'anonymous'}`;
+    }
+
+    function isTaskCompletionLocked(taskId) {
+        const key = `${getTaskCompletionScope()}::${taskId}`;
+        return taskCompletionLocks[key] === true;
+    }
+
+    function lockTaskCompletion(taskId) {
+        const key = `${getTaskCompletionScope()}::${taskId}`;
+        if (taskCompletionLocks[key] !== true) {
+            taskCompletionLocks[key] = true;
+            saveTaskCompletionLocks();
         }
     }
 
@@ -1221,6 +1253,7 @@
         authToken = null;
         currentUser = null;
         currentUserId = null;
+        taskCompletionLocks = loadTaskCompletionLocks();
         checkAuth();
     }
 
@@ -1247,6 +1280,7 @@
                 localStorage.setItem('vcp_auth_token', authToken);
                 localStorage.setItem('vcp_username', username);
                 currentUserId = parseUserIdFromToken(authToken);
+                taskCompletionLocks = loadTaskCompletionLocks();
                 showToast('Login successful!');
                 checkAuth();
             } else {
@@ -1661,6 +1695,9 @@
         }
 
         tbody.innerHTML = tasks.map(t => {
+            if (t.status === 'completed') {
+                lockTaskCompletion(t.task_id);
+            }
             const projection = estimateTaskProgress(t);
             const effectiveStatus = getEffectiveTaskStatus(t, projection);
             const cls = effectiveStatus === 'completed' ? 'badge-completed'
@@ -1689,7 +1726,7 @@
             return task.status;
         }
 
-        if (projection && projection.percent >= 100) {
+        if (isTaskCompletionLocked(task.task_id)) {
             return 'completed';
         }
 
