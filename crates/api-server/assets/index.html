@@ -717,6 +717,76 @@
 
         .inline-hint.error { color: var(--red); }
         .inline-hint.success { color: var(--accent); }
+
+        .task-action-cell {
+            text-align: right;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .result-meta {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .result-meta-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .result-meta-value {
+            font-size: 14px;
+            color: var(--text);
+            word-break: break-word;
+        }
+
+        .result-payload {
+            width: 100%;
+            min-height: 220px;
+            max-height: 380px;
+            overflow: auto;
+            margin-top: 14px;
+            background: #090f1a;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-dim);
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .result-actions {
+            margin-top: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .result-actions-left,
+        .result-actions-right {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
     </style>
 </head>
 <body>
@@ -739,7 +809,6 @@
                 <label>Endpoint</label>
                 <input type="text" id="api-url" value="https://ambient-ai-vcp-system.onrender.com" spellcheck="false">
                 <button type="button" id="connect-btn" onclick="updateApiUrl()" class="btn">Connect</button>
-                <div id="connect-status" class="connect-status">Using default endpoint.</div>
             </div>
         </div>
         <div class="header-right">
@@ -869,10 +938,11 @@
                         <th>Progress (AI ETA)</th>
                         <th>Assigned Nodes</th>
                         <th>Created At</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="tasks-table">
-                    <tr class="empty-row"><td colspan="6">Fetching tasks...</td></tr>
+                    <tr class="empty-row"><td colspan="7">Fetching tasks...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -1045,6 +1115,41 @@
     </div>
 </div>
 
+<div class="modal-overlay" id="task-result-modal-overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="task-result-modal-title">
+        <div class="modal-header">
+            <div>
+                <div class="modal-title" id="task-result-modal-title">Completed Task Result</div>
+                <div class="modal-subtitle">View, download, or send this completed task result by email.</div>
+            </div>
+            <button type="button" class="modal-close" id="close-task-result-modal-btn" aria-label="Close task result modal">×</button>
+        </div>
+
+        <div class="result-grid">
+            <div class="result-meta">
+                <div class="result-meta-label">Task ID</div>
+                <div class="result-meta-value mono-dim" id="result-task-id">—</div>
+            </div>
+            <div class="result-meta">
+                <div class="result-meta-label">Task Type</div>
+                <div class="result-meta-value" id="result-task-type">—</div>
+            </div>
+        </div>
+
+        <pre class="result-payload" id="result-task-payload">No result available.</pre>
+
+        <div class="result-actions">
+            <div class="result-actions-left">
+                <button type="button" class="btn" id="download-task-result-btn">Download JSON</button>
+            </div>
+            <div class="result-actions-right">
+                <button type="button" class="btn btn-ghost" id="send-task-result-email-btn">Send to Email</button>
+                <button type="button" class="btn btn-ghost" id="close-task-result-modal-footer-btn">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     const DEFAULT_API_BASE_URL = 'https://ambient-ai-vcp-system.onrender.com';
     let apiBaseUrl = localStorage.getItem('vcp_api_base_url') || DEFAULT_API_BASE_URL;
@@ -1052,6 +1157,7 @@
     let currentUser = localStorage.getItem('vcp_username');
     let currentUserId = parseUserIdFromToken(authToken);
     const taskProgressMemory = new Map();
+    let selectedCompletedTask = null;
 
     const taskDurationByTypeSec = {
         computation: 300,
@@ -1079,6 +1185,15 @@
         if (status === 'online') return 'badge-online';
         if (status === 'rejected') return 'badge-failed';
         return 'badge-pending';
+    }
+
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     // Check if user is logged in on page load
@@ -1195,12 +1310,6 @@
         return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
     }
 
-    function setConnectStatus(message, variant = '') {
-        const statusEl = document.getElementById('connect-status');
-        statusEl.textContent = message;
-        statusEl.className = `connect-status${variant ? ` ${variant}` : ''}`;
-    }
-
     async function updateApiUrl() {
         const connectBtn = document.getElementById('connect-btn');
         const inputEl = document.getElementById('api-url');
@@ -1208,14 +1317,12 @@
 
         if (!candidateUrl || candidateUrl === 'https://') {
             showToast('Please provide a valid API endpoint URL', true);
-            setConnectStatus(`Invalid endpoint: ${inputEl.value || '(empty)'}`, 'error');
             return;
         }
 
         const previousUrl = apiBaseUrl;
         connectBtn.disabled = true;
         connectBtn.textContent = 'Connecting...';
-        setConnectStatus(`Checking ${candidateUrl}...`);
 
         try {
             const probeRes = await fetch(`${candidateUrl}/api/v1/cluster/stats`, {
@@ -1230,7 +1337,6 @@
             inputEl.value = candidateUrl;
             localStorage.setItem('vcp_api_base_url', candidateUrl);
             showToast(`Connected to ${candidateUrl}`);
-            setConnectStatus(`Connected to ${candidateUrl}`, 'success');
 
             if (authToken) {
                 await fetchData();
@@ -1238,7 +1344,6 @@
         } catch (err) {
             apiBaseUrl = previousUrl;
             showToast(`Unable to connect: ${err.message}`, true);
-            setConnectStatus(`Connection failed, still using ${previousUrl}`, 'error');
         } finally {
             connectBtn.disabled = false;
             connectBtn.textContent = 'Connect';
@@ -1522,7 +1627,7 @@
     function renderTasks(tasks) {
         const tbody = document.getElementById('tasks-table');
         if (!tasks.length) {
-            tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No tasks submitted yet</td></tr>';
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No tasks submitted yet</td></tr>';
             return;
         }
 
@@ -1546,9 +1651,79 @@
                     <td class="mono-dim">${projection.progressLabel}<br><span title="${projection.etaTooltip}">${projection.etaLabel}</span></td>
                     <td class="mono-dim">${t.assigned_nodes.length} nodes</td>
                     <td class="mono-dim">${new Date(t.created_at).toLocaleString()}</td>
+                    <td class="task-action-cell">
+                        ${t.status === 'completed'
+                            ? `<button type="button" class="btn btn-sm" data-task-view="${t.task_id}">View Result</button>`
+                            : '<span class="mono-dim">—</span>'}
+                    </td>
                 </tr>
             `;
         }).join('');
+    }
+
+    function openTaskResultModal(task) {
+        selectedCompletedTask = task;
+
+        const resultPayload = task.result ?? { message: 'Task completed (no structured payload returned).' };
+        const prettyPayload = JSON.stringify(resultPayload, null, 2);
+
+        document.getElementById('result-task-id').textContent = task.task_id;
+        document.getElementById('result-task-type').textContent = task.task_type;
+        document.getElementById('result-task-payload').innerHTML = escapeHtml(prettyPayload);
+
+        const modal = document.getElementById('task-result-modal-overlay');
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeTaskResultModal() {
+        const modal = document.getElementById('task-result-modal-overlay');
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+    }
+
+    function downloadSelectedTaskResult() {
+        if (!selectedCompletedTask) {
+            showToast('No completed task selected.', true);
+            return;
+        }
+
+        const filename = `task-result-${selectedCompletedTask.task_id}.json`;
+        const payload = selectedCompletedTask.result ?? { message: 'Task completed (no structured payload returned).' };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+
+        showToast(`Downloaded ${filename}`);
+    }
+
+    function sendSelectedTaskResultEmail() {
+        if (!selectedCompletedTask) {
+            showToast('No completed task selected.', true);
+            return;
+        }
+
+        const payload = selectedCompletedTask.result ?? { message: 'Task completed (no structured payload returned).' };
+        const subject = encodeURIComponent(`Ambient AI VCP Task Result: ${selectedCompletedTask.task_id}`);
+        const body = encodeURIComponent([
+            `Task ID: ${selectedCompletedTask.task_id}`,
+            `Task Type: ${selectedCompletedTask.task_type}`,
+            '',
+            'Result:',
+            JSON.stringify(payload, null, 2)
+        ].join('\n'));
+
+        window.location.href = `mailto:?subject=${subject}&body=${body}`;
+        showToast('Opened your email app with the task result.');
     }
 
     function estimateTaskProgress(task) {
@@ -1669,11 +1844,43 @@
         }
     });
 
+    document.getElementById('task-result-modal-overlay').addEventListener('click', (e) => {
+        if (e.target.id === 'task-result-modal-overlay') {
+            closeTaskResultModal();
+        }
+    });
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && document.getElementById('task-modal-overlay').classList.contains('open')) {
             closeTaskModal();
         }
+        if (e.key === 'Escape' && document.getElementById('task-result-modal-overlay').classList.contains('open')) {
+            closeTaskResultModal();
+        }
     });
+
+    document.getElementById('tasks-table').addEventListener('click', (e) => {
+        const trigger = e.target.closest('[data-task-view]');
+        if (!trigger) return;
+
+        const taskId = trigger.getAttribute('data-task-view');
+        fetch(`${apiBaseUrl}/api/v1/tasks`, { headers: getAuthHeaders() })
+            .then((res) => res.ok ? res.json() : Promise.reject(new Error('Failed to fetch tasks')))
+            .then((tasks) => {
+                const task = tasks.find((t) => t.task_id === taskId && t.status === 'completed');
+                if (!task) {
+                    showToast('Completed task result no longer available.', true);
+                    return;
+                }
+                openTaskResultModal(task);
+            })
+            .catch((err) => showToast(err.message || 'Unable to load task result.', true));
+    });
+
+    document.getElementById('close-task-result-modal-btn').addEventListener('click', closeTaskResultModal);
+    document.getElementById('close-task-result-modal-footer-btn').addEventListener('click', closeTaskResultModal);
+    document.getElementById('download-task-result-btn').addEventListener('click', downloadSelectedTaskResult);
+    document.getElementById('send-task-result-email-btn').addEventListener('click', sendSelectedTaskResultEmail);
 
     document.getElementById('submit-task-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1753,7 +1960,6 @@
 
     // Initialize on page load
     document.getElementById('api-url').value = apiBaseUrl;
-    setConnectStatus(`Connected to ${apiBaseUrl}`, 'success');
     document.getElementById('api-url').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
