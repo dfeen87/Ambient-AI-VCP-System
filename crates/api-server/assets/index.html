@@ -1790,6 +1790,11 @@
             return task.status;
         }
 
+        if (projection && projection.percent >= 100) {
+            lockTaskCompletion(task.task_id);
+            return 'completed';
+        }
+
         if (isTaskCompletionLocked(task.task_id)) {
             return 'completed';
         }
