@@ -980,6 +980,21 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
             }
 
             if let Some(prompt) = map.get("prompt").and_then(|v| v.as_str()) {
+                if task_type == "computation" {
+                    if let Some(expression) = infer_expression_from_prompt(prompt) {
+                        if let Some(result) = evaluate_arithmetic_expression(&expression) {
+                            return serde_json::json!({
+                                "task_type": task_type,
+                                "analysis_mode": "computation",
+                                "summary": "Arithmetic expression inferred from prompt and evaluated successfully.",
+                                "prompt": prompt,
+                                "expression": expression,
+                                "result": result
+                            });
+                        }
+                    }
+                }
+
                 serde_json::json!({
                     "task_type": task_type,
                     "analysis_mode": "plain_text",
@@ -1096,6 +1111,39 @@ fn evaluate_arithmetic_expression(expression: &str) -> Option<f64> {
     Some(result)
 }
 
+fn infer_expression_from_prompt(prompt: &str) -> Option<String> {
+    let mut seen_digit = false;
+    let mut expression = String::new();
+
+    for ch in prompt.chars() {
+        if !seen_digit {
+            if ch.is_ascii_digit() {
+                seen_digit = true;
+                expression.push(ch);
+            }
+            continue;
+        }
+
+        if ch.is_ascii_digit() || matches!(ch, '+' | '-' | '*' | '/' | '.' | 'x' | 'X' | '÷') {
+            expression.push(ch);
+            continue;
+        }
+
+        if ch.is_whitespace() {
+            expression.push(ch);
+            continue;
+        }
+
+        break;
+    }
+
+    if seen_digit && expression.chars().any(|c| matches!(c, '+' | '-' | '*' | '/' | 'x' | 'X' | '÷')) {
+        Some(expression.trim().to_string())
+    } else {
+        None
+    }
+}
+
 fn summarize_prompt(prompt: &str) -> String {
     let trimmed = prompt.trim();
     if trimmed.is_empty() {
@@ -1175,6 +1223,16 @@ mod tests {
 
         assert_eq!(result["analysis_mode"], "computation");
         assert_eq!(result["result"], 100.0);
+    }
+
+    #[test]
+    fn evaluates_inferred_expression_from_prompt_payload() {
+        let value = serde_json::json!({"prompt": "need to figure out what 5 + 5 is"});
+        let result = analyze_task_payload("computation", &value);
+
+        assert_eq!(result["analysis_mode"], "computation");
+        assert_eq!(result["expression"], "5 + 5");
+        assert_eq!(result["result"], 10.0);
     }
 
     #[test]
