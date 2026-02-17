@@ -153,6 +153,17 @@
             box-shadow: 0 0 0 3px var(--accent-dim);
         }
 
+        .connect-status {
+            width: 100%;
+            margin-top: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .connect-status.success { color: var(--accent); }
+        .connect-status.error { color: var(--red); }
+
         .header-right {
             display: flex;
             flex-direction: column;
@@ -727,7 +738,8 @@
             <div class="connect-bar">
                 <label>Endpoint</label>
                 <input type="text" id="api-url" value="https://ambient-ai-vcp-system.onrender.com" spellcheck="false">
-                <button onclick="updateApiUrl()" class="btn">Connect</button>
+                <button type="button" id="connect-btn" onclick="updateApiUrl()" class="btn">Connect</button>
+                <div id="connect-status" class="connect-status">Using default endpoint.</div>
             </div>
         </div>
         <div class="header-right">
@@ -1034,7 +1046,8 @@
 </div>
 
 <script>
-    let apiBaseUrl = 'https://ambient-ai-vcp-system.onrender.com';
+    const DEFAULT_API_BASE_URL = 'https://ambient-ai-vcp-system.onrender.com';
+    let apiBaseUrl = localStorage.getItem('vcp_api_base_url') || DEFAULT_API_BASE_URL;
     let authToken = localStorage.getItem('vcp_auth_token');
     let currentUser = localStorage.getItem('vcp_username');
     let currentUserId = parseUserIdFromToken(authToken);
@@ -1177,9 +1190,59 @@
         };
     }
 
-    function updateApiUrl() {
-        apiBaseUrl = document.getElementById('api-url').value.replace(/\/$/, '');
-        fetchData();
+    function normalizeApiBaseUrl(url) {
+        const trimmed = (url || '').trim().replace(/\/$/, '');
+        return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    }
+
+    function setConnectStatus(message, variant = '') {
+        const statusEl = document.getElementById('connect-status');
+        statusEl.textContent = message;
+        statusEl.className = `connect-status${variant ? ` ${variant}` : ''}`;
+    }
+
+    async function updateApiUrl() {
+        const connectBtn = document.getElementById('connect-btn');
+        const inputEl = document.getElementById('api-url');
+        const candidateUrl = normalizeApiBaseUrl(inputEl.value);
+
+        if (!candidateUrl || candidateUrl === 'https://') {
+            showToast('Please provide a valid API endpoint URL', true);
+            setConnectStatus(`Invalid endpoint: ${inputEl.value || '(empty)'}`, 'error');
+            return;
+        }
+
+        const previousUrl = apiBaseUrl;
+        connectBtn.disabled = true;
+        connectBtn.textContent = 'Connecting...';
+        setConnectStatus(`Checking ${candidateUrl}...`);
+
+        try {
+            const probeRes = await fetch(`${candidateUrl}/api/v1/cluster/stats`, {
+                headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+            });
+
+            if (!probeRes.ok && probeRes.status !== 401 && probeRes.status !== 403) {
+                throw new Error(`endpoint responded with HTTP ${probeRes.status}`);
+            }
+
+            apiBaseUrl = candidateUrl;
+            inputEl.value = candidateUrl;
+            localStorage.setItem('vcp_api_base_url', candidateUrl);
+            showToast(`Connected to ${candidateUrl}`);
+            setConnectStatus(`Connected to ${candidateUrl}`, 'success');
+
+            if (authToken) {
+                await fetchData();
+            }
+        } catch (err) {
+            apiBaseUrl = previousUrl;
+            showToast(`Unable to connect: ${err.message}`, true);
+            setConnectStatus(`Connection failed, still using ${previousUrl}`, 'error');
+        } finally {
+            connectBtn.disabled = false;
+            connectBtn.textContent = 'Connect';
+        }
     }
 
     function showToast(msg, isError = false) {
@@ -1689,6 +1752,15 @@
     }
 
     // Initialize on page load
+    document.getElementById('api-url').value = apiBaseUrl;
+    setConnectStatus(`Connected to ${apiBaseUrl}`, 'success');
+    document.getElementById('api-url').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            updateApiUrl();
+        }
+    });
+
     updateTaskDefaults();
     validateTaskForm();
     checkAuth();
