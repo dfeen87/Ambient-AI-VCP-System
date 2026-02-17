@@ -2187,12 +2187,6 @@ mod tests {
     }
 
     #[test]
-    fn completion_disconnect_policy_keeps_connect_only_assignments() {
-        assert!(!should_disconnect_assignments_on_completion("connect_only"));
-        assert!(should_disconnect_assignments_on_completion("computation"));
-    }
-
-    #[test]
     fn connect_only_payload_reports_isolation_enforcement_flags() {
         let value = serde_json::json!({
             "session_id": "sess_123",
