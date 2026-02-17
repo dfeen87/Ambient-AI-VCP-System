@@ -1187,7 +1187,7 @@ fn extract_sample_count_from_prompt(prompt: &str) -> Option<u64> {
 
     sanitized
         .split(|c: char| !c.is_ascii_digit())
-        .find_map(|token| parse_u64_token(token))
+        .find_map(parse_u64_token)
         .map(|v| v.max(1))
 }
 
