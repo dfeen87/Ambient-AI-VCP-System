@@ -1661,26 +1661,43 @@
         }
 
         tbody.innerHTML = tasks.map(t => {
-            const cls = t.status === 'completed' ? 'badge-completed'
-                      : t.status === 'failed'    ? 'badge-failed'
-                      :                            'badge-pending';
             const projection = estimateTaskProgress(t);
+            const effectiveStatus = getEffectiveTaskStatus(t, projection);
+            const cls = effectiveStatus === 'completed' ? 'badge-completed'
+                      : effectiveStatus === 'failed'    ? 'badge-failed'
+                      :                                  'badge-pending';
             return `
                 <tr>
                     <td><span class="mono-dim">${t.task_id.substring(0, 12)}···</span></td>
                     <td>${t.task_type}</td>
-                    <td><span class="badge ${cls}">${t.status}</span></td>
+                    <td><span class="badge ${cls}">${effectiveStatus}</span></td>
                     <td class="mono-dim">${projection.progressLabel}<br><span title="${projection.etaTooltip}">${projection.etaLabel}</span></td>
                     <td class="mono-dim">${t.assigned_nodes.length} nodes</td>
                     <td class="mono-dim">${new Date(t.created_at).toLocaleString()}</td>
                     <td class="task-action-cell">
-                        ${t.status === 'completed'
+                        ${effectiveStatus === 'completed'
                             ? `<button type="button" class="btn btn-sm" data-task-view="${t.task_id}">View Result</button>`
                             : '<span class="mono-dim">—</span>'}
                     </td>
                 </tr>
             `;
         }).join('');
+    }
+
+    function getEffectiveTaskStatus(task, projection = null) {
+        if (task.status === 'completed' || task.status === 'failed') {
+            return task.status;
+        }
+
+        if (projection && projection.percent >= 100) {
+            return 'completed';
+        }
+
+        if (task.assigned_nodes.length > 0) {
+            return 'running';
+        }
+
+        return task.status;
     }
 
     function openTaskResultModal(task) {
@@ -1753,28 +1770,28 @@
         const createdMs = Date.parse(task.created_at) || nowMs;
         const elapsedSec = Math.max(0, (nowMs - createdMs) / 1000);
         const baselineSec = taskDurationByTypeSec[task.task_type] || 480;
-        const nodeBoost = Math.min(Math.max(task.assigned_nodes.length, 1), 8);
-        const projectedTotalSec = task.status === 'pending'
+        const effectiveStatus = getEffectiveTaskStatus(task);
+        const projectedTotalSec = effectiveStatus === 'pending'
             ? Math.max(20, baselineSec * 1.2)
-            : Math.max(30, baselineSec / (1 + (nodeBoost - 1) * 0.35));
+            : Math.max(30, baselineSec);
 
         let estimatedProgress = (elapsedSec / projectedTotalSec) * 100;
-        if (task.status === 'pending') {
+        if (effectiveStatus === 'pending') {
             estimatedProgress = Math.min(estimatedProgress, 85);
-        } else if (task.status === 'running') {
+        } else if (effectiveStatus === 'running') {
             estimatedProgress = Math.max(estimatedProgress, 8);
             estimatedProgress = Math.min(estimatedProgress, 99);
-        } else if (task.status === 'failed') {
+        } else if (effectiveStatus === 'failed') {
             estimatedProgress = 0;
-        } else if (task.status === 'completed') {
+        } else if (effectiveStatus === 'completed') {
             estimatedProgress = 100;
         }
 
         const previous = taskProgressMemory.get(task.task_id) || { percent: 0, sampledAtMs: nowMs };
-        const minIncrease = task.status === 'running'
+        const minIncrease = effectiveStatus === 'running'
             ? ((nowMs - previous.sampledAtMs) / 1000) * 0.2
             : 0;
-        const monotonicProgress = task.status === 'completed' || task.status === 'failed'
+        const monotonicProgress = effectiveStatus === 'completed' || effectiveStatus === 'failed'
             ? estimatedProgress
             : Math.max(previous.percent + minIncrease, estimatedProgress);
         const boundedProgress = Math.min(100, Math.max(0, monotonicProgress));
@@ -1784,16 +1801,18 @@
             sampledAtMs: nowMs,
         });
 
-        if (task.status === 'completed') {
+        if (effectiveStatus === 'completed') {
             return {
+                percent: 100,
                 progressLabel: '100%',
                 etaLabel: 'Completed',
                 etaTooltip: 'Task completed successfully.'
             };
         }
 
-        if (task.status === 'failed') {
+        if (effectiveStatus === 'failed') {
             return {
+                percent: 0,
                 progressLabel: '0%',
                 etaLabel: 'Failed',
                 etaTooltip: 'Task failed before completion.'
@@ -1806,9 +1825,10 @@
             : `ETA ${Math.ceil(remainingSec / 60)}m`;
 
         return {
+            percent: Math.round(boundedProgress),
             progressLabel: `${Math.round(boundedProgress)}%`,
             etaLabel,
-            etaTooltip: `AI projection: ~${Math.round(projectedTotalSec)}s total based on task type, elapsed time, and assigned node count.`
+            etaTooltip: `AI projection: ~${Math.round(projectedTotalSec)}s total based on task type and elapsed time.`
         };
     }
 
@@ -1889,7 +1909,10 @@
         fetch(`${apiBaseUrl}/api/v1/tasks`, { headers: getAuthHeaders() })
             .then((res) => res.ok ? res.json() : Promise.reject(new Error('Failed to fetch tasks')))
             .then((tasks) => {
-                const task = tasks.find((t) => t.task_id === taskId && t.status === 'completed');
+                const task = tasks.find((t) => {
+                    if (t.task_id !== taskId) return false;
+                    return getEffectiveTaskStatus(t, estimateTaskProgress(t)) === 'completed';
+                });
                 if (!task) {
                     showToast('Completed task result no longer available.', true);
                     return;
