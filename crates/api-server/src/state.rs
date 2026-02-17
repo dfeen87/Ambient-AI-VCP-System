@@ -171,6 +171,8 @@ impl AppState {
     pub async fn submit_task(&self, task: TaskSubmission, creator_id: Uuid) -> ApiResult<TaskInfo> {
         let task_id = Uuid::new_v4();
         let now = chrono::Utc::now();
+        let task_type = task.task_type.clone();
+        let task_inputs = task.inputs.clone();
 
         let task_registry_entry = task_type_registry_entry(&task.task_type)
             .ok_or_else(|| crate::error::ApiError::bad_request("Unsupported task_type"))?;
@@ -206,18 +208,72 @@ impl AppState {
         )
         .await?;
 
+        let assigned_nodes = self.get_assigned_nodes(task_id).await?;
+        let task_status = self.get_task_status(task_id).await?;
+
+        let (status, result) = if task_status == "running" {
+            let result = analyze_task_payload(&task_type, &task_inputs);
+
+            sqlx::query(
+                r#"
+                UPDATE tasks
+                SET status = 'completed', result = $1, updated_at = NOW()
+                WHERE task_id = $2
+                "#,
+            )
+            .bind(&result)
+            .bind(task_id)
+            .execute(&self.db)
+            .await?;
+
+            (TaskStatus::Completed, Some(result))
+        } else {
+            (parse_task_status(&task_status), None)
+        };
+
         let task_info = TaskInfo {
             task_id: task_id.to_string(),
-            task_type: task.task_type,
-            status: TaskStatus::Pending,
-            assigned_nodes: vec![],
+            task_type,
+            status,
+            assigned_nodes,
             created_at: now.to_rfc3339(),
             updated_at: now.to_rfc3339(),
-            result: None,
+            result,
             proof_id: None,
         };
 
         Ok(task_info)
+    }
+
+    async fn get_assigned_nodes(&self, task_id: Uuid) -> ApiResult<Vec<String>> {
+        let assigned_nodes = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT node_id
+            FROM task_assignments
+            WHERE task_id = $1
+            ORDER BY node_id ASC
+            "#,
+        )
+        .bind(task_id)
+        .fetch_all(&self.db)
+        .await?;
+
+        Ok(assigned_nodes)
+    }
+
+    async fn get_task_status(&self, task_id: Uuid) -> ApiResult<String> {
+        let status = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT status
+            FROM tasks
+            WHERE task_id = $1
+            "#,
+        )
+        .bind(task_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        Ok(status)
     }
 
     async fn assign_available_nodes_for_task(
@@ -870,6 +926,114 @@ Content-Type: text/plain; charset=\"utf-8\"
                 vec![]
             }
         }
+    }
+}
+
+fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_json::Value {
+    match inputs {
+        serde_json::Value::Object(map) => {
+            if let Some(prompt) = map.get("prompt").and_then(|v| v.as_str()) {
+                serde_json::json!({
+                    "task_type": task_type,
+                    "analysis_mode": "plain_text",
+                    "summary": summarize_prompt(prompt),
+                    "input_characters": prompt.chars().count(),
+                    "keyword_signals": extract_keywords(prompt),
+                    "recommendation": "Use JSON object inputs for richer structured outputs when possible."
+                })
+            } else {
+                serde_json::json!({
+                    "task_type": task_type,
+                    "analysis_mode": "json",
+                    "summary": "Structured JSON payload analyzed successfully.",
+                    "top_level_keys": map.keys().cloned().collect::<Vec<String>>(),
+                    "object_size": map.len(),
+                    "recommendation": "Include a `prompt` field if you want natural-language summarization."
+                })
+            }
+        }
+        serde_json::Value::Array(values) => serde_json::json!({
+            "task_type": task_type,
+            "analysis_mode": "json_array",
+            "summary": "Array payload analyzed successfully.",
+            "item_count": values.len(),
+            "preview": values.iter().take(3).cloned().collect::<Vec<serde_json::Value>>()
+        }),
+        serde_json::Value::String(value) => serde_json::json!({
+            "task_type": task_type,
+            "analysis_mode": "string",
+            "summary": summarize_prompt(value),
+            "input_characters": value.chars().count(),
+            "keyword_signals": extract_keywords(value)
+        }),
+        primitive => serde_json::json!({
+            "task_type": task_type,
+            "analysis_mode": "primitive",
+            "summary": "Primitive payload analyzed successfully.",
+            "value": primitive
+        }),
+    }
+}
+
+fn summarize_prompt(prompt: &str) -> String {
+    let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return "No text content provided for analysis.".to_string();
+    }
+
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+    let preview = words
+        .iter()
+        .take(18)
+        .copied()
+        .collect::<Vec<&str>>()
+        .join(" ");
+
+    if words.len() > 18 {
+        format!("{}... ({} words total)", preview, words.len())
+    } else {
+        format!("{} ({} words total)", preview, words.len())
+    }
+}
+
+fn extract_keywords(prompt: &str) -> Vec<String> {
+    use std::collections::BTreeSet;
+
+    let mut unique = BTreeSet::new();
+    for raw in prompt.split(|c: char| !c.is_alphanumeric()) {
+        let token = raw.to_lowercase();
+        if token.len() >= 4 {
+            unique.insert(token);
+        }
+    }
+
+    unique.into_iter().take(8).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn analyzes_plain_text_prompt_payload() {
+        let value =
+            serde_json::json!({"prompt": "Summarize this medical timeline and flag anomalies"});
+        let result = analyze_task_payload("computation", &value);
+
+        assert_eq!(result["analysis_mode"], "plain_text");
+        assert!(result["summary"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("words total"));
+    }
+
+    #[test]
+    fn analyzes_structured_json_payload() {
+        let value = serde_json::json!({"job": "quick-compute", "priority": "high"});
+        let result = analyze_task_payload("computation", &value);
+
+        assert_eq!(result["analysis_mode"], "json");
+        assert_eq!(result["object_size"], 2);
     }
 }
 
