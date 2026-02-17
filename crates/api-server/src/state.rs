@@ -1402,7 +1402,8 @@ impl AppState {
 }
 
 fn should_disconnect_assignments_on_completion(task_type: &str) -> bool {
-    task_type != "connect_only"
+    let _ = task_type;
+    true
 }
 
 fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_json::Value {
@@ -2474,5 +2475,18 @@ mod tests {
         assert_eq!(result["enforcement"]["gpu_execution_allowed"], false);
         assert_eq!(result["enforcement"]["proof_generation_allowed"], false);
         assert_eq!(result["enforcement"]["policy_validation_required"], true);
+    }
+
+    #[test]
+    fn task_completion_disconnects_assignments_for_all_task_types() {
+        assert!(should_disconnect_assignments_on_completion("connect_only"));
+        assert!(should_disconnect_assignments_on_completion("computation"));
+        assert!(should_disconnect_assignments_on_completion(
+            "federated_learning"
+        ));
+        assert!(should_disconnect_assignments_on_completion("zk_proof"));
+        assert!(should_disconnect_assignments_on_completion(
+            "wasm_execution"
+        ));
     }
 }
