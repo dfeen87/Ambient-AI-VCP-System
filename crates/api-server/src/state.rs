@@ -381,6 +381,9 @@ impl AppState {
             r#"
             SELECT n.node_id
             FROM nodes n
+            LEFT JOIN task_assignments ta
+              ON ta.node_id = n.node_id
+             AND ta.disconnected_at IS NULL
             WHERE n.deleted_at IS NULL
               AND n.status = 'online'
               AND (n.node_type = $1 OR n.node_type = 'any')
