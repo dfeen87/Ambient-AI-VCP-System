@@ -1895,6 +1895,15 @@
             };
         }
 
+        if (effectiveStatus === 'pending') {
+            return {
+                percent: Math.round(Math.max(0, Math.min(5, boundedProgress))),
+                progressLabel: `${Math.round(Math.max(0, Math.min(5, boundedProgress)))}%`,
+                etaLabel: 'Awaiting node',
+                etaTooltip: 'ETA starts once the task is connected to at least one node.'
+            };
+        }
+
         const remainingSec = Math.max(0, projectedTotalSec - elapsedSec);
         const etaLabel = remainingSec < 60
             ? `ETA ${Math.ceil(remainingSec)}s`
