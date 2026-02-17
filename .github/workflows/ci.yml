@@ -18,7 +18,7 @@ jobs:
       
       - name: Install WasmEdge
         run: |
-          curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | bash -s -- -v 0.13.5
+          curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | bash -s -- -v 0.13.4
           echo "$HOME/.wasmedge/bin" >> $GITHUB_PATH
           echo "WASMEDGE_DIR=$HOME/.wasmedge" >> $GITHUB_ENV
           echo "WASMEDGE_INCLUDE_DIR=$HOME/.wasmedge/include" >> $GITHUB_ENV
@@ -65,7 +65,7 @@ jobs:
       
       - name: Install WasmEdge
         run: |
-          curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | bash -s -- -v 0.13.5
+          curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | bash -s -- -v 0.13.4
           echo "$HOME/.wasmedge/bin" >> $GITHUB_PATH
           echo "WASMEDGE_DIR=$HOME/.wasmedge" >> $GITHUB_ENV
           echo "WASMEDGE_INCLUDE_DIR=$HOME/.wasmedge/include" >> $GITHUB_ENV
