@@ -266,7 +266,6 @@ mod tests {
         });
     }
 
-
     #[test]
     fn test_wasm_runtime_disabled_path_returns_runtime_error_for_existing_module() {
         with_allowed_roots(".", || {
