@@ -166,7 +166,13 @@ impl MeshCoordinator {
 
     /// Verify a task result proof
     pub fn verify_result(&self, result: &TaskResult, proof: &ZKProof) -> bool {
-        self.verifier.verify_proof(proof, &result.output)
+        if let Some(raw_proof) = &result.proof {
+            if raw_proof != &proof.proof_data {
+                return false;
+            }
+        }
+
+        self.verifier.verify_proof(proof, &proof.public_inputs)
     }
 
     /// Get cluster statistics
@@ -209,6 +215,7 @@ pub struct ClusterStats {
 mod tests {
     use super::*;
     use ambient_node::{NodeId, SafetyPolicy};
+    use zk_prover::{ExecutionTrace, ZKProver};
 
     #[test]
     fn test_coordinator_creation() {
@@ -241,5 +248,61 @@ mod tests {
 
         let stats = coordinator.cluster_stats();
         assert_eq!(stats.total_nodes, 1);
+    }
+
+    #[test]
+    fn test_verify_result_uses_proof_public_inputs() {
+        let coordinator =
+            MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
+
+        let prover = ZKProver::default();
+        let trace = ExecutionTrace {
+            module_hash: "wiring-test".to_string(),
+            function_name: "compute".to_string(),
+            inputs: vec![1, 2, 3],
+            outputs: vec![4, 5, 6],
+            execution_time_ms: 50,
+            gas_used: 500,
+            timestamp: 42,
+        };
+
+        let proof = prover.generate_proof(trace).unwrap();
+        let result = TaskResult {
+            task_id: "task-1".to_string(),
+            node_id: "node-1".to_string(),
+            output: vec![9, 9, 9],
+            execution_time_ms: 50,
+            proof: Some(proof.proof_data.clone()),
+        };
+
+        assert!(coordinator.verify_result(&result, &proof));
+    }
+
+    #[test]
+    fn test_verify_result_rejects_mismatched_embedded_proof() {
+        let coordinator =
+            MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
+
+        let prover = ZKProver::default();
+        let trace = ExecutionTrace {
+            module_hash: "wiring-test".to_string(),
+            function_name: "compute".to_string(),
+            inputs: vec![1, 2, 3],
+            outputs: vec![4, 5, 6],
+            execution_time_ms: 50,
+            gas_used: 500,
+            timestamp: 42,
+        };
+
+        let proof = prover.generate_proof(trace).unwrap();
+        let result = TaskResult {
+            task_id: "task-1".to_string(),
+            node_id: "node-1".to_string(),
+            output: vec![9, 9, 9],
+            execution_time_ms: 50,
+            proof: Some(vec![0, 1, 2]),
+        };
+
+        assert!(!coordinator.verify_result(&result, &proof));
     }
 }
