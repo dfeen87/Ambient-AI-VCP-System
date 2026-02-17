@@ -37,6 +37,7 @@ use state::AppState;
         submit_task,
         get_task,
         list_tasks,
+        delete_task,
         verify_proof,
         get_cluster_stats,
         register_user,
@@ -359,6 +360,44 @@ async fn list_tasks(
         .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
     let tasks = state.list_tasks(requester_id).await;
     Ok(Json(tasks))
+}
+
+/// Delete a task
+#[utoipa::path(
+    delete,
+    path = "/api/v1/tasks/{task_id}",
+    params(
+        ("task_id" = String, Path, description = "Task ID")
+    ),
+    responses(
+        (status = 200, description = "Task deleted successfully"),
+        (status = 404, description = "Task not found", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn delete_task(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Path(task_id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let requester_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+
+    let deleted = state.delete_task(&task_id, requester_id).await?;
+
+    if !deleted {
+        return Err(ApiError::not_found_or_forbidden(format!(
+            "Task {} not found",
+            task_id
+        )));
+    }
+
+    Ok(Json(serde_json::json!({
+        "message": "Task deleted successfully",
+        "task_id": task_id
+    })))
 }
 
 /// Verify a ZK proof
@@ -700,7 +739,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/nodes/:node_id/reject", post(reject_node))
         .route("/nodes/:node_id/heartbeat", put(update_heartbeat))
         .route("/tasks", post(submit_task).get(list_tasks))
-        .route("/tasks/:task_id", get(get_task))
+        .route("/tasks/:task_id", get(get_task).delete(delete_task))
         .route("/proofs/verify", post(verify_proof))
         .route("/cluster/stats", get(get_cluster_stats))
         .layer(axum_middleware::from_fn(

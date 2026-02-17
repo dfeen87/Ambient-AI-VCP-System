@@ -514,6 +514,28 @@ impl AppState {
         Ok(())
     }
 
+    /// Delete a task created by the requesting user
+    pub async fn delete_task(&self, task_id: &str, requester_id: Uuid) -> ApiResult<bool> {
+        let task_uuid = match Uuid::parse_str(task_id) {
+            Ok(id) => id,
+            Err(_) => return Ok(false),
+        };
+
+        let result = sqlx::query(
+            r#"
+            DELETE FROM tasks
+            WHERE task_id = $1
+              AND creator_id = $2
+            "#,
+        )
+        .bind(task_uuid)
+        .bind(requester_id)
+        .execute(&self.db)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     /// Get a specific task from the database
     pub async fn get_task(&self, task_id: &str, requester_id: Uuid) -> Option<TaskInfo> {
         let task_uuid = match Uuid::parse_str(task_id) {

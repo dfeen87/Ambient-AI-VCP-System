@@ -732,6 +732,23 @@
             font-size: 12px;
         }
 
+        .task-action-group {
+            display: inline-flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.18);
+            color: #fecaca;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.28);
+            box-shadow: 0 0 16px rgba(239, 68, 68, 0.35);
+        }
+
         .result-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -1756,9 +1773,12 @@
                     <td class="mono-dim">${nodeDisplay}</td>
                     <td class="mono-dim">${new Date(t.created_at).toLocaleString()}</td>
                     <td class="task-action-cell">
-                        ${effectiveStatus === 'completed'
-                            ? `<button type="button" class="btn btn-sm" data-task-view="${t.task_id}">View Result</button>`
-                            : '<span class="mono-dim">—</span>'}
+                        <div class="task-action-group">
+                            <button type="button" class="btn btn-sm btn-danger" data-task-clear="${t.task_id}" data-task-status="${effectiveStatus}" data-task-nodes="${t.assigned_nodes.length}">Clear</button>
+                            ${effectiveStatus === 'completed'
+                                ? `<button type="button" class="btn btn-sm" data-task-view="${t.task_id}">View Result</button>`
+                                : ''}
+                        </div>
                     </td>
                 </tr>
             `;
@@ -1995,7 +2015,53 @@
         }
     });
 
+    async function handleClearTask(taskId, status, assignedNodes, buttonEl) {
+        const isPending = status === 'pending';
+
+        if (!isPending) {
+            const needsConfirm = assignedNodes > 0
+                ? `Clear this task and disconnect ${assignedNodes} assigned node${assignedNodes === 1 ? '' : 's'}?`
+                : 'Clear this task from the table?';
+            if (!window.confirm(needsConfirm)) {
+                return;
+            }
+        }
+
+        const originalLabel = buttonEl.textContent;
+        buttonEl.disabled = true;
+        buttonEl.textContent = 'Clearing...';
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/v1/tasks/${taskId}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.message || 'Failed to clear task.');
+            }
+
+            showToast('Task cleared successfully.');
+            fetchData();
+        } catch (err) {
+            showToast(err.message || 'Unable to clear task.', true);
+        } finally {
+            buttonEl.disabled = false;
+            buttonEl.textContent = originalLabel;
+        }
+    }
+
     document.getElementById('tasks-table').addEventListener('click', (e) => {
+        const clearTrigger = e.target.closest('[data-task-clear]');
+        if (clearTrigger) {
+            const taskId = clearTrigger.getAttribute('data-task-clear');
+            const status = clearTrigger.getAttribute('data-task-status') || 'pending';
+            const assignedNodes = parseInt(clearTrigger.getAttribute('data-task-nodes') || '0', 10);
+            handleClearTask(taskId, status, assignedNodes, clearTrigger);
+            return;
+        }
+
         const trigger = e.target.closest('[data-task-view]');
         if (!trigger) return;
 
