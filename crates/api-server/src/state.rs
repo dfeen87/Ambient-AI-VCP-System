@@ -14,15 +14,22 @@ pub struct AppState {
 }
 
 impl AppState {
-    fn parse_max_active_task_attachments_per_node(value: Option<&str>) -> i64 {
+    fn parse_max_concurrent_tasks_per_node(value: Option<&str>) -> i64 {
         value
             .and_then(|raw| raw.parse::<i64>().ok())
             .filter(|parsed| *parsed > 0)
             .unwrap_or(50)
     }
 
+    fn parse_max_active_task_attachments_per_node(value: Option<&str>) -> i64 {
+        Self::parse_max_concurrent_tasks_per_node(value)
+    }
+
     fn max_active_task_attachments_per_node() -> i64 {
-        let configured = std::env::var("MAX_ACTIVE_TASK_ATTACHMENTS_PER_NODE").ok();
+        let configured = std::env::var("MAX_CONCURRENT_TASKS_PER_NODE")
+            .ok()
+            .or_else(|| std::env::var("MAX_ACTIVE_TASK_ATTACHMENTS_PER_NODE").ok());
+
         Self::parse_max_active_task_attachments_per_node(configured.as_deref())
     }
 
@@ -340,18 +347,25 @@ impl AppState {
         min_nodes: u32,
         require_gpu: bool,
     ) -> ApiResult<()> {
+        let max_attachments = Self::max_active_task_attachments_per_node();
+
         let node_ids = sqlx::query_scalar::<_, String>(
             r#"
-            SELECT node_id
-            FROM nodes
-            WHERE deleted_at IS NULL
-              AND status = 'online'
-              AND (node_type = $1 OR node_type = 'any')
-              AND cpu_cores >= $2
-              AND memory_gb >= $3
-              AND bandwidth_mbps >= $4
-              AND ($5 = FALSE OR gpu_available = TRUE)
-            ORDER BY registered_at ASC
+            SELECT n.node_id
+            FROM nodes n
+            LEFT JOIN task_assignments ta
+              ON ta.node_id = n.node_id
+             AND ta.disconnected_at IS NULL
+            WHERE n.deleted_at IS NULL
+              AND n.status = 'online'
+              AND (n.node_type = $1 OR n.node_type = 'any')
+              AND n.cpu_cores >= $2
+              AND n.memory_gb >= $3
+              AND n.bandwidth_mbps >= $4
+              AND ($5 = FALSE OR n.gpu_available = TRUE)
+            GROUP BY n.node_id, n.registered_at
+            HAVING COUNT(ta.task_id) < $6
+            ORDER BY n.registered_at ASC
             "#,
         )
         .bind(task_registry_entry.preferred_node_type)
@@ -359,6 +373,7 @@ impl AppState {
         .bind(task_registry_entry.minimum_capabilities.memory_gb)
         .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
         .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
+        .bind(max_attachments)
         .fetch_all(&self.db)
         .await?;
 
