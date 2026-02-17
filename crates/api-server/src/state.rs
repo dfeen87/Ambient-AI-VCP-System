@@ -3,6 +3,7 @@
 /// This module provides CRUD operations for nodes and tasks using a PostgreSQL database.
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
+use federated_learning::{FederatedAggregator, LayerWeights, ModelWeights, PrivacyBudget};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -1303,15 +1304,149 @@ fn analyze_federated_learning_payload(
         .and_then(|v| v.as_u64())
         .or_else(|| map.get("num_rounds").and_then(|v| v.as_u64()));
 
+    let aggregation_strategy = map
+        .get("aggregation_strategy")
+        .or_else(|| map.get("aggregation"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("fedavg")
+        .to_lowercase();
+
+    let privacy_budget = map
+        .get("privacy_budget")
+        .and_then(parse_privacy_budget)
+        .map(|budget| {
+            serde_json::json!({
+                "epsilon": budget.epsilon,
+                "delta": budget.delta
+            })
+        });
+
+    let aggregation_preview = if aggregation_strategy == "fedavg" {
+        aggregate_fedavg_preview(map)
+    } else {
+        None
+    };
+
+    let wiring_status = if aggregation_strategy != "fedavg" {
+        "unsupported_strategy"
+    } else if map.contains_key("global_model") && map.contains_key("client_updates") {
+        if aggregation_preview.is_some() {
+            "wired"
+        } else {
+            "invalid_updates"
+        }
+    } else {
+        "awaiting_client_updates"
+    };
+
     serde_json::json!({
         "task_type": "federated_learning",
         "analysis_mode": "federated_learning",
         "summary": "Federated learning payload analyzed successfully.",
         "participant_count": participant_count,
         "round_count": round_count,
+        "aggregation_strategy": aggregation_strategy,
+        "wiring_status": wiring_status,
+        "privacy_budget": privacy_budget,
+        "aggregation_preview": aggregation_preview,
         "has_model_config": map.contains_key("model") || map.contains_key("model_config"),
         "has_aggregation_strategy": map.contains_key("aggregation") || map.contains_key("aggregation_strategy"),
         "top_level_keys": map.keys().cloned().collect::<Vec<String>>()
+    })
+}
+
+fn parse_privacy_budget(value: &serde_json::Value) -> Option<PrivacyBudget> {
+    let map = value.as_object()?;
+    let epsilon = map.get("epsilon")?.as_f64()?;
+    let delta = map.get("delta")?.as_f64()?;
+
+    if epsilon <= 0.0 || delta <= 0.0 {
+        return None;
+    }
+
+    Some(PrivacyBudget::new(epsilon, delta))
+}
+
+fn aggregate_fedavg_preview(
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let global_model = parse_model_weights(map.get("global_model")?)?;
+    let updates = map.get("client_updates")?.as_array()?;
+
+    let mut aggregator = FederatedAggregator::new(global_model);
+
+    for update in updates {
+        let update_map = update.as_object()?;
+        let client_id = update_map.get("client_id")?.as_str()?.to_string();
+        let num_samples = update_map
+            .get("num_samples")
+            .and_then(|value| value.as_u64())? as usize;
+        if num_samples == 0 {
+            return None;
+        }
+
+        let model = parse_model_weights(update_map.get("model")?)?;
+        aggregator
+            .add_client_update(client_id, model, num_samples)
+            .ok()?;
+    }
+
+    let aggregated_model = aggregator.aggregate().ok()?;
+
+    Some(serde_json::json!({
+        "round": aggregator.current_round(),
+        "version": aggregated_model.version,
+        "num_layers": aggregated_model.layers.len(),
+        "num_parameters": aggregated_model.num_parameters(),
+        "layers": aggregated_model.layers.iter().map(|layer| {
+            serde_json::json!({
+                "name": layer.name,
+                "shape": layer.shape,
+                "weights": layer.weights
+            })
+        }).collect::<Vec<_>>()
+    }))
+}
+
+fn parse_model_weights(value: &serde_json::Value) -> Option<ModelWeights> {
+    let map = value.as_object()?;
+    let layers = map.get("layers")?.as_array()?;
+
+    let parsed_layers = layers
+        .iter()
+        .map(parse_layer_weights)
+        .collect::<Option<Vec<_>>>()?;
+
+    let version = map.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
+
+    Some(ModelWeights {
+        layers: parsed_layers,
+        version,
+    })
+}
+
+fn parse_layer_weights(value: &serde_json::Value) -> Option<LayerWeights> {
+    let map = value.as_object()?;
+    let name = map.get("name")?.as_str()?.to_string();
+
+    let weights = map
+        .get("weights")?
+        .as_array()?
+        .iter()
+        .map(|weight| weight.as_f64())
+        .collect::<Option<Vec<_>>>()?;
+
+    let shape = map
+        .get("shape")?
+        .as_array()?
+        .iter()
+        .map(|dimension| dimension.as_u64().map(|value| value as usize))
+        .collect::<Option<Vec<_>>>()?;
+
+    Some(LayerWeights {
+        name,
+        weights,
+        shape,
     })
 }
 
@@ -1760,6 +1895,61 @@ mod tests {
 
         assert_eq!(result["analysis_mode"], "federated_learning");
         assert_eq!(result["participant_count"], 12);
+        assert_eq!(result["aggregation_strategy"], "fedavg");
+        assert_eq!(result["wiring_status"], "awaiting_client_updates");
+    }
+
+    #[test]
+    fn federated_learning_wiring_aggregates_client_updates() {
+        let value = serde_json::json!({
+            "participant_count": 2,
+            "rounds": 1,
+            "aggregation_strategy": "fedavg",
+            "privacy_budget": {
+                "epsilon": 1.0,
+                "delta": 1e-5
+            },
+            "global_model": {
+                "version": 0,
+                "layers": [
+                    {"name": "layer1", "weights": [1.0, 2.0], "shape": [2]}
+                ]
+            },
+            "client_updates": [
+                {
+                    "client_id": "client-1",
+                    "num_samples": 2,
+                    "model": {
+                        "version": 0,
+                        "layers": [
+                            {"name": "layer1", "weights": [2.0, 4.0], "shape": [2]}
+                        ]
+                    }
+                },
+                {
+                    "client_id": "client-2",
+                    "num_samples": 1,
+                    "model": {
+                        "version": 0,
+                        "layers": [
+                            {"name": "layer1", "weights": [5.0, 7.0], "shape": [2]}
+                        ]
+                    }
+                }
+            ]
+        });
+
+        let result = analyze_task_payload("federated_learning", &value);
+
+        assert_eq!(result["wiring_status"], "wired");
+        assert_eq!(result["privacy_budget"]["epsilon"], 1.0);
+        assert_eq!(result["privacy_budget"]["delta"], 1e-5);
+
+        let weights = result["aggregation_preview"]["layers"][0]["weights"]
+            .as_array()
+            .expect("weights to be present");
+        assert_eq!(weights[0], 3.0);
+        assert_eq!(weights[1], 5.0);
     }
 
     #[test]
