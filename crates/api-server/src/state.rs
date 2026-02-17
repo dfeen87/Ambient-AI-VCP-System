@@ -33,6 +33,18 @@ impl AppState {
         Self::parse_max_active_task_attachments_per_node(configured.as_deref())
     }
 
+    fn parse_node_heartbeat_stale_timeout_seconds(value: Option<&str>) -> i64 {
+        value
+            .and_then(|raw| raw.parse::<i64>().ok())
+            .filter(|parsed| *parsed > 0)
+            .unwrap_or(90)
+    }
+
+    fn node_heartbeat_stale_timeout_seconds() -> i64 {
+        let configured = std::env::var("NODE_HEARTBEAT_STALE_TIMEOUT_SECONDS").ok();
+        Self::parse_node_heartbeat_stale_timeout_seconds(configured.as_deref())
+    }
+
     /// Create new application state with database pool
     pub fn new(db: PgPool) -> Self {
         Self { db }
@@ -376,6 +388,7 @@ impl AppState {
         }
 
         let additional_nodes_needed = min_nodes as i64 - assigned_nodes;
+        let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
 
         let node_ids = sqlx::query_scalar::<_, String>(
             r#"
@@ -386,6 +399,7 @@ impl AppState {
              AND ta.disconnected_at IS NULL
             WHERE n.deleted_at IS NULL
               AND n.status = 'online'
+              AND n.last_heartbeat >= NOW() - ($8::bigint * INTERVAL '1 second')
               AND (n.node_type = $1 OR n.node_type = 'any')
               AND n.cpu_cores >= $2
               AND n.memory_gb >= $3
@@ -401,7 +415,7 @@ impl AppState {
             GROUP BY n.node_id, n.registered_at
             HAVING COUNT(ta.task_id) < $7
             ORDER BY n.registered_at ASC
-            LIMIT $8
+            LIMIT $9
             "#,
         )
         .bind(task_registry_entry.preferred_node_type)
@@ -411,6 +425,7 @@ impl AppState {
         .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
         .bind(task_id)
         .bind(max_attachments)
+        .bind(heartbeat_stale_timeout_seconds)
         .bind(additional_nodes_needed)
         .fetch_all(&self.db)
         .await?;
@@ -502,6 +517,8 @@ impl AppState {
                 continue;
             };
 
+            let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
+
             let node_is_eligible = sqlx::query_scalar::<_, bool>(
                 r#"
                 SELECT EXISTS (
@@ -510,6 +527,7 @@ impl AppState {
                     WHERE n.node_id = $1
                       AND n.deleted_at IS NULL
                       AND n.status = 'online'
+                      AND n.last_heartbeat >= NOW() - ($7::bigint * INTERVAL '1 second')
                       AND (n.node_type = $2 OR n.node_type = 'any')
                       AND n.cpu_cores >= $3
                       AND n.memory_gb >= $4
@@ -524,6 +542,7 @@ impl AppState {
             .bind(task_registry_entry.minimum_capabilities.memory_gb)
             .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
             .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
+            .bind(heartbeat_stale_timeout_seconds)
             .fetch_one(&self.db)
             .await?;
 
@@ -1938,6 +1957,31 @@ mod tests {
         assert_eq!(
             AppState::parse_max_active_task_attachments_per_node(None),
             50
+        );
+    }
+
+    #[test]
+    fn parses_heartbeat_stale_timeout_seconds() {
+        assert_eq!(
+            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("45")),
+            45
+        );
+
+        assert_eq!(
+            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("0")),
+            90
+        );
+        assert_eq!(
+            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("-10")),
+            90
+        );
+        assert_eq!(
+            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("bogus")),
+            90
+        );
+        assert_eq!(
+            AppState::parse_node_heartbeat_stale_timeout_seconds(None),
+            90
         );
     }
 
