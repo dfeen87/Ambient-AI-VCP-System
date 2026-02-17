@@ -35,7 +35,7 @@ pub async fn security_headers_middleware(request: Request<Body>, next: Next) -> 
     // Content-Security-Policy
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
-        "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:"
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:"
             .parse()
             .unwrap(),
     );
@@ -45,9 +45,38 @@ pub async fn security_headers_middleware(request: Request<Body>, next: Next) -> 
 
 #[cfg(test)]
 mod tests {
+    use super::security_headers_middleware;
+    use axum::{
+        body::Body,
+        http::{header, Request, StatusCode},
+        middleware,
+        routing::get,
+        Router,
+    };
+    use tower::ServiceExt;
+
     #[tokio::test]
     async fn test_security_headers_added() {
-        // Middleware tests require actual server context
-        // Integration tests should cover middleware behavior
+        let app = Router::new()
+            .route("/", get(|| async { "ok" }))
+            .layer(middleware::from_fn(security_headers_middleware));
+
+        let response = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let csp = response
+            .headers()
+            .get(header::CONTENT_SECURITY_POLICY)
+            .expect("CSP header missing")
+            .to_str()
+            .expect("CSP should be valid UTF-8");
+
+        assert!(csp.contains("script-src 'self'"));
+        assert!(!csp.contains("unsafe-inline"));
+        assert!(!csp.contains("https://unpkg.com"));
     }
 }
