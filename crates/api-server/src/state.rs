@@ -298,12 +298,17 @@ impl AppState {
         .execute(&mut *tx)
         .await?;
 
-        self.disconnect_task_assignments(task_id, &mut tx).await?;
+        let should_disconnect_assignments = should_disconnect_assignments_on_completion(&task_type);
+        if should_disconnect_assignments {
+            self.disconnect_task_assignments(task_id, &mut tx).await?;
+        }
 
         tx.commit().await?;
 
-        for node_id in assigned_nodes_for_completed_task {
-            self.assign_pending_tasks_for_node(&node_id).await?;
+        if should_disconnect_assignments {
+            for node_id in assigned_nodes_for_completed_task {
+                self.assign_pending_tasks_for_node(&node_id).await?;
+            }
         }
 
         Ok(())
@@ -620,6 +625,18 @@ impl AppState {
             Err(_) => return Ok(false),
         };
 
+        let assigned_nodes = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT node_id
+            FROM task_assignments
+            WHERE task_id = $1
+              AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(task_uuid)
+        .fetch_all(&self.db)
+        .await?;
+
         let result = sqlx::query(
             r#"
             DELETE FROM tasks
@@ -632,7 +649,14 @@ impl AppState {
         .execute(&self.db)
         .await?;
 
-        Ok(result.rows_affected() > 0)
+        if result.rows_affected() > 0 {
+            for node_id in assigned_nodes {
+                self.assign_pending_tasks_for_node(&node_id).await?;
+            }
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     /// Get a specific task from the database
@@ -1142,6 +1166,10 @@ impl AppState {
             }
         }
     }
+}
+
+fn should_disconnect_assignments_on_completion(task_type: &str) -> bool {
+    task_type != "connect_only"
 }
 
 fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_json::Value {
