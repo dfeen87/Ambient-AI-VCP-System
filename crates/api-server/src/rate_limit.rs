@@ -221,6 +221,14 @@ pub async fn rate_limit_middleware(
     let tier = RateLimitTier::from_path(request.uri().path());
     let ip = extract_client_ip(&request)?;
 
+    // Local node processes can legitimately re-register frequently during startup,
+    // integration testing, or rapid restarts. Avoid blocking loopback node
+    // registration traffic while preserving limits for all non-loopback clients.
+    if tier == RateLimitTier::NodeRegistration && ip.is_loopback() {
+        debug!("Skipping node registration rate limit for loopback IP: {}", ip);
+        return Ok(next.run(request).await);
+    }
+
     static GLOBAL_LIMITER: tokio::sync::OnceCell<Arc<RateLimiter>> =
         tokio::sync::OnceCell::const_new();
     let rate_limiter = GLOBAL_LIMITER
