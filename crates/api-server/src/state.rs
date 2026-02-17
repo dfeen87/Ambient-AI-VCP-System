@@ -228,18 +228,17 @@ impl AppState {
 
             let mut tx = self.db.begin().await?;
 
-            let assigned_nodes_for_completed_task =
-                sqlx::query_scalar::<_, String>(
-                    r#"
+            let assigned_nodes_for_completed_task = sqlx::query_scalar::<_, String>(
+                r#"
                     SELECT node_id
                     FROM task_assignments
                     WHERE task_id = $1
                       AND disconnected_at IS NULL
                     "#,
-                )
-                .bind(task_id)
-                .fetch_all(&mut *tx)
-                .await?;
+            )
+            .bind(task_id)
+            .fetch_all(&mut *tx)
+            .await?;
 
             sqlx::query(
                 r#"
