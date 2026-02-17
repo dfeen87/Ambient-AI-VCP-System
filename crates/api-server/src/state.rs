@@ -1026,8 +1026,7 @@ fn evaluate_arithmetic_expression(expression: &str) -> Option<f64> {
     let normalized = expression
         .trim()
         .trim_end_matches(|c: char| c.is_ascii_punctuation() && c != '.')
-        .replace('X', "*")
-        .replace('x', "*")
+        .replace(['X', 'x'], "*")
         .replace('÷', "/");
 
     let mut numbers = Vec::new();
@@ -1132,6 +1131,17 @@ fn extract_keywords(prompt: &str) -> Vec<String> {
     unique.into_iter().take(8).collect()
 }
 
+/// Helper function to parse task status from string
+fn parse_task_status(status: &str) -> TaskStatus {
+    match status.to_lowercase().as_str() {
+        "pending" => TaskStatus::Pending,
+        "running" => TaskStatus::Running,
+        "completed" => TaskStatus::Completed,
+        "failed" => TaskStatus::Failed,
+        _ => TaskStatus::Pending,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1173,16 +1183,5 @@ mod tests {
         let result = analyze_task_payload("computation", &value);
 
         assert_eq!(result["analysis_mode"], "json");
-    }
-}
-
-/// Helper function to parse task status from string
-fn parse_task_status(status: &str) -> TaskStatus {
-    match status.to_lowercase().as_str() {
-        "pending" => TaskStatus::Pending,
-        "running" => TaskStatus::Running,
-        "completed" => TaskStatus::Completed,
-        "failed" => TaskStatus::Failed,
-        _ => TaskStatus::Pending,
     }
 }
