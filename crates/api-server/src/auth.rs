@@ -543,7 +543,7 @@ mod tests {
         let _guard = env_test_lock().lock().unwrap();
         let _refresh = EnvVarGuard::set(
             "REFRESH_TOKEN_PEPPER",
-            "test-pepper-test-pepper-test-pepper!",
+            "StrongRefreshPepperValue1234567890ABCD!",
         );
         let _environment = EnvVarGuard::set("ENVIRONMENT", "development");
 
