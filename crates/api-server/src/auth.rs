@@ -11,6 +11,7 @@ use hmac::{Hmac, Mac};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::sync::Once;
 use utoipa::ToSchema;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -18,6 +19,24 @@ type HmacSha256 = Hmac<Sha256>;
 const DEV_REFRESH_TOKEN_PEPPER: &str = "dev-refresh-pepper-change-me";
 const DEV_API_KEY_PEPPER: &str = "dev-api-key-pepper-change-me";
 const MIN_PEPPER_LENGTH: usize = 32;
+static REFRESH_TOKEN_PEPPER_WARNING: Once = Once::new();
+static API_KEY_PEPPER_WARNING: Once = Once::new();
+
+fn warn_missing_pepper_once(label: &str, primary_var: &str) {
+    let warning = || {
+        tracing::warn!(
+            "{} is not configured; using development-only fallback pepper. Set {} (or AUTH_HASH_PEPPER) to silence this warning.",
+            label,
+            primary_var
+        );
+    };
+
+    match label {
+        "REFRESH_TOKEN_PEPPER" => REFRESH_TOKEN_PEPPER_WARNING.call_once(warning),
+        "API_KEY_PEPPER" => API_KEY_PEPPER_WARNING.call_once(warning),
+        _ => warning(),
+    }
+}
 
 fn is_production_environment() -> bool {
     std::env::var("ENVIRONMENT")
@@ -58,11 +77,7 @@ fn resolve_hash_pepper(primary_var: &str, dev_default: &str, label: &str) -> Str
         );
     }
 
-    tracing::warn!(
-        "{} is not configured; using development-only fallback pepper. Set {} (or AUTH_HASH_PEPPER) to silence this warning.",
-        label,
-        primary_var
-    );
+    warn_missing_pepper_once(label, primary_var);
     dev_default.to_string()
 }
 
