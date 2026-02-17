@@ -146,6 +146,35 @@
             text-overflow: ellipsis;
         }
 
+        .connection-indicator {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            font-size: 12px;
+            font-weight: 700;
+            background: rgba(148, 163, 184, 0.14);
+            color: var(--text-muted);
+            transition: all 0.2s ease;
+        }
+
+        .connection-indicator.active {
+            border-color: rgba(45, 212, 191, 0.55);
+            color: var(--accent);
+            box-shadow: 0 0 10px rgba(45, 212, 191, 0.35);
+            background: rgba(45, 212, 191, 0.16);
+        }
+
+        .connection-endpoint-label {
+            max-width: 520px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .connected-endpoint-badge strong {
             color: var(--accent);
             font-weight: 500;
@@ -863,7 +892,11 @@
                 <input type="text" id="api-url" value="https://ambient-ai-vcp-system.onrender.com" spellcheck="false">
                 <button type="button" id="connect-btn" onclick="updateApiUrl()" class="btn">Connect</button>
             </div>
-            <div class="connected-endpoint-badge" id="connected-endpoint-badge">Connected to: <strong id="connected-endpoint-text">https://ambient-ai-vcp-system.onrender.com</strong></div>
+            <div class="connected-endpoint-badge" id="connected-endpoint-badge" title="https://ambient-ai-vcp-system.onrender.com">
+                <span class="connection-indicator" id="connection-x" aria-label="Disconnected">✕</span>
+                <span class="connection-indicator" id="connection-check" aria-label="Connected">✓</span>
+                <strong class="connection-endpoint-label" id="connected-endpoint-text">https://ambient-ai-vcp-system.onrender.com</strong>
+            </div>
         </div>
         <div class="header-right">
             <div class="live-badge">
@@ -1408,10 +1441,25 @@
 
     function updateConnectedEndpointBadge(url) {
         const badgeText = document.getElementById('connected-endpoint-text');
+        const badge = document.getElementById('connected-endpoint-badge');
         if (badgeText) {
             badgeText.textContent = url;
             badgeText.title = url;
         }
+        if (badge) {
+            badge.title = url;
+        }
+    }
+
+    function setConnectionStatus(isConnected) {
+        const xIndicator = document.getElementById('connection-x');
+        const checkIndicator = document.getElementById('connection-check');
+        if (!xIndicator || !checkIndicator) {
+            return;
+        }
+
+        xIndicator.classList.toggle('active', !isConnected);
+        checkIndicator.classList.toggle('active', isConnected);
     }
 
     async function updateApiUrl() {
@@ -1441,6 +1489,7 @@
             inputEl.value = candidateUrl;
             localStorage.setItem('vcp_api_base_url', candidateUrl);
             updateConnectedEndpointBadge(candidateUrl);
+            setConnectionStatus(true);
             showToast(`Connected to ${candidateUrl}`);
 
             if (authToken) {
@@ -1448,6 +1497,7 @@
             }
         } catch (err) {
             apiBaseUrl = previousUrl;
+            setConnectionStatus(false);
             showToast(`Unable to connect: ${err.message}`, true);
         } finally {
             connectBtn.disabled = false;
@@ -1765,12 +1815,14 @@
             }
 
             errorEl.style.display = 'none';
+            setConnectionStatus(true);
             document.getElementById('last-updated').textContent =
                 'Updated ' + new Date().toLocaleTimeString();
 
         } catch (err) {
             console.error(err);
             errorEl.style.display = 'block';
+            setConnectionStatus(false);
         }
     }
 
@@ -2284,6 +2336,7 @@
     // Initialize on page load
     document.getElementById('api-url').value = apiBaseUrl;
     updateConnectedEndpointBadge(apiBaseUrl);
+    setConnectionStatus(false);
     document.getElementById('api-url').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
