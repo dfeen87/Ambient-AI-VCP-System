@@ -215,6 +215,25 @@ fn canonicalize_module_path(path: &str) -> Result<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    fn with_allowed_roots<T>(roots: &str, test: impl FnOnce() -> T) -> T {
+        let _guard = env_lock();
+        let previous = std::env::var("WASM_ALLOWED_ROOTS").ok();
+        std::env::set_var("WASM_ALLOWED_ROOTS", roots);
+        let output = test();
+        if let Some(value) = previous {
+            std::env::set_var("WASM_ALLOWED_ROOTS", value);
+        } else {
+            std::env::remove_var("WASM_ALLOWED_ROOTS");
+        }
+        output
+    }
 
     #[test]
     fn test_engine_creation() {
@@ -225,31 +244,33 @@ mod tests {
 
     #[test]
     fn test_module_not_found() {
-        std::env::set_var("WASM_ALLOWED_ROOTS", ".");
-        let limits = SandboxLimits::default();
-        let engine = WasmEngine::new(WasmRuntime::WasmEdge, limits);
+        with_allowed_roots(".", || {
+            let limits = SandboxLimits::default();
+            let engine = WasmEngine::new(WasmRuntime::WasmEdge, limits);
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(async {
-            engine
-                .execute(WasmCall {
-                    module_path: "nonexistent.wasm".to_string(),
-                    function_name: "test".to_string(),
-                    inputs: vec![],
-                })
-                .await
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let result = rt.block_on(async {
+                engine
+                    .execute(WasmCall {
+                        module_path: "nonexistent.wasm".to_string(),
+                        function_name: "test".to_string(),
+                        inputs: vec![],
+                    })
+                    .await
+            });
+
+            assert!(result.is_ok());
+            let wasm_result = result.unwrap();
+            assert!(!wasm_result.success);
+            assert!(wasm_result.error.is_some());
         });
-
-        assert!(result.is_ok());
-        let wasm_result = result.unwrap();
-        assert!(!wasm_result.success);
-        assert!(wasm_result.error.is_some());
     }
 
     #[test]
     fn test_module_path_rejected_outside_roots() {
-        std::env::set_var("WASM_ALLOWED_ROOTS", "./wasm-modules");
-        let err = canonicalize_module_path("Cargo.toml").unwrap_err();
-        assert!(err.to_string().contains("outside allowed roots"));
+        with_allowed_roots("./wasm-modules", || {
+            let err = canonicalize_module_path("Cargo.toml").unwrap_err();
+            assert!(err.to_string().contains("outside allowed roots"));
+        });
     }
 }
