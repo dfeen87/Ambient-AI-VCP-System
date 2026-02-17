@@ -4,10 +4,12 @@ use uuid::Uuid;
 pub mod health;
 pub mod reputation;
 pub mod telemetry;
+pub mod offline;
 
 pub use health::*;
 pub use reputation::*;
 pub use telemetry::*;
+pub use offline::*;
 
 /// Unique identifier for an ambient node
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
