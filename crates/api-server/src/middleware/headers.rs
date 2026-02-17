@@ -53,7 +53,7 @@ mod tests {
         routing::get,
         Router,
     };
-    use tower::ServiceExt;
+    use tower::util::ServiceExt;
 
     #[tokio::test]
     async fn test_security_headers_added() {
@@ -61,8 +61,10 @@ mod tests {
             .route("/", get(|| async { "ok" }))
             .layer(middleware::from_fn(security_headers_middleware));
 
+        let request = Request::builder().uri("/").body(Body::empty()).unwrap();
+
         let response = app
-            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .oneshot(request)
             .await
             .unwrap();
 
