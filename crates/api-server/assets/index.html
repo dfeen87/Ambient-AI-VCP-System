@@ -1458,15 +1458,21 @@
         }
 
         const parsedInputs = parseTaskInputsFlexible(inputsRaw);
+        const strictJsonState = classifyJsonInput(inputsRaw);
+
         if (parsedInputs === null) {
             inputsHint.textContent = 'Inputs are required. Add JSON or plain text before submitting.';
             inputsHint.className = 'inline-hint error';
             isValid = false;
-        } else if (looksLikeJson(inputsRaw)) {
+        } else if (strictJsonState === 'valid') {
             inputsHint.textContent = 'Valid JSON payload.';
             inputsHint.className = 'inline-hint success';
+        } else if (strictJsonState === 'invalid') {
+            inputsHint.textContent = 'JSON-looking input is invalid. Fix the JSON syntax or use plain text (it will be wrapped as {"prompt":"..."}).';
+            inputsHint.className = 'inline-hint error';
+            isValid = false;
         } else {
-            inputsHint.textContent = 'Plain text detected — it will be submitted as {"prompt": "..."}.';
+            inputsHint.textContent = 'Plain text detected — it will be submitted as {"prompt": "..."}. JSON is optional.';
             inputsHint.className = 'inline-hint success';
         }
 
@@ -1475,6 +1481,20 @@
 
     function looksLikeJson(raw) {
         return /^[\[{]/.test(raw.trim());
+    }
+
+    function classifyJsonInput(rawInputs) {
+        const trimmed = (rawInputs || '').trim();
+        if (!trimmed || !looksLikeJson(trimmed)) {
+            return 'not-json';
+        }
+
+        try {
+            JSON.parse(trimmed);
+            return 'valid';
+        } catch (_err) {
+            return 'invalid';
+        }
     }
 
     function parseTaskInputsFlexible(rawInputs) {
