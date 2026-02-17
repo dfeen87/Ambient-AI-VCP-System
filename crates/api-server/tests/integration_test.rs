@@ -337,6 +337,95 @@ async fn test_pending_task_captures_newly_registered_node() {
 }
 
 #[tokio::test]
+async fn test_completed_task_marks_assignments_disconnected() {
+    let db_url = match std::env::var("TEST_DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("Skipping test_completed_task_marks_assignments_disconnected — no TEST_DATABASE_URL set");
+            return;
+        }
+    };
+
+    let pool = PgPool::connect(&db_url)
+        .await
+        .expect("connect to postgres for integration test");
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations should apply successfully for integration test");
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables before integration test");
+
+    let state = AppState::new(pool.clone());
+    let node_id = format!("complete-disconnect-node-{}", Uuid::new_v4());
+
+    state
+        .register_node(
+            NodeRegistration {
+                node_id: node_id.clone(),
+                region: "us-east".to_string(),
+                node_type: "compute".to_string(),
+                capabilities: NodeCapabilities {
+                    bandwidth_mbps: 500.0,
+                    cpu_cores: 12,
+                    memory_gb: 32.0,
+                    gpu_available: false,
+                },
+            },
+            Uuid::new_v4(),
+        )
+        .await
+        .expect("node registration should succeed");
+
+    let creator_id = Uuid::new_v4();
+    let task = TaskSubmission {
+        task_type: "computation".to_string(),
+        wasm_module: None,
+        inputs: serde_json::json!({"job": "disconnect-check"}),
+        requirements: TaskRequirements {
+            min_nodes: 1,
+            max_execution_time_sec: 120,
+            require_gpu: false,
+            require_proof: false,
+        },
+    };
+
+    let submitted_task = state
+        .submit_task(task, creator_id)
+        .await
+        .expect("task submission should complete");
+
+    assert_eq!(submitted_task.status, TaskStatus::Completed);
+    assert!(submitted_task.assigned_nodes.is_empty());
+
+    let disconnected_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM task_assignments
+        WHERE task_id = $1
+          AND node_id = $2
+          AND disconnected_at IS NOT NULL
+        "#,
+    )
+    .bind(Uuid::parse_str(&submitted_task.task_id).expect("submitted task id should be UUID"))
+    .bind(&node_id)
+    .fetch_one(&pool)
+    .await
+    .expect("disconnected assignment count query should succeed");
+
+    assert_eq!(disconnected_count, 1);
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables after integration test");
+}
+
+#[tokio::test]
 async fn test_task_assignment_uses_universal_node_type_any() {
     let db_url = match std::env::var("TEST_DATABASE_URL") {
         Ok(url) => url,
