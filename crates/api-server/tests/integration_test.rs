@@ -151,6 +151,24 @@ fn test_node_validation_any_type() {
     assert!(node_reg.validate().is_ok());
 }
 
+/// Test node validation - open internet node type is valid
+#[test]
+fn test_node_validation_open_internet_type() {
+    let node_reg = NodeRegistration {
+        node_id: "internet-node".to_string(),
+        region: "us-east".to_string(),
+        node_type: "open_internet".to_string(),
+        capabilities: NodeCapabilities {
+            bandwidth_mbps: 500.0,
+            cpu_cores: 8,
+            memory_gb: 16.0,
+            gpu_available: false,
+        },
+    };
+
+    assert!(node_reg.validate().is_ok());
+}
+
 /// Test task validation - invalid task_type
 #[test]
 fn test_task_validation_invalid_type() {
@@ -251,6 +269,82 @@ fn test_task_validation_enforces_task_registry_runtime_limit() {
         requirements: TaskRequirements {
             min_nodes: 1,
             max_execution_time_sec: 1200,
+            require_gpu: false,
+            require_proof: false,
+        },
+    };
+
+    assert!(task_sub.validate().is_err());
+}
+
+/// Test task validation - connect_only valid payload
+#[test]
+fn test_task_validation_connect_only_valid() {
+    let task_sub = TaskSubmission {
+        task_type: "connect_only".to_string(),
+        wasm_module: None,
+        inputs: serde_json::json!({
+            "session_id": "sess_123",
+            "requester_id": "user_abc",
+            "duration_seconds": 300,
+            "bandwidth_limit_mbps": 20,
+            "egress_profile": "allowlist_domains",
+            "destination_policy_id": "policy_web_basic_v1"
+        }),
+        requirements: TaskRequirements {
+            min_nodes: 1,
+            max_execution_time_sec: 300,
+            require_gpu: false,
+            require_proof: false,
+        },
+    };
+
+    assert!(task_sub.validate().is_ok());
+}
+
+/// Test task validation - connect_only rejects unsupported input keys
+#[test]
+fn test_task_validation_connect_only_rejects_unknown_key() {
+    let task_sub = TaskSubmission {
+        task_type: "connect_only".to_string(),
+        wasm_module: None,
+        inputs: serde_json::json!({
+            "session_id": "sess_123",
+            "requester_id": "user_abc",
+            "duration_seconds": 300,
+            "bandwidth_limit_mbps": 20,
+            "egress_profile": "allowlist_domains",
+            "destination_policy_id": "policy_web_basic_v1",
+            "task_description": "open internet please"
+        }),
+        requirements: TaskRequirements {
+            min_nodes: 1,
+            max_execution_time_sec: 300,
+            require_gpu: false,
+            require_proof: false,
+        },
+    };
+
+    assert!(task_sub.validate().is_err());
+}
+
+/// Test task validation - connect_only rejects invalid min_nodes
+#[test]
+fn test_task_validation_connect_only_rejects_invalid_min_nodes() {
+    let task_sub = TaskSubmission {
+        task_type: "connect_only".to_string(),
+        wasm_module: None,
+        inputs: serde_json::json!({
+            "session_id": "sess_123",
+            "requester_id": "user_abc",
+            "duration_seconds": 300,
+            "bandwidth_limit_mbps": 20,
+            "egress_profile": "allowlist_domains",
+            "destination_policy_id": "policy_web_basic_v1"
+        }),
+        requirements: TaskRequirements {
+            min_nodes: 2,
+            max_execution_time_sec: 300,
             require_gpu: false,
             require_proof: false,
         },

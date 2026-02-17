@@ -60,7 +60,7 @@ A **node** is any device (computer, server, edge device, etc.) that joins the Am
 
 ## 🔧 Node Types Explained
 
-The system supports **four types of nodes**, each with a specific role in the network:
+The system supports **five types of nodes**, each with a specific role in the network:
 
 ### 1. **Compute Node** 🧮
 **Purpose**: Execute AI workloads, run computations, and process tasks
@@ -114,7 +114,28 @@ The system supports **four types of nodes**, each with a specific role in the ne
 
 ---
 
-### 3. **Storage Node** 💾
+
+### 3. **Open Internet Node** 🌍
+**Purpose**: Provide controlled internet egress/relay for connectivity-only sessions
+
+**Ideal for:**
+- Connectivity-only `connect_only` tasks
+- Policy-governed relay sessions
+- Bandwidth-constrained access windows
+- Auditable egress with allowlist/denylist controls
+
+**Security Model:**
+- No arbitrary compute payload required
+- No free-form task description
+- Requires strict policy profile + destination policy ID
+
+**When to choose Open Internet:**
+> If your machine has stable bandwidth and you want to provide controlled internet relay access (not arbitrary compute), register as an **Open Internet** node.
+
+---
+
+### 4. **Storage Node** 💾
+
 **Purpose**: Store datasets, models, intermediate results, and task outputs
 
 **Ideal for:**
@@ -140,7 +161,7 @@ The system supports **four types of nodes**, each with a specific role in the ne
 
 ---
 
-### 4. **Validator Node** ✅
+### 5. **Validator Node** ✅
 **Purpose**: Verify zero-knowledge proofs, validate computation correctness, and ensure integrity
 
 **Ideal for:**
@@ -219,7 +240,7 @@ Instead of buying and maintaining expensive servers:
 
 ## 🎯 Task Types Explained
 
-The system supports **four types of tasks**:
+The system supports **five types of tasks**:
 
 ### 1. **Federated Learning** (`federated_learning`) 🤖
 
@@ -250,7 +271,34 @@ encrypted model gradients for aggregation.
 
 ---
 
-### 2. **ZK Proof** (`zk_proof`) 🔐
+
+### 2. **Connect Only** (`connect_only`) 🔌
+
+**What it does**: Requests a connectivity-only internet session through an `open_internet` node.
+
+**How it works:**
+- Submit a strict schema payload (session/policy fields only)
+- Network assigns compatible `open_internet` nodes
+- Session is governed by duration, bandwidth, and policy constraints
+- No arbitrary code or task description is executed
+
+**Required Input Fields:**
+- `session_id`
+- `requester_id`
+- `duration_seconds`
+- `bandwidth_limit_mbps`
+- `egress_profile`
+- `destination_policy_id`
+
+**Best For:**
+- Controlled internet relay
+- Connectivity access without compute payloads
+- Auditable, policy-enforced egress sessions
+
+---
+
+### 3. **ZK Proof** (`zk_proof`) 🔐
+
 
 **What it does**: Generates zero-knowledge proofs for computations
 
@@ -354,6 +402,7 @@ or any computation that doesn't fit specific categories above.
      - `Compute` - For CPU/GPU-heavy machines
      - `Gateway` - For high-bandwidth network nodes
      - `Storage` - For high-capacity storage
+     - `Open Internet` - For controlled internet relay sessions
      - `Validator` - For trusted verification nodes
    - **Bandwidth (Mbps)**: Your internet speed
    - **CPU Cores**: Number of CPU cores
