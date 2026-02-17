@@ -965,6 +965,20 @@ Content-Type: text/plain; charset=\"utf-8\"
 fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_json::Value {
     match inputs {
         serde_json::Value::Object(map) => {
+            if task_type == "computation" {
+                if let Some(expression) = map.get("expression").and_then(|v| v.as_str()) {
+                    if let Some(result) = evaluate_arithmetic_expression(expression) {
+                        return serde_json::json!({
+                            "task_type": task_type,
+                            "analysis_mode": "computation",
+                            "summary": "Arithmetic expression evaluated successfully.",
+                            "expression": expression,
+                            "result": result
+                        });
+                    }
+                }
+            }
+
             if let Some(prompt) = map.get("prompt").and_then(|v| v.as_str()) {
                 serde_json::json!({
                     "task_type": task_type,
@@ -981,7 +995,7 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
                     "summary": "Structured JSON payload analyzed successfully.",
                     "top_level_keys": map.keys().cloned().collect::<Vec<String>>(),
                     "object_size": map.len(),
-                    "recommendation": "Include a `prompt` field if you want natural-language summarization."
+                    "recommendation": "Include an `expression` field for arithmetic tasks or a `prompt` field for natural-language summarization."
                 })
             }
         }
@@ -1006,6 +1020,81 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
             "value": primitive
         }),
     }
+}
+
+fn evaluate_arithmetic_expression(expression: &str) -> Option<f64> {
+    let normalized = expression
+        .trim()
+        .trim_end_matches(|c: char| c.is_ascii_punctuation() && c != '.')
+        .replace('X', "*")
+        .replace('x', "*")
+        .replace('÷', "/");
+
+    let mut numbers = Vec::new();
+    let mut operators = Vec::new();
+    let mut current = String::new();
+
+    for ch in normalized.chars() {
+        if ch.is_ascii_digit() || ch == '.' {
+            current.push(ch);
+            continue;
+        }
+
+        if matches!(ch, '+' | '-' | '*' | '/') {
+            if current.is_empty() {
+                return None;
+            }
+            numbers.push(current.parse::<f64>().ok()?);
+            current.clear();
+            operators.push(ch);
+            continue;
+        }
+
+        if !ch.is_whitespace() {
+            return None;
+        }
+    }
+
+    if current.is_empty() {
+        return None;
+    }
+    numbers.push(current.parse::<f64>().ok()?);
+
+    if numbers.len() != operators.len() + 1 {
+        return None;
+    }
+
+    let mut folded_numbers = vec![numbers[0]];
+    let mut folded_operators = Vec::new();
+
+    for (idx, operator) in operators.iter().enumerate() {
+        let rhs = numbers[idx + 1];
+        if *operator == '*' {
+            let last = folded_numbers.pop()?;
+            folded_numbers.push(last * rhs);
+        } else if *operator == '/' {
+            if rhs == 0.0 {
+                return None;
+            }
+            let last = folded_numbers.pop()?;
+            folded_numbers.push(last / rhs);
+        } else {
+            folded_operators.push(*operator);
+            folded_numbers.push(rhs);
+        }
+    }
+
+    let mut result = folded_numbers[0];
+    for (idx, operator) in folded_operators.iter().enumerate() {
+        let rhs = folded_numbers[idx + 1];
+        if *operator == '+' {
+            result += rhs;
+        } else {
+            result -= rhs;
+        }
+    }
+
+    Some(result)
 }
 
 fn summarize_prompt(prompt: &str) -> String {
@@ -1067,6 +1156,23 @@ mod tests {
 
         assert_eq!(result["analysis_mode"], "json");
         assert_eq!(result["object_size"], 2);
+    }
+
+    #[test]
+    fn evaluates_computation_expression_payload() {
+        let value = serde_json::json!({"expression": "10x10?", "operation": "multiply"});
+        let result = analyze_task_payload("computation", &value);
+
+        assert_eq!(result["analysis_mode"], "computation");
+        assert_eq!(result["result"], 100.0);
+    }
+
+    #[test]
+    fn returns_json_analysis_for_invalid_expression_payload() {
+        let value = serde_json::json!({"expression": "10 apples", "operation": "multiply"});
+        let result = analyze_task_payload("computation", &value);
+
+        assert_eq!(result["analysis_mode"], "json");
     }
 }
 
