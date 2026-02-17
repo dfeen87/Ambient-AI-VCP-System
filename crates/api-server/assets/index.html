@@ -2315,8 +2315,8 @@
     }
 
     const submitTaskFormEl = document.getElementById('submit-task-form');
-    document.getElementById('submit-task-btn').addEventListener('click', async () => {
-        await submitTaskForm(submitTaskFormEl);
+    document.getElementById('submit-task-btn').addEventListener('click', () => {
+        submitTaskFormEl.requestSubmit();
     });
 
     submitTaskFormEl.addEventListener('submit', async (e) => {
