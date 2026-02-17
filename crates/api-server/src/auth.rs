@@ -332,6 +332,12 @@ impl RegisterRequest {
                 ));
             }
 
+            if trimmed.contains('\r') || trimmed.contains('\n') {
+                return Err(ApiError::validation_error(
+                    "Email cannot contain carriage return or newline characters",
+                ));
+            }
+
             if !trimmed.contains('@') {
                 return Err(ApiError::validation_error("Email must be a valid address"));
             }
