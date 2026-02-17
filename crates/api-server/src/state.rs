@@ -372,9 +372,6 @@ impl AppState {
             r#"
             SELECT n.node_id
             FROM nodes n
-            LEFT JOIN task_assignments ta
-              ON ta.node_id = n.node_id
-             AND ta.disconnected_at IS NULL
             WHERE n.deleted_at IS NULL
               AND n.status = 'online'
               AND (n.node_type = $1 OR n.node_type = 'any')
@@ -426,9 +423,8 @@ impl AppState {
             .await
     }
 
-    async fn assign_pending_tasks_for_node(&self, node_id: &str) -> ApiResult<()> {
-        let max_attachments = Self::max_active_task_attachments_per_node();
-        let mut current_attachments = sqlx::query_scalar::<_, i64>(
+    async fn active_attachment_count_for_node(&self, node_id: &str) -> ApiResult<i64> {
+        let count = sqlx::query_scalar::<_, i64>(
             r#"
             SELECT COUNT(*)
             FROM task_assignments
@@ -439,6 +435,13 @@ impl AppState {
         .bind(node_id)
         .fetch_one(&self.db)
         .await?;
+
+        Ok(count)
+    }
+
+    async fn assign_pending_tasks_for_node(&self, node_id: &str) -> ApiResult<()> {
+        let max_attachments = Self::max_active_task_attachments_per_node();
+        let mut current_attachments = self.active_attachment_count_for_node(node_id).await?;
 
         if current_attachments >= max_attachments {
             tracing::warn!(

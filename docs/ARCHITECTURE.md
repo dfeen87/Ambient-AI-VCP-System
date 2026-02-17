@@ -51,9 +51,16 @@ health_score = (bandwidth_score × 0.4)
 
 **Purpose**: Cryptographic verification of execution correctness
 
-**Current Implementation**: Placeholder (hash-based)
+**Current Implementation**: Groth16 verification on BN254 via the `zk-prover` crate.
 
-**Planned Integration**: RISC Zero zkVM or Plonky2
+**Validation Pipeline**:
+- API request validation constrains proof/public input payload sizes and encoding.
+- Proof bytes and public inputs are decoded and passed to the verifier.
+- Verification result is persisted and returned in API responses for downstream policy checks.
+
+**Notes**:
+- The system keeps the verification layer modular, so additional proving systems can be introduced over time.
+- Existing integration is designed for production request/response flows rather than demo-only placeholders.
 
 ### 4. Mesh Coordinator
 
@@ -64,6 +71,26 @@ health_score = (bandwidth_score × 0.4)
 2. **Round-Robin**: Rotate through eligible nodes
 3. **Least-Loaded**: Select node with lowest CPU usage
 4. **Latency-Aware**: Select node with lowest latency
+
+### 5. API Server Assignment Semantics
+
+**Purpose**: Admission control and fair assignment of tasks to online nodes.
+
+**Node Selection Rules**:
+1. Node must be online and not soft-deleted.
+2. Node capabilities must satisfy task policy (CPU, memory, bandwidth, optional GPU).
+3. Node type must match task preference (`preferred_node_type`) or be universal (`any`).
+4. Node cannot exceed per-node active assignment caps.
+
+**Capacity Controls**:
+- `MAX_CONCURRENT_TASKS_PER_NODE` (preferred)
+- `MAX_ACTIVE_TASK_ATTACHMENTS_PER_NODE` (legacy alias)
+- Default when unset/invalid/non-positive: `50`
+
+**Lifecycle Semantics**:
+- Assignments are treated as active while `disconnected_at IS NULL`.
+- On task completion, active assignment rows are disconnected (not hard-deleted) to preserve history.
+- Re-attachment only reactivates previously disconnected rows and avoids over-attaching nodes beyond each task's `min_nodes` requirement.
 
 ## Data Flow
 
