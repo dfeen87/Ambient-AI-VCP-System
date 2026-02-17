@@ -788,30 +788,46 @@ impl AppState {
         task_id: Uuid,
         result: &serde_json::Value,
     ) -> ApiResult<()> {
+        use lettre::message::Mailbox;
+        use lettre::Message;
         use tokio::io::AsyncWriteExt;
         use tokio::process::Command;
 
         let sender = std::env::var("EMAIL_FROM")
             .map_err(|_| ApiError::internal_error("EMAIL_FROM not configured"))?;
+
+        if sender.contains('\r') || sender.contains('\n') {
+            return Err(ApiError::internal_error(
+                "EMAIL_FROM cannot contain carriage return or newline characters",
+            ));
+        }
+
+        if recipient.contains('\r') || recipient.contains('\n') {
+            return Err(ApiError::validation_error(
+                "Email cannot contain carriage return or newline characters",
+            ));
+        }
+
+        let sender_mailbox = sender
+            .parse::<Mailbox>()
+            .map_err(|_| ApiError::internal_error("EMAIL_FROM must be a valid email address"))?;
+        let recipient_mailbox = recipient
+            .parse::<Mailbox>()
+            .map_err(|_| ApiError::validation_error("Email must be a valid address"))?;
+
         let subject = format!("Task Completed: {task_id}");
         let body = format!(
-            "Your task {task_id} has completed.
-
-Result:
-{}",
+            "Your task {task_id} has completed.\n\nResult:\n{}",
             serde_json::to_string_pretty(result)
                 .unwrap_or_else(|_| "<failed to serialize task result>".to_string())
         );
 
-        let message = format!(
-            "From: {sender}
-To: {recipient}
-Subject: {subject}
-Content-Type: text/plain; charset=\"utf-8\"
-
-{body}
-"
-        );
+        let message = Message::builder()
+            .from(sender_mailbox)
+            .to(recipient_mailbox)
+            .subject(subject)
+            .body(body)
+            .map_err(|_| ApiError::internal_error("Failed to build completion email message"))?;
 
         let mut child = Command::new("sendmail")
             .arg("-t")
@@ -823,7 +839,7 @@ Content-Type: text/plain; charset=\"utf-8\"
 
         if let Some(stdin) = child.stdin.as_mut() {
             stdin
-                .write_all(message.as_bytes())
+                .write_all(&message.formatted())
                 .await
                 .map_err(|_| ApiError::internal_error("Failed writing message to sendmail"))?;
         }
