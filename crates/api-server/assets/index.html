@@ -124,6 +124,33 @@
             flex-wrap: wrap;
         }
 
+        .header-connect {
+            margin-top: 10px;
+        }
+
+        .connected-endpoint-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            max-width: min(100%, 700px);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .connected-endpoint-badge strong {
+            color: var(--accent);
+            font-weight: 500;
+        }
+
         .connect-bar.form-connect-bar {
             margin-top: 12px;
             justify-content: flex-start;
@@ -156,6 +183,10 @@
         .connect-bar input:focus {
             border-color: var(--accent);
             box-shadow: 0 0 0 3px var(--accent-dim);
+        }
+
+        .header-connect input {
+            max-width: 460px;
         }
 
         .connect-status {
@@ -827,6 +858,12 @@
                 <h1>Ambient <span>AI</span> VCP</h1>
             </div>
             <div class="subtitle">DECENTRALIZED COMPUTE NETWORK DASHBOARD</div>
+            <div class="connect-bar header-connect">
+                <label for="api-url">Endpoint</label>
+                <input type="text" id="api-url" value="https://ambient-ai-vcp-system.onrender.com" spellcheck="false">
+                <button type="button" id="connect-btn" onclick="updateApiUrl()" class="btn">Connect</button>
+            </div>
+            <div class="connected-endpoint-badge" id="connected-endpoint-badge">Connected to: <strong id="connected-endpoint-text">https://ambient-ai-vcp-system.onrender.com</strong></div>
         </div>
         <div class="header-right">
             <div class="live-badge">
@@ -1011,11 +1048,6 @@
             <div class="form-footer">
                 <button type="submit" class="btn">Register Node</button>
                 <button type="reset" class="btn btn-ghost">Clear</button>
-            </div>
-            <div class="connect-bar form-connect-bar">
-                <label for="api-url">Endpoint</label>
-                <input type="text" id="api-url" value="https://ambient-ai-vcp-system.onrender.com" spellcheck="false">
-                <button type="button" id="connect-btn" onclick="updateApiUrl()" class="btn">Connect</button>
             </div>
         </form>
     </div>
@@ -1374,6 +1406,14 @@
         return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
     }
 
+    function updateConnectedEndpointBadge(url) {
+        const badgeText = document.getElementById('connected-endpoint-text');
+        if (badgeText) {
+            badgeText.textContent = url;
+            badgeText.title = url;
+        }
+    }
+
     async function updateApiUrl() {
         const connectBtn = document.getElementById('connect-btn');
         const inputEl = document.getElementById('api-url');
@@ -1400,6 +1440,7 @@
             apiBaseUrl = candidateUrl;
             inputEl.value = candidateUrl;
             localStorage.setItem('vcp_api_base_url', candidateUrl);
+            updateConnectedEndpointBadge(candidateUrl);
             showToast(`Connected to ${candidateUrl}`);
 
             if (authToken) {
@@ -2225,6 +2266,7 @@
 
     // Initialize on page load
     document.getElementById('api-url').value = apiBaseUrl;
+    updateConnectedEndpointBadge(apiBaseUrl);
     document.getElementById('api-url').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
