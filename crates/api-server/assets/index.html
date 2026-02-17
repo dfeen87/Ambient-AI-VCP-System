@@ -739,6 +739,22 @@
         .requirements-stack {
             display: grid;
             gap: 12px;
+            justify-items: start;
+        }
+
+        .requirements-stack > div {
+            display: grid;
+            grid-template-columns: 180px 120px;
+            align-items: center;
+            column-gap: 10px;
+        }
+
+        .requirements-stack > div > label {
+            margin: 0;
+        }
+
+        .requirements-stack > div > select {
+            width: 120px;
         }
 
         .task-type-description {
