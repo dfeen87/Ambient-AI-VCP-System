@@ -992,6 +992,7 @@
                         <option value="gateway">Gateway</option>
                         <option value="storage">Storage</option>
                         <option value="validator">Validator</option>
+                        <option value="open_internet">Open Internet</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -1090,6 +1091,7 @@
                         <option value="federated_learning">Federated Learning</option>
                         <option value="zk_proof">ZK Proof</option>
                         <option value="wasm_execution">WASM Execution</option>
+                        <option value="connect_only">Connect Only</option>
                     </select>
                     <div class="inline-hint" id="task-type-hint">Smart defaults will update based on task type.</div>
                 </div>
@@ -1128,7 +1130,7 @@
                     <div style="display: flex; gap: 12px; margin-top: 10px; margin-bottom: 8px;">
                         <button type="button" class="btn btn-ghost" id="convert-inputs-btn">Convert Plain Text → JSON</button>
                     </div>
-                    <div class="inline-hint" id="task-inputs-hint">You can paste JSON or plain text, then click convert to structure plain text for node analysis.</div>
+                    <div class="inline-hint" id="task-inputs-hint">You can paste JSON or plain text; for connect_only, use strict JSON schema fields only.</div>
                 </div>
             </div>
 
@@ -1193,6 +1195,7 @@
         federated_learning: 900,
         zk_proof: 600,
         wasm_execution: 450,
+        connect_only: 120,
     };
 
 
@@ -1475,6 +1478,21 @@
                 requireProof: 'false',
                 inputs: '',
                 hint: 'WASM preset applied. Keep inputs compact; you can adjust everything.'
+            },
+            connect_only: {
+                minNodes: 1,
+                maxExec: 300,
+                requireGpu: 'false',
+                requireProof: 'false',
+                inputs: JSON.stringify({
+                    session_id: 'sess_123',
+                    requester_id: 'user_abc',
+                    duration_seconds: 300,
+                    bandwidth_limit_mbps: 20,
+                    egress_profile: 'allowlist_domains',
+                    destination_policy_id: 'policy_web_basic_v1'
+                }, null, 2),
+                hint: 'Connect Only preset applied. JSON schema is strict and free-form task descriptions are not allowed.'
             }
         };
 
@@ -1490,6 +1508,7 @@
     }
 
     function validateTaskForm() {
+        const taskType = document.getElementById('task-type').value;
         const minNodes = parseInt(document.getElementById('task-min-nodes').value, 10);
         const maxExec = parseInt(document.getElementById('task-max-exec').value, 10);
         const inputsRaw = document.getElementById('task-inputs').value.trim();
@@ -1525,6 +1544,37 @@
             inputsHint.textContent = 'Inputs are required. Add JSON or plain text before submitting.';
             inputsHint.className = 'inline-hint error';
             isValid = false;
+        } else if (taskType === 'connect_only') {
+            const allowedKeys = ['session_id', 'requester_id', 'duration_seconds', 'bandwidth_limit_mbps', 'egress_profile', 'destination_policy_id'];
+
+            if (strictJsonState !== 'valid' || typeof parsedInputs !== 'object' || parsedInputs === null || Array.isArray(parsedInputs)) {
+                inputsHint.textContent = 'connect_only requires a valid JSON object.';
+                inputsHint.className = 'inline-hint error';
+                isValid = false;
+            } else {
+                const keys = Object.keys(parsedInputs);
+                const unknown = keys.find((k) => !allowedKeys.includes(k));
+                const missing = allowedKeys.filter((k) => !(k in parsedInputs));
+
+                if (unknown) {
+                    inputsHint.textContent = `connect_only does not allow key: ${unknown}`;
+                    inputsHint.className = 'inline-hint error';
+                    isValid = false;
+                } else if (missing.length > 0) {
+                    inputsHint.textContent = `connect_only missing required fields: ${missing.join(', ')}`;
+                    inputsHint.className = 'inline-hint error';
+                    isValid = false;
+                } else {
+                    inputsHint.textContent = 'connect_only schema looks valid.';
+                    inputsHint.className = 'inline-hint success';
+                }
+            }
+
+            if (minNodes !== 1) {
+                minNodesHint.textContent = 'connect_only requires min_nodes = 1.';
+                minNodesHint.className = 'inline-hint error';
+                isValid = false;
+            }
         } else if (strictJsonState === 'valid') {
             inputsHint.textContent = 'Valid JSON payload.';
             inputsHint.className = 'inline-hint success';
