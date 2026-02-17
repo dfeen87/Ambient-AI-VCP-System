@@ -348,14 +348,30 @@ impl AppState {
         require_gpu: bool,
     ) -> ApiResult<()> {
         let max_attachments = Self::max_active_task_attachments_per_node();
+        let assigned_nodes: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM task_assignments
+            WHERE task_id = $1
+              AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(task_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        if assigned_nodes >= min_nodes as i64 {
+            return self
+                .update_task_status_from_assignments(task_id, min_nodes)
+                .await;
+        }
+
+        let additional_nodes_needed = min_nodes as i64 - assigned_nodes;
 
         let node_ids = sqlx::query_scalar::<_, String>(
             r#"
             SELECT n.node_id
             FROM nodes n
-            LEFT JOIN task_assignments ta
-              ON ta.node_id = n.node_id
-             AND ta.disconnected_at IS NULL
             WHERE n.deleted_at IS NULL
               AND n.status = 'online'
               AND (n.node_type = $1 OR n.node_type = 'any')
@@ -363,9 +379,21 @@ impl AppState {
               AND n.memory_gb >= $3
               AND n.bandwidth_mbps >= $4
               AND ($5 = FALSE OR n.gpu_available = TRUE)
-            GROUP BY n.node_id, n.registered_at
-            HAVING COUNT(ta.task_id) < $6
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM task_assignments existing
+                  WHERE existing.task_id = $6
+                    AND existing.node_id = n.node_id
+                    AND existing.disconnected_at IS NULL
+              )
+              AND (
+                  SELECT COUNT(*)
+                  FROM task_assignments active
+                  WHERE active.node_id = n.node_id
+                    AND active.disconnected_at IS NULL
+              ) < $7
             ORDER BY n.registered_at ASC
+            LIMIT $8
             "#,
         )
         .bind(task_registry_entry.preferred_node_type)
@@ -373,7 +401,9 @@ impl AppState {
         .bind(task_registry_entry.minimum_capabilities.memory_gb)
         .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
         .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
+        .bind(task_id)
         .bind(max_attachments)
+        .bind(additional_nodes_needed)
         .fetch_all(&self.db)
         .await?;
 
@@ -384,6 +414,7 @@ impl AppState {
                 VALUES ($1, $2)
                 ON CONFLICT (task_id, node_id)
                 DO UPDATE SET assigned_at = NOW(), disconnected_at = NULL
+                WHERE task_assignments.disconnected_at IS NOT NULL
                 "#,
             )
             .bind(task_id)
@@ -396,9 +427,8 @@ impl AppState {
             .await
     }
 
-    async fn assign_pending_tasks_for_node(&self, node_id: &str) -> ApiResult<()> {
-        let max_attachments = Self::max_active_task_attachments_per_node();
-        let mut current_attachments = sqlx::query_scalar::<_, i64>(
+    async fn active_attachment_count_for_node(&self, node_id: &str) -> ApiResult<i64> {
+        let count = sqlx::query_scalar::<_, i64>(
             r#"
             SELECT COUNT(*)
             FROM task_assignments
@@ -409,6 +439,13 @@ impl AppState {
         .bind(node_id)
         .fetch_one(&self.db)
         .await?;
+
+        Ok(count)
+    }
+
+    async fn assign_pending_tasks_for_node(&self, node_id: &str) -> ApiResult<()> {
+        let max_attachments = Self::max_active_task_attachments_per_node();
+        let mut current_attachments = self.active_attachment_count_for_node(node_id).await?;
 
         if current_attachments >= max_attachments {
             tracing::warn!(
@@ -486,12 +523,13 @@ impl AppState {
                 continue;
             }
 
-            sqlx::query(
+            let rows = sqlx::query(
                 r#"
                 INSERT INTO task_assignments (task_id, node_id)
                 VALUES ($1, $2)
                 ON CONFLICT (task_id, node_id)
                 DO UPDATE SET assigned_at = NOW(), disconnected_at = NULL
+                WHERE task_assignments.disconnected_at IS NOT NULL
                 "#,
             )
             .bind(task_id)
@@ -499,7 +537,9 @@ impl AppState {
             .execute(&self.db)
             .await?;
 
-            current_attachments += 1;
+            if rows.rows_affected() > 0 {
+                current_attachments = self.active_attachment_count_for_node(node_id).await?;
+            }
 
             self.update_task_status_from_assignments(task_id, min_nodes as u32)
                 .await?;

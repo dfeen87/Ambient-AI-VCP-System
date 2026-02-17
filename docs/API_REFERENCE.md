@@ -397,3 +397,23 @@ Common errors:
 - WebSocket for real-time updates
 - GraphQL for flexible queries
 - gRPC for high-performance RPC
+
+
+## API Server Runtime Configuration
+
+### Task Assignment Capacity
+
+These environment variables control how many active task attachments a single node can hold at once.
+
+- `MAX_CONCURRENT_TASKS_PER_NODE`: primary configuration key.
+- `MAX_ACTIVE_TASK_ATTACHMENTS_PER_NODE`: backward-compatible alias.
+- Effective value rules:
+  - Positive integer → accepted.
+  - Missing, non-integer, or `<= 0` → defaults to `50`.
+
+### Assignment Lifecycle Behavior
+
+- A task assignment is considered active while `disconnected_at` is `NULL`.
+- Task completion disconnects active assignments to free node capacity while keeping assignment history.
+- Assignment selection avoids over-allocation by limiting new attachments to the number of nodes still needed to satisfy `min_nodes`.
+- Reattachment upserts only reactivate previously disconnected assignment rows.
