@@ -1050,7 +1050,11 @@ fn analyze_federated_learning_payload(
     let participant_count = map
         .get("participant_count")
         .and_then(|v| v.as_u64())
-        .or_else(|| map.get("clients").and_then(|v| v.as_array()).map(|v| v.len() as u64));
+        .or_else(|| {
+            map.get("clients")
+                .and_then(|v| v.as_array())
+                .map(|v| v.len() as u64)
+        });
 
     let round_count = map
         .get("rounds")
@@ -1079,7 +1083,11 @@ fn analyze_zk_proof_payload(map: &serde_json::Map<String, serde_json::Value>) ->
         .get("public_inputs")
         .and_then(|v| v.as_array())
         .map(|v| v.len())
-        .or_else(|| map.get("public_input_count").and_then(|v| v.as_u64()).map(|v| v as usize));
+        .or_else(|| {
+            map.get("public_input_count")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        });
 
     serde_json::json!({
         "task_type": "zk_proof",
@@ -1218,7 +1226,11 @@ fn infer_expression_from_prompt(prompt: &str) -> Option<String> {
         break;
     }
 
-    if seen_digit && expression.chars().any(|c| matches!(c, '+' | '-' | '*' | '/' | 'x' | 'X' | '÷')) {
+    if seen_digit
+        && expression
+            .chars()
+            .any(|c| matches!(c, '+' | '-' | '*' | '/' | 'x' | 'X' | '÷'))
+    {
         Some(expression.trim().to_string())
     } else {
         None
