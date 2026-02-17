@@ -1281,6 +1281,8 @@ fn analyze_connect_only_payload(inputs: &serde_json::Value) -> serde_json::Value
         "enforcement": {
             "task_description_allowed": false,
             "wasm_module_allowed": false,
+            "gpu_execution_allowed": false,
+            "proof_generation_allowed": false,
             "policy_validation_required": true
         }
     })
@@ -2154,5 +2156,27 @@ mod tests {
 
         assert_eq!(result["analysis_mode"], "wasm_execution");
         assert_eq!(result["entrypoint"], "run");
+    }
+
+    #[test]
+    fn connect_only_payload_reports_isolation_enforcement_flags() {
+        let value = serde_json::json!({
+            "session_id": "sess_123",
+            "requester_id": "user_abc",
+            "duration_seconds": 120,
+            "bandwidth_limit_mbps": 50,
+            "egress_profile": "allowlist_domains",
+            "destination_policy_id": "policy_web_basic_v1"
+        });
+
+        let result = analyze_task_payload("connect_only", &value);
+
+        assert_eq!(result["analysis_mode"], "connect_only");
+        assert_eq!(result["status"], "accepted");
+        assert_eq!(result["enforcement"]["task_description_allowed"], false);
+        assert_eq!(result["enforcement"]["wasm_module_allowed"], false);
+        assert_eq!(result["enforcement"]["gpu_execution_allowed"], false);
+        assert_eq!(result["enforcement"]["proof_generation_allowed"], false);
+        assert_eq!(result["enforcement"]["policy_validation_required"], true);
     }
 }
