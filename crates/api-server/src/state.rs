@@ -404,7 +404,16 @@ impl AppState {
              AND ta.disconnected_at IS NULL
             WHERE n.deleted_at IS NULL
               AND n.status = 'online'
-              AND n.last_heartbeat >= NOW() - ($8::bigint * INTERVAL '1 second')
+              AND (
+                    n.last_heartbeat >= NOW() - ($8::bigint * INTERVAL '1 second')
+                    OR EXISTS (
+                        SELECT 1
+                        FROM connect_sessions cs
+                        WHERE cs.node_id = n.node_id
+                          AND cs.status = 'active'
+                          AND cs.expires_at > NOW()
+                    )
+                  )
               AND (n.node_type = $1 OR n.node_type = 'any')
               AND n.cpu_cores >= $2
               AND n.memory_gb >= $3
@@ -532,7 +541,16 @@ impl AppState {
                     WHERE n.node_id = $1
                       AND n.deleted_at IS NULL
                       AND n.status = 'online'
-                      AND n.last_heartbeat >= NOW() - ($7::bigint * INTERVAL '1 second')
+                      AND (
+                            n.last_heartbeat >= NOW() - ($7::bigint * INTERVAL '1 second')
+                            OR EXISTS (
+                                SELECT 1
+                                FROM connect_sessions cs
+                                WHERE cs.node_id = n.node_id
+                                  AND cs.status = 'active'
+                                  AND cs.expires_at > NOW()
+                            )
+                          )
                       AND (n.node_type = $2 OR n.node_type = 'any')
                       AND n.cpu_cores >= $3
                       AND n.memory_gb >= $4
