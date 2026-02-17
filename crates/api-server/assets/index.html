@@ -733,6 +733,27 @@
         @media (max-width: 900px) { .form-group.form-span-3 { grid-column: span 2; } }
         @media (max-width: 560px) { .form-group.form-span-3 { grid-column: span 1; } }
 
+        .form-group.form-span-2 { grid-column: span 2; }
+        @media (max-width: 560px) { .form-group.form-span-2 { grid-column: span 1; } }
+
+        .requirements-stack {
+            display: grid;
+            gap: 12px;
+        }
+
+        .task-type-description {
+            margin-top: 2px;
+            line-height: 1.5;
+            color: var(--text-dim);
+        }
+
+        .task-type-description strong {
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 10px;
+        }
+
         .inline-hint {
             margin-top: 8px;
             font-family: 'JetBrains Mono', monospace;
@@ -1128,20 +1149,29 @@
                     <div class="inline-hint" id="max-exec-hint">Must be between 1 and 3600.</div>
                 </div>
 
-                <div class="form-group">
-                    <label>Require GPU</label>
-                    <select id="task-require-gpu" required>
-                        <option value="false" selected>No</option>
-                        <option value="true">Yes</option>
-                    </select>
+                <div class="form-group form-span-2">
+                    <label>Selected Task Meaning</label>
+                    <div class="inline-hint task-type-description" id="task-type-description">Choose a task type to see a quick explanation of what it does.</div>
                 </div>
 
                 <div class="form-group">
-                    <label>Require Proof</label>
-                    <select id="task-require-proof" required>
-                        <option value="false" selected>No</option>
-                        <option value="true">Yes</option>
-                    </select>
+                    <label>Task Requirements</label>
+                    <div class="requirements-stack">
+                        <div>
+                            <label for="task-require-gpu">Require GPU</label>
+                            <select id="task-require-gpu" required>
+                                <option value="false" selected>No</option>
+                                <option value="true">Yes</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="task-require-proof">Require Proof</label>
+                            <select id="task-require-proof" required>
+                                <option value="false" selected>No</option>
+                                <option value="true">Yes</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group form-span-3">
@@ -1480,6 +1510,7 @@
         const minNodesEl = document.getElementById('task-min-nodes');
         const inputsEl = document.getElementById('task-inputs');
         const hintEl = document.getElementById('task-type-hint');
+        const descriptionEl = document.getElementById('task-type-description');
         const convertInputsBtn = document.getElementById('convert-inputs-btn');
 
         const taskPresets = {
@@ -1489,7 +1520,8 @@
                 requireGpu: 'false',
                 requireProof: 'false',
                 inputs: '',
-                hint: 'Computation preset applied. You can still change any field before submit.'
+                hint: 'Computation preset applied. You can still change any field before submit.',
+                description: '<strong>Computation:</strong> Runs a general-purpose compute job on available nodes with flexible inputs.'
             },
             federated_learning: {
                 minNodes: 3,
@@ -1497,7 +1529,8 @@
                 requireGpu: 'true',
                 requireProof: 'false',
                 inputs: '',
-                hint: 'Federated Learning preset applied (GPU + longer runtime). Fields remain editable.'
+                hint: 'Federated Learning preset applied (GPU + longer runtime). Fields remain editable.',
+                description: '<strong>Federated Learning:</strong> Trains shared AI models across multiple nodes while data stays decentralized.'
             },
             zk_proof: {
                 minNodes: 1,
@@ -1505,7 +1538,8 @@
                 requireGpu: 'false',
                 requireProof: 'true',
                 inputs: '',
-                hint: 'ZK Proof preset applied (proof required). Fields remain editable.'
+                hint: 'ZK Proof preset applied (proof required). Fields remain editable.',
+                description: '<strong>ZK Proof:</strong> Generates verifiable cryptographic proof that a computation was executed correctly.'
             },
             wasm_execution: {
                 minNodes: 1,
@@ -1513,7 +1547,8 @@
                 requireGpu: 'false',
                 requireProof: 'false',
                 inputs: '',
-                hint: 'WASM preset applied. Keep inputs compact; you can adjust everything.'
+                hint: 'WASM preset applied. Keep inputs compact; you can adjust everything.',
+                description: '<strong>WASM Execution:</strong> Executes WebAssembly modules in a sandboxed runtime across the network.'
             },
             connect_only: {
                 minNodes: 1,
@@ -1528,7 +1563,8 @@
                     egress_profile: 'allowlist_domains',
                     destination_policy_id: 'policy_web_basic_v1'
                 }, null, 2),
-                hint: 'Connect Only preset applied. JSON schema is strict and free-form task descriptions are not allowed.'
+                hint: 'Connect Only preset applied. JSON schema is strict and free-form task descriptions are not allowed.',
+                description: '<strong>Connect Only:</strong> Creates a secure connection session with strict policy-driven JSON fields and no compute workload.'
             }
         };
 
@@ -1539,6 +1575,7 @@
         requireProofEl.value = preset.requireProof;
         inputsEl.value = preset.inputs;
         hintEl.textContent = preset.hint;
+        descriptionEl.innerHTML = preset.description;
 
         const isConnectOnly = taskType === 'connect_only';
         inputsEl.readOnly = isConnectOnly;
