@@ -298,12 +298,17 @@ impl AppState {
         .execute(&mut *tx)
         .await?;
 
-        self.disconnect_task_assignments(task_id, &mut tx).await?;
+        let should_disconnect_assignments = should_disconnect_assignments_on_completion(&task_type);
+        if should_disconnect_assignments {
+            self.disconnect_task_assignments(task_id, &mut tx).await?;
+        }
 
         tx.commit().await?;
 
-        for node_id in assigned_nodes_for_completed_task {
-            self.assign_pending_tasks_for_node(&node_id).await?;
+        if should_disconnect_assignments {
+            for node_id in assigned_nodes_for_completed_task {
+                self.assign_pending_tasks_for_node(&node_id).await?;
+            }
         }
 
         Ok(())
@@ -620,6 +625,18 @@ impl AppState {
             Err(_) => return Ok(false),
         };
 
+        let assigned_nodes = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT node_id
+            FROM task_assignments
+            WHERE task_id = $1
+              AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(task_uuid)
+        .fetch_all(&self.db)
+        .await?;
+
         let result = sqlx::query(
             r#"
             DELETE FROM tasks
@@ -632,7 +649,14 @@ impl AppState {
         .execute(&self.db)
         .await?;
 
-        Ok(result.rows_affected() > 0)
+        if result.rows_affected() > 0 {
+            for node_id in assigned_nodes {
+                self.assign_pending_tasks_for_node(&node_id).await?;
+            }
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     /// Get a specific task from the database
@@ -1144,6 +1168,10 @@ impl AppState {
     }
 }
 
+fn should_disconnect_assignments_on_completion(task_type: &str) -> bool {
+    task_type != "connect_only"
+}
+
 fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_json::Value {
     if task_type == "connect_only" {
         return analyze_connect_only_payload(inputs);
@@ -1281,6 +1309,8 @@ fn analyze_connect_only_payload(inputs: &serde_json::Value) -> serde_json::Value
         "enforcement": {
             "task_description_allowed": false,
             "wasm_module_allowed": false,
+            "gpu_execution_allowed": false,
+            "proof_generation_allowed": false,
             "policy_validation_required": true
         }
     })
@@ -2154,5 +2184,33 @@ mod tests {
 
         assert_eq!(result["analysis_mode"], "wasm_execution");
         assert_eq!(result["entrypoint"], "run");
+    }
+
+    #[test]
+    fn completion_disconnect_policy_keeps_connect_only_assignments() {
+        assert!(!should_disconnect_assignments_on_completion("connect_only"));
+        assert!(should_disconnect_assignments_on_completion("computation"));
+    }
+
+    #[test]
+    fn connect_only_payload_reports_isolation_enforcement_flags() {
+        let value = serde_json::json!({
+            "session_id": "sess_123",
+            "requester_id": "user_abc",
+            "duration_seconds": 120,
+            "bandwidth_limit_mbps": 50,
+            "egress_profile": "allowlist_domains",
+            "destination_policy_id": "policy_web_basic_v1"
+        });
+
+        let result = analyze_task_payload("connect_only", &value);
+
+        assert_eq!(result["analysis_mode"], "connect_only");
+        assert_eq!(result["status"], "accepted");
+        assert_eq!(result["enforcement"]["task_description_allowed"], false);
+        assert_eq!(result["enforcement"]["wasm_module_allowed"], false);
+        assert_eq!(result["enforcement"]["gpu_execution_allowed"], false);
+        assert_eq!(result["enforcement"]["proof_generation_allowed"], false);
+        assert_eq!(result["enforcement"]["policy_validation_required"], true);
     }
 }

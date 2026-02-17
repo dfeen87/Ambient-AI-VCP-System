@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
 };
 use sqlx::Row;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tracing::{error, info};
 use utoipa::OpenApi;
 use uuid::Uuid;
@@ -288,6 +288,17 @@ async fn update_heartbeat(
     })))
 }
 
+fn connect_only_completion_delay(inputs: &serde_json::Value) -> Duration {
+    let duration_seconds = inputs
+        .get("duration_seconds")
+        .and_then(|value| value.as_u64())
+        .filter(|value| *value > 0)
+        .unwrap_or(60)
+        .clamp(1, 3600);
+
+    Duration::from_secs(duration_seconds)
+}
+
 /// Submit a task
 #[utoipa::path(
     post,
@@ -321,6 +332,11 @@ async fn submit_task(
             .map_err(|_| ApiError::internal_error("Invalid task ID format"))?;
 
         tokio::spawn(async move {
+            if task_type == "connect_only" {
+                let delay = connect_only_completion_delay(&task_inputs);
+                tokio::time::sleep(delay).await;
+            }
+
             if let Err(err) = state_for_completion
                 .complete_task_if_running(task_id, task_type, task_inputs)
                 .await
@@ -834,5 +850,23 @@ mod tests {
     async fn test_health_check() {
         let response = health_check().await;
         assert_eq!(response.status, "healthy");
+    }
+
+    #[test]
+    fn connect_only_completion_delay_respects_payload_duration() {
+        let value = serde_json::json!({"duration_seconds": 300});
+        assert_eq!(connect_only_completion_delay(&value).as_secs(), 300);
+    }
+
+    #[test]
+    fn connect_only_completion_delay_clamps_and_defaults() {
+        let defaulted = serde_json::json!({});
+        assert_eq!(connect_only_completion_delay(&defaulted).as_secs(), 60);
+
+        let too_large = serde_json::json!({"duration_seconds": 99999});
+        assert_eq!(connect_only_completion_delay(&too_large).as_secs(), 3600);
+
+        let zero = serde_json::json!({"duration_seconds": 0});
+        assert_eq!(connect_only_completion_delay(&zero).as_secs(), 60);
     }
 }
