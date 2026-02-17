@@ -133,17 +133,11 @@
             align-items: center;
             gap: 8px;
             margin-top: 10px;
-            padding: 6px 12px;
+            padding: 6px 10px;
             border-radius: 999px;
             border: 1px solid var(--border);
             background: var(--surface);
             color: var(--text-dim);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            max-width: min(100%, 700px);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
 
         .connection-indicator {
@@ -166,18 +160,6 @@
             color: var(--accent);
             box-shadow: 0 0 10px rgba(45, 212, 191, 0.35);
             background: rgba(45, 212, 191, 0.16);
-        }
-
-        .connection-endpoint-label {
-            max-width: 520px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .connected-endpoint-badge strong {
-            color: var(--accent);
-            font-weight: 500;
         }
 
         .connect-bar.form-connect-bar {
@@ -895,7 +877,6 @@
             <div class="connected-endpoint-badge" id="connected-endpoint-badge" title="https://ambient-ai-vcp-system.onrender.com">
                 <span class="connection-indicator" id="connection-x" aria-label="Disconnected">✕</span>
                 <span class="connection-indicator" id="connection-check" aria-label="Connected">✓</span>
-                <strong class="connection-endpoint-label" id="connected-endpoint-text">https://ambient-ai-vcp-system.onrender.com</strong>
             </div>
         </div>
         <div class="header-right">
@@ -1440,12 +1421,7 @@
     }
 
     function updateConnectedEndpointBadge(url) {
-        const badgeText = document.getElementById('connected-endpoint-text');
         const badge = document.getElementById('connected-endpoint-badge');
-        if (badgeText) {
-            badgeText.textContent = url;
-            badgeText.title = url;
-        }
         if (badge) {
             badge.title = url;
         }
@@ -2315,8 +2291,8 @@
     }
 
     const submitTaskFormEl = document.getElementById('submit-task-form');
-    document.getElementById('submit-task-btn').addEventListener('click', async () => {
-        await submitTaskForm(submitTaskFormEl);
+    document.getElementById('submit-task-btn').addEventListener('click', () => {
+        submitTaskFormEl.requestSubmit();
     });
 
     submitTaskFormEl.addEventListener('submit', async (e) => {
