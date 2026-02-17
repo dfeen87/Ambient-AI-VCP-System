@@ -128,34 +128,6 @@
             margin-top: 10px;
         }
 
-        .connected-endpoint-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            margin-top: 10px;
-            padding: 6px 10px;
-            border-radius: 999px;
-            border: 1px solid var(--border);
-            background: var(--surface);
-            color: var(--text-dim);
-        }
-
-        .connection-state-text {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 10px;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: var(--text-muted);
-        }
-
-        .connection-state-text.connected {
-            color: var(--accent);
-        }
-
-        .connection-state-text.disconnected {
-            color: var(--red);
-        }
-
         .connect-bar.form-connect-bar {
             margin-top: 12px;
             justify-content: flex-start;
@@ -234,7 +206,6 @@
             border-radius: 50%;
             background: var(--red);
             box-shadow: 0 0 8px var(--red);
-            animation: blink 2s ease-in-out infinite;
             transition: background 0.2s ease, box-shadow 0.2s ease;
         }
 
@@ -246,6 +217,7 @@
         .live-badge.connected .live-dot {
             background: var(--accent);
             box-shadow: 0 0 8px var(--accent);
+            animation: blink 2s ease-in-out infinite;
         }
 
         @keyframes blink {
@@ -880,9 +852,6 @@
                 <input type="text" id="api-url" value="https://ambient-ai-vcp-system.onrender.com" spellcheck="false">
                 <button type="button" id="connect-btn" onclick="updateApiUrl()" class="btn">Connect</button>
             </div>
-            <div class="connected-endpoint-badge" id="connected-endpoint-badge" title="https://ambient-ai-vcp-system.onrender.com">
-                <span class="connection-state-text disconnected" id="connection-state-text">Live / Disconnected</span>
-            </div>
         </div>
         <div class="header-right">
             <div class="live-badge" id="live-badge" aria-live="polite">
@@ -1425,28 +1394,16 @@
         return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
     }
 
-    function updateConnectedEndpointBadge(url) {
-        const badge = document.getElementById('connected-endpoint-badge');
-        if (badge) {
-            badge.title = url;
-        }
-    }
-
     function setConnectionStatus(isConnected) {
-        const connectionStateText = document.getElementById('connection-state-text');
         const liveBadge = document.getElementById('live-badge');
         const liveLabel = document.getElementById('live-label');
 
-        if (!connectionStateText || !liveBadge || !liveLabel) {
+        if (!liveBadge || !liveLabel) {
             return;
         }
 
         const statusLabel = isConnected ? 'Live / Connected' : 'Live / Disconnected';
-        connectionStateText.textContent = statusLabel;
         liveLabel.textContent = statusLabel;
-
-        connectionStateText.classList.toggle('connected', isConnected);
-        connectionStateText.classList.toggle('disconnected', !isConnected);
         liveBadge.classList.toggle('connected', isConnected);
     }
 
@@ -1476,7 +1433,6 @@
             apiBaseUrl = candidateUrl;
             inputEl.value = candidateUrl;
             localStorage.setItem('vcp_api_base_url', candidateUrl);
-            updateConnectedEndpointBadge(candidateUrl);
             setConnectionStatus(true);
             showToast(`Connected to ${candidateUrl}`);
 
@@ -2333,7 +2289,6 @@
 
     // Initialize on page load
     document.getElementById('api-url').value = apiBaseUrl;
-    updateConnectedEndpointBadge(apiBaseUrl);
     setConnectionStatus(false);
     document.getElementById('api-url').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
