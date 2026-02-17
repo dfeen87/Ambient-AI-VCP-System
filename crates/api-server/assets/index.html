@@ -1103,7 +1103,10 @@
                 <div class="form-group form-span-3">
                     <label>Inputs (JSON)</label>
                     <textarea id="task-inputs" placeholder='{"job":"example"} or plain text like summarize dataset A' required>{}</textarea>
-                    <div class="inline-hint" id="task-inputs-hint">You can paste JSON or plain text. Plain text is automatically wrapped as JSON.</div>
+                    <div style="display: flex; gap: 12px; margin-top: 10px; margin-bottom: 8px;">
+                        <button type="button" class="btn btn-ghost" id="convert-inputs-btn">Convert Plain Text → JSON</button>
+                    </div>
+                    <div class="inline-hint" id="task-inputs-hint">You can paste JSON or plain text, then click convert to structure plain text for node analysis.</div>
                 </div>
             </div>
 
@@ -1504,11 +1507,11 @@
             inputsHint.textContent = 'Valid JSON payload.';
             inputsHint.className = 'inline-hint success';
         } else if (strictJsonState === 'invalid') {
-            inputsHint.textContent = 'JSON-looking input is invalid. Fix the JSON syntax or use plain text (it will be wrapped as {"prompt":"..."}).';
+            inputsHint.textContent = 'JSON-looking input is invalid. Fix the JSON syntax or use plain text, then click convert.';
             inputsHint.className = 'inline-hint error';
             isValid = false;
         } else {
-            inputsHint.textContent = 'Plain text detected — it will be submitted as {"prompt": "..."}. JSON is optional.';
+            inputsHint.textContent = 'Plain text detected. Click "Convert Plain Text → JSON" before submit.';
             inputsHint.className = 'inline-hint success';
         }
 
@@ -1542,8 +1545,41 @@
         try {
             return JSON.parse(trimmed);
         } catch (_err) {
-            return { prompt: trimmed };
+            return { prompt: trimmed, description: '' };
         }
+    }
+
+    function convertPlainTextInputsToJson() {
+        const inputsEl = document.getElementById('task-inputs');
+        const inputsHint = document.getElementById('task-inputs-hint');
+        const raw = (inputsEl.value || '').trim();
+
+        if (!raw) {
+            inputsHint.textContent = 'Nothing to convert. Enter plain text first.';
+            inputsHint.className = 'inline-hint error';
+            return;
+        }
+
+        const jsonState = classifyJsonInput(raw);
+        if (jsonState === 'valid') {
+            inputsHint.textContent = 'Already valid JSON payload.';
+            inputsHint.className = 'inline-hint success';
+            return;
+        }
+
+        if (jsonState === 'invalid') {
+            inputsHint.textContent = 'Cannot convert because this starts like JSON but has invalid syntax. Fix it or use plain text only.';
+            inputsHint.className = 'inline-hint error';
+            return;
+        }
+
+        const converted = {
+            prompt: raw,
+            description: '',
+        };
+        inputsEl.value = JSON.stringify(converted, null, 2);
+        inputsHint.textContent = 'Converted plain text to JSON for node analysis. Description left blank.';
+        inputsHint.className = 'inline-hint success';
     }
 
     function animateValue(el, end) {
@@ -1919,6 +1955,10 @@
     document.getElementById('task-min-nodes').addEventListener('input', validateTaskForm);
     document.getElementById('task-max-exec').addEventListener('input', validateTaskForm);
     document.getElementById('task-inputs').addEventListener('input', validateTaskForm);
+    document.getElementById('convert-inputs-btn').addEventListener('click', () => {
+        convertPlainTextInputsToJson();
+        validateTaskForm();
+    });
 
     document.getElementById('task-modal-overlay').addEventListener('click', (e) => {
         if (e.target.id === 'task-modal-overlay') {
