@@ -348,6 +348,25 @@ impl AppState {
         require_gpu: bool,
     ) -> ApiResult<()> {
         let max_attachments = Self::max_active_task_attachments_per_node();
+        let assigned_nodes: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM task_assignments
+            WHERE task_id = $1
+              AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(task_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        if assigned_nodes >= min_nodes as i64 {
+            return self
+                .update_task_status_from_assignments(task_id, min_nodes)
+                .await;
+        }
+
+        let additional_nodes_needed = min_nodes as i64 - assigned_nodes;
 
         let node_ids = sqlx::query_scalar::<_, String>(
             r#"
@@ -363,9 +382,17 @@ impl AppState {
               AND n.memory_gb >= $3
               AND n.bandwidth_mbps >= $4
               AND ($5 = FALSE OR n.gpu_available = TRUE)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM task_assignments existing
+                  WHERE existing.task_id = $6
+                    AND existing.node_id = n.node_id
+                    AND existing.disconnected_at IS NULL
+              )
             GROUP BY n.node_id, n.registered_at
-            HAVING COUNT(ta.task_id) < $6
+            HAVING COUNT(ta.task_id) < $7
             ORDER BY n.registered_at ASC
+            LIMIT $8
             "#,
         )
         .bind(task_registry_entry.preferred_node_type)
@@ -373,7 +400,9 @@ impl AppState {
         .bind(task_registry_entry.minimum_capabilities.memory_gb)
         .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
         .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
+        .bind(task_id)
         .bind(max_attachments)
+        .bind(additional_nodes_needed)
         .fetch_all(&self.db)
         .await?;
 
@@ -384,6 +413,7 @@ impl AppState {
                 VALUES ($1, $2)
                 ON CONFLICT (task_id, node_id)
                 DO UPDATE SET assigned_at = NOW(), disconnected_at = NULL
+                WHERE task_assignments.disconnected_at IS NOT NULL
                 "#,
             )
             .bind(task_id)
@@ -486,12 +516,13 @@ impl AppState {
                 continue;
             }
 
-            sqlx::query(
+            let rows = sqlx::query(
                 r#"
                 INSERT INTO task_assignments (task_id, node_id)
                 VALUES ($1, $2)
                 ON CONFLICT (task_id, node_id)
                 DO UPDATE SET assigned_at = NOW(), disconnected_at = NULL
+                WHERE task_assignments.disconnected_at IS NOT NULL
                 "#,
             )
             .bind(task_id)
@@ -499,7 +530,9 @@ impl AppState {
             .execute(&self.db)
             .await?;
 
-            current_attachments += 1;
+            if rows.rows_affected() > 0 {
+                current_attachments += 1;
+            }
 
             self.update_task_status_from_assignments(task_id, min_nodes as u32)
                 .await?;
