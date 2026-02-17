@@ -2303,7 +2303,8 @@
                 await fetchData();
             } else {
                 const err = await res.json().catch(() => ({}));
-                showToast(err.message || `Task submission failed (HTTP ${res.status})`, true);
+                const serverMsg = err.message || err.error || '';
+                showToast(serverMsg || `Task submission failed (HTTP ${res.status})`, true);
             }
         } catch (err) {
             showToast('Network error: ' + err.message, true);
