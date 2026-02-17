@@ -63,10 +63,7 @@ mod tests {
 
         let request = Request::builder().uri("/").body(Body::empty()).unwrap();
 
-        let response = app
-            .oneshot(request)
-            .await
-            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
 
