@@ -386,12 +386,8 @@ impl AppState {
                     AND existing.node_id = n.node_id
                     AND existing.disconnected_at IS NULL
               )
-              AND (
-                  SELECT COUNT(*)
-                  FROM task_assignments active
-                  WHERE active.node_id = n.node_id
-                    AND active.disconnected_at IS NULL
-              ) < $7
+            GROUP BY n.node_id, n.registered_at
+            HAVING COUNT(ta.task_id) < $7
             ORDER BY n.registered_at ASC
             LIMIT $8
             "#,
@@ -538,7 +534,7 @@ impl AppState {
             .await?;
 
             if rows.rows_affected() > 0 {
-                current_attachments = self.active_attachment_count_for_node(node_id).await?;
+                current_attachments += 1;
             }
 
             self.update_task_status_from_assignments(task_id, min_nodes as u32)
