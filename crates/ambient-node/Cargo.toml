@@ -17,3 +17,5 @@ sha3.workspace = true
 
 # Node-specific dependencies
 uuid = { version = "1.6", features = ["v4", "serde"] }
+
+ring.workspace = true
