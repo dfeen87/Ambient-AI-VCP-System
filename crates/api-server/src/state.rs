@@ -45,6 +45,18 @@ impl AppState {
         Self::parse_node_heartbeat_stale_timeout_seconds(configured.as_deref())
     }
 
+    fn parse_connect_session_eligibility_grace_seconds(value: Option<&str>) -> i64 {
+        value
+            .and_then(|raw| raw.parse::<i64>().ok())
+            .filter(|parsed| *parsed >= 0)
+            .unwrap_or(3600)
+    }
+
+    fn connect_session_eligibility_grace_seconds() -> i64 {
+        let configured = std::env::var("CONNECT_SESSION_ELIGIBILITY_GRACE_SECONDS").ok();
+        Self::parse_connect_session_eligibility_grace_seconds(configured.as_deref())
+    }
+
     /// Create new application state with database pool
     pub fn new(db: PgPool) -> Self {
         Self { db }
@@ -394,6 +406,7 @@ impl AppState {
 
         let additional_nodes_needed = min_nodes as i64 - assigned_nodes;
         let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
+        let connect_session_grace_seconds = Self::connect_session_eligibility_grace_seconds();
 
         let node_ids = sqlx::query_scalar::<_, String>(
             r#"
@@ -441,6 +454,7 @@ impl AppState {
         .bind(max_attachments)
         .bind(heartbeat_stale_timeout_seconds)
         .bind(additional_nodes_needed)
+        .bind(connect_session_grace_seconds)
         .fetch_all(&self.db)
         .await?;
 
@@ -532,6 +546,7 @@ impl AppState {
             };
 
             let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
+            let connect_session_grace_seconds = Self::connect_session_eligibility_grace_seconds();
 
             let node_is_eligible = sqlx::query_scalar::<_, bool>(
                 r#"
@@ -566,6 +581,7 @@ impl AppState {
             .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
             .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
             .bind(heartbeat_stale_timeout_seconds)
+            .bind(connect_session_grace_seconds)
             .fetch_one(&self.db)
             .await?;
 
@@ -2274,6 +2290,30 @@ mod tests {
         assert_eq!(
             AppState::parse_max_active_task_attachments_per_node(None),
             50
+        );
+    }
+
+    #[test]
+    fn parses_connect_session_eligibility_grace_seconds() {
+        assert_eq!(
+            AppState::parse_connect_session_eligibility_grace_seconds(Some("7200")),
+            7200
+        );
+        assert_eq!(
+            AppState::parse_connect_session_eligibility_grace_seconds(Some("0")),
+            0
+        );
+        assert_eq!(
+            AppState::parse_connect_session_eligibility_grace_seconds(Some("-1")),
+            3600
+        );
+        assert_eq!(
+            AppState::parse_connect_session_eligibility_grace_seconds(Some("bogus")),
+            3600
+        );
+        assert_eq!(
+            AppState::parse_connect_session_eligibility_grace_seconds(None),
+            3600
         );
     }
 
