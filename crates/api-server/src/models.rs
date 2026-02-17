@@ -481,6 +481,63 @@ pub enum TaskStatus {
     Failed,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ConnectSessionStartRequest {
+    pub task_id: String,
+    pub tunnel_protocol: Option<String>,
+}
+
+impl ConnectSessionStartRequest {
+    pub fn validate(&self) -> Result<(), ApiError> {
+        if self.task_id.is_empty() {
+            return Err(ApiError::bad_request("task_id cannot be empty"));
+        }
+
+        if let Some(protocol) = &self.tunnel_protocol {
+            const VALID_PROTOCOLS: &[&str] = &["mtls", "wireguard", "quic"];
+            if !VALID_PROTOCOLS.contains(&protocol.as_str()) {
+                return Err(ApiError::bad_request(format!(
+                    "tunnel_protocol must be one of: {}",
+                    VALID_PROTOCOLS.join(", ")
+                )));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectSessionStatus {
+    Active,
+    Ended,
+    Expired,
+}
+
+#[derive(Debug, Serialize, ToSchema, Clone)]
+pub struct ConnectSessionInfo {
+    pub session_id: String,
+    pub task_id: String,
+    pub node_id: String,
+    pub requester_id: String,
+    pub tunnel_protocol: String,
+    pub egress_profile: String,
+    pub destination_policy_id: String,
+    pub bandwidth_limit_mbps: f64,
+    pub status: ConnectSessionStatus,
+    pub created_at: String,
+    pub expires_at: String,
+    pub last_heartbeat_at: Option<String>,
+    pub ended_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ConnectSessionStartResponse {
+    pub session: ConnectSessionInfo,
+    pub session_token: String,
+}
+
 /// Proof verification request
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ProofVerificationRequest {
@@ -569,4 +626,29 @@ pub struct ClusterStats {
     pub failed_tasks: usize,
     pub avg_health_score: f64,
     pub total_compute_capacity: f64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connect_session_start_request_accepts_supported_protocols() {
+        let request = ConnectSessionStartRequest {
+            task_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            tunnel_protocol: Some("wireguard".to_string()),
+        };
+
+        assert!(request.validate().is_ok());
+    }
+
+    #[test]
+    fn connect_session_start_request_rejects_unsupported_protocols() {
+        let request = ConnectSessionStartRequest {
+            task_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            tunnel_protocol: Some("ipsec".to_string()),
+        };
+
+        assert!(request.validate().is_err());
+    }
 }

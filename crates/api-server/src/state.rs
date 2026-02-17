@@ -618,6 +618,239 @@ impl AppState {
         Ok(())
     }
 
+    pub async fn start_connect_session(
+        &self,
+        request: ConnectSessionStartRequest,
+        requester_id: Uuid,
+    ) -> ApiResult<ConnectSessionStartResponse> {
+        let task_uuid = Uuid::parse_str(&request.task_id)
+            .map_err(|_| ApiError::bad_request("task_id must be a valid UUID"))?;
+
+        let task_row = sqlx::query(
+            r#"
+            SELECT t.inputs, t.status
+            FROM tasks t
+            WHERE t.task_id = $1
+              AND t.creator_id = $2
+              AND t.task_type = 'connect_only'
+            "#,
+        )
+        .bind(task_uuid)
+        .bind(requester_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        let Some(task_row) = task_row else {
+            return Err(ApiError::not_found_or_forbidden(
+                "connect_only task not found for requester",
+            ));
+        };
+
+        let status: String = task_row.get("status");
+        if status != "running" {
+            return Err(ApiError::bad_request(
+                "connect session can only start when task status is running",
+            ));
+        }
+
+        let inputs: serde_json::Value = task_row.get("inputs");
+        let input_obj = inputs
+            .as_object()
+            .ok_or_else(|| ApiError::bad_request("task inputs must be an object"))?;
+
+        let session_id = input_obj
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ApiError::bad_request("connect_only task missing session_id"))?
+            .to_string();
+
+        let egress_profile = input_obj
+            .get("egress_profile")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ApiError::bad_request("connect_only task missing egress_profile"))?
+            .to_string();
+
+        let destination_policy_id = input_obj
+            .get("destination_policy_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                ApiError::bad_request("connect_only task missing destination_policy_id")
+            })?
+            .to_string();
+
+        let duration_seconds = input_obj
+            .get("duration_seconds")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| ApiError::bad_request("connect_only task missing duration_seconds"))?
+            .clamp(1, 3600);
+
+        let bandwidth_limit_mbps = input_obj
+            .get("bandwidth_limit_mbps")
+            .and_then(|v| v.as_f64())
+            .ok_or_else(|| {
+                ApiError::bad_request("connect_only task missing bandwidth_limit_mbps")
+            })?;
+
+        let node_id = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT ta.node_id
+            FROM task_assignments ta
+            JOIN nodes n ON n.node_id = ta.node_id
+            WHERE ta.task_id = $1
+              AND ta.disconnected_at IS NULL
+              AND n.deleted_at IS NULL
+              AND n.status = 'online'
+              AND (n.node_type = 'open_internet' OR n.node_type = 'any')
+            ORDER BY ta.assigned_at ASC
+            LIMIT 1
+            "#,
+        )
+        .bind(task_uuid)
+        .fetch_optional(&self.db)
+        .await?
+        .ok_or_else(|| ApiError::service_unavailable("No eligible open_internet node assigned"))?;
+
+        let protocol = request
+            .tunnel_protocol
+            .unwrap_or_else(|| "mtls".to_string());
+        let now = chrono::Utc::now();
+        let expires_at = now + chrono::Duration::seconds(duration_seconds);
+        let session_token = crate::auth::generate_connect_session_token();
+        let session_token_hash = crate::auth::hash_connect_session_token(&session_token);
+
+        sqlx::query(
+            r#"
+            INSERT INTO connect_sessions (
+                session_id, task_id, requester_id, node_id, tunnel_protocol,
+                egress_profile, destination_policy_id, bandwidth_limit_mbps,
+                session_token_hash, status, created_at, expires_at, last_heartbeat_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $10)
+            ON CONFLICT (session_id)
+            DO UPDATE SET
+                node_id = EXCLUDED.node_id,
+                tunnel_protocol = EXCLUDED.tunnel_protocol,
+                egress_profile = EXCLUDED.egress_profile,
+                destination_policy_id = EXCLUDED.destination_policy_id,
+                bandwidth_limit_mbps = EXCLUDED.bandwidth_limit_mbps,
+                session_token_hash = EXCLUDED.session_token_hash,
+                status = 'active',
+                created_at = EXCLUDED.created_at,
+                expires_at = EXCLUDED.expires_at,
+                ended_at = NULL,
+                last_heartbeat_at = EXCLUDED.last_heartbeat_at
+            "#,
+        )
+        .bind(&session_id)
+        .bind(task_uuid)
+        .bind(requester_id)
+        .bind(&node_id)
+        .bind(&protocol)
+        .bind(&egress_profile)
+        .bind(&destination_policy_id)
+        .bind(bandwidth_limit_mbps)
+        .bind(&session_token_hash)
+        .bind(now)
+        .bind(expires_at)
+        .execute(&self.db)
+        .await?;
+
+        let session = ConnectSessionInfo {
+            session_id,
+            task_id: task_uuid.to_string(),
+            node_id,
+            requester_id: requester_id.to_string(),
+            tunnel_protocol: protocol,
+            egress_profile,
+            destination_policy_id,
+            bandwidth_limit_mbps,
+            status: ConnectSessionStatus::Active,
+            created_at: now.to_rfc3339(),
+            expires_at: expires_at.to_rfc3339(),
+            last_heartbeat_at: Some(now.to_rfc3339()),
+            ended_at: None,
+        };
+
+        Ok(ConnectSessionStartResponse {
+            session,
+            session_token,
+        })
+    }
+
+    pub async fn get_connect_session(
+        &self,
+        session_id: &str,
+        requester_id: Uuid,
+    ) -> ApiResult<Option<ConnectSessionInfo>> {
+        let row = sqlx::query(
+            r#"
+            SELECT session_id, task_id, requester_id, node_id, tunnel_protocol,
+                   egress_profile, destination_policy_id, bandwidth_limit_mbps,
+                   status, created_at, expires_at, last_heartbeat_at, ended_at
+            FROM connect_sessions
+            WHERE session_id = $1
+              AND requester_id = $2
+            "#,
+        )
+        .bind(session_id)
+        .bind(requester_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        Ok(row.map(map_connect_session_row))
+    }
+
+    pub async fn heartbeat_connect_session(
+        &self,
+        session_id: &str,
+        requester_id: Uuid,
+    ) -> ApiResult<Option<ConnectSessionInfo>> {
+        let row = sqlx::query(
+            r#"
+            UPDATE connect_sessions
+            SET last_heartbeat_at = NOW(),
+                status = CASE WHEN expires_at < NOW() THEN 'expired' ELSE status END
+            WHERE session_id = $1
+              AND requester_id = $2
+              AND status = 'active'
+            RETURNING session_id, task_id, requester_id, node_id, tunnel_protocol,
+                   egress_profile, destination_policy_id, bandwidth_limit_mbps,
+                   status, created_at, expires_at, last_heartbeat_at, ended_at
+            "#,
+        )
+        .bind(session_id)
+        .bind(requester_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        Ok(row.map(map_connect_session_row))
+    }
+
+    pub async fn stop_connect_session(
+        &self,
+        session_id: &str,
+        requester_id: Uuid,
+    ) -> ApiResult<Option<ConnectSessionInfo>> {
+        let row = sqlx::query(
+            r#"
+            UPDATE connect_sessions
+            SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+            WHERE session_id = $1
+              AND requester_id = $2
+              AND status = 'active'
+            RETURNING session_id, task_id, requester_id, node_id, tunnel_protocol,
+                   egress_profile, destination_policy_id, bandwidth_limit_mbps,
+                   status, created_at, expires_at, last_heartbeat_at, ended_at
+            "#,
+        )
+        .bind(session_id)
+        .bind(requester_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        Ok(row.map(map_connect_session_row))
+    }
+
     /// Delete a task created by the requesting user
     pub async fn delete_task(&self, task_id: &str, requester_id: Uuid) -> ApiResult<bool> {
         let task_uuid = match Uuid::parse_str(task_id) {
@@ -1944,6 +2177,41 @@ fn suggested_json_shape_for_task(task_type: &str, prompt: &str) -> serde_json::V
             "timeout_ms": null
         }),
         _ => serde_json::json!({ "prompt": prompt }),
+    }
+}
+
+fn parse_connect_session_status(status: &str) -> ConnectSessionStatus {
+    match status.to_lowercase().as_str() {
+        "active" => ConnectSessionStatus::Active,
+        "ended" => ConnectSessionStatus::Ended,
+        "expired" => ConnectSessionStatus::Expired,
+        _ => ConnectSessionStatus::Expired,
+    }
+}
+
+fn map_connect_session_row(row: sqlx::postgres::PgRow) -> ConnectSessionInfo {
+    ConnectSessionInfo {
+        session_id: row.get("session_id"),
+        task_id: row.get::<Uuid, _>("task_id").to_string(),
+        requester_id: row.get::<Uuid, _>("requester_id").to_string(),
+        node_id: row.get("node_id"),
+        tunnel_protocol: row.get("tunnel_protocol"),
+        egress_profile: row.get("egress_profile"),
+        destination_policy_id: row.get("destination_policy_id"),
+        bandwidth_limit_mbps: row.get("bandwidth_limit_mbps"),
+        status: parse_connect_session_status(&row.get::<String, _>("status")),
+        created_at: row
+            .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+            .to_rfc3339(),
+        expires_at: row
+            .get::<chrono::DateTime<chrono::Utc>, _>("expires_at")
+            .to_rfc3339(),
+        last_heartbeat_at: row
+            .get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_heartbeat_at")
+            .map(|v| v.to_rfc3339()),
+        ended_at: row
+            .get::<Option<chrono::DateTime<chrono::Utc>>, _>("ended_at")
+            .map(|v| v.to_rfc3339()),
     }
 }
 

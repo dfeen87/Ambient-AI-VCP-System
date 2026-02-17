@@ -38,6 +38,10 @@ use state::AppState;
         get_task,
         list_tasks,
         delete_task,
+        start_connect_session,
+        get_connect_session,
+        heartbeat_connect_session,
+        stop_connect_session,
         verify_proof,
         get_cluster_stats,
         register_user,
@@ -51,6 +55,10 @@ use state::AppState;
         TaskSubmission,
         TaskInfo,
         TaskStatus,
+        ConnectSessionStartRequest,
+        ConnectSessionInfo,
+        ConnectSessionStartResponse,
+        ConnectSessionStatus,
         ProofVerificationRequest,
         ProofVerificationResponse,
         ClusterStats,
@@ -347,6 +355,136 @@ async fn submit_task(
     }
 
     Ok((StatusCode::CREATED, Json(task_info)))
+}
+
+/// Start a connect_only session and issue an ephemeral session token.
+#[utoipa::path(
+    post,
+    path = "/api/v1/connect-sessions/start",
+    request_body = ConnectSessionStartRequest,
+    responses(
+        (status = 201, description = "Connect session started", body = ConnectSessionStartResponse),
+        (status = 400, description = "Invalid request", body = ApiError),
+        (status = 404, description = "Task not found", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn start_connect_session(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Json(request): Json<ConnectSessionStartRequest>,
+) -> ApiResult<(StatusCode, Json<ConnectSessionStartResponse>)> {
+    request.validate()?;
+
+    let requester_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+
+    let session = state.start_connect_session(request, requester_id).await?;
+    Ok((StatusCode::CREATED, Json(session)))
+}
+
+/// Get connect session status.
+#[utoipa::path(
+    get,
+    path = "/api/v1/connect-sessions/{session_id}",
+    params(
+        ("session_id" = String, Path, description = "Session ID")
+    ),
+    responses(
+        (status = 200, description = "Connect session details", body = ConnectSessionInfo),
+        (status = 404, description = "Session not found", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn get_connect_session(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Path(session_id): Path<String>,
+) -> ApiResult<Json<ConnectSessionInfo>> {
+    let requester_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+
+    let Some(session) = state.get_connect_session(&session_id, requester_id).await? else {
+        return Err(ApiError::not_found_or_forbidden(
+            "Connect session not found",
+        ));
+    };
+
+    Ok(Json(session))
+}
+
+/// Heartbeat an active connect session.
+#[utoipa::path(
+    post,
+    path = "/api/v1/connect-sessions/{session_id}/heartbeat",
+    params(
+        ("session_id" = String, Path, description = "Session ID")
+    ),
+    responses(
+        (status = 200, description = "Connect session heartbeat recorded", body = ConnectSessionInfo),
+        (status = 404, description = "Session not found or inactive", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn heartbeat_connect_session(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Path(session_id): Path<String>,
+) -> ApiResult<Json<ConnectSessionInfo>> {
+    let requester_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+
+    let Some(session) = state
+        .heartbeat_connect_session(&session_id, requester_id)
+        .await?
+    else {
+        return Err(ApiError::not_found_or_forbidden(
+            "Connect session not found or inactive",
+        ));
+    };
+
+    Ok(Json(session))
+}
+
+/// Stop an active connect session.
+#[utoipa::path(
+    post,
+    path = "/api/v1/connect-sessions/{session_id}/stop",
+    params(
+        ("session_id" = String, Path, description = "Session ID")
+    ),
+    responses(
+        (status = 200, description = "Connect session stopped", body = ConnectSessionInfo),
+        (status = 404, description = "Session not found or inactive", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn stop_connect_session(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Path(session_id): Path<String>,
+) -> ApiResult<Json<ConnectSessionInfo>> {
+    let requester_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+
+    let Some(session) = state
+        .stop_connect_session(&session_id, requester_id)
+        .await?
+    else {
+        return Err(ApiError::not_found_or_forbidden(
+            "Connect session not found or inactive",
+        ));
+    };
+
+    Ok(Json(session))
 }
 
 /// Get task information
@@ -774,6 +912,16 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/nodes/:node_id/heartbeat", put(update_heartbeat))
         .route("/tasks", post(submit_task).get(list_tasks))
         .route("/tasks/:task_id", get(get_task).delete(delete_task))
+        .route("/connect-sessions/start", post(start_connect_session))
+        .route("/connect-sessions/:session_id", get(get_connect_session))
+        .route(
+            "/connect-sessions/:session_id/heartbeat",
+            post(heartbeat_connect_session),
+        )
+        .route(
+            "/connect-sessions/:session_id/stop",
+            post(stop_connect_session),
+        )
         .route("/proofs/verify", post(verify_proof))
         .route("/cluster/stats", get(get_cluster_stats))
         .layer(axum_middleware::from_fn(

@@ -18,6 +18,7 @@ type HmacSha256 = Hmac<Sha256>;
 
 const DEV_REFRESH_TOKEN_PEPPER: &str = "dev-refresh-pepper-change-me";
 const DEV_API_KEY_PEPPER: &str = "dev-api-key-pepper-change-me";
+const DEV_CONNECT_SESSION_TOKEN_PEPPER: &str = "dev-connect-session-pepper-change-me";
 const MIN_PEPPER_LENGTH: usize = 32;
 static REFRESH_TOKEN_PEPPER_WARNING: Once = Once::new();
 static API_KEY_PEPPER_WARNING: Once = Once::new();
@@ -368,6 +369,35 @@ pub fn hash_api_key(key: &str) -> String {
     hash_with_hmac_sha256(key, &pepper)
 }
 
+/// Generate a secure connect session token for relay/tunnel setup.
+pub fn generate_connect_session_token() -> String {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const TOKEN_LENGTH: usize = 64;
+
+    let mut rng = rand::thread_rng();
+
+    let token: String = (0..TOKEN_LENGTH)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect();
+
+    format!("cs_{}", token)
+}
+
+/// Hash connect session token for storage and lookup.
+pub fn hash_connect_session_token(token: &str) -> String {
+    let pepper = resolve_hash_pepper(
+        "CONNECT_SESSION_TOKEN_PEPPER",
+        DEV_CONNECT_SESSION_TOKEN_PEPPER,
+        "CONNECT_SESSION_TOKEN_PEPPER",
+    );
+
+    hash_with_hmac_sha256(token, &pepper)
+}
+
 fn hash_with_hmac_sha256(input: &str, pepper: &str) -> String {
     let mut mac = HmacSha256::new_from_slice(pepper.as_bytes())
         .expect("HMAC accepts keys of any size for SHA256");
@@ -536,6 +566,25 @@ mod tests {
         let key = generate_api_key();
         assert!(key.starts_with("vcp_"));
         assert_eq!(key.len(), 36); // "vcp_" + 32 characters
+    }
+
+    #[test]
+    fn test_connect_session_token_generation_and_hashing() {
+        let _guard = env_test_lock().lock().unwrap();
+        let _pepper = EnvVarGuard::set(
+            "CONNECT_SESSION_TOKEN_PEPPER",
+            "StrongConnectSessionPepperValue1234567890AB!",
+        );
+        let _environment = EnvVarGuard::set("ENVIRONMENT", "development");
+
+        let token = generate_connect_session_token();
+        assert!(token.starts_with("cs_"));
+
+        let h1 = hash_connect_session_token(&token);
+        let h2 = hash_connect_session_token(&token);
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 64);
+        assert_ne!(h1, token);
     }
 
     #[test]
