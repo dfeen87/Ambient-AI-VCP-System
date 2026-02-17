@@ -7,7 +7,7 @@ use axum::{
 };
 use sqlx::Row;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{error, info};
 use utoipa::OpenApi;
 use uuid::Uuid;
 
@@ -310,7 +310,25 @@ async fn submit_task(
     let creator_id = Uuid::parse_str(&auth_user.user_id)
         .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
 
+    let task_type = task.task_type.clone();
+    let task_inputs = task.inputs.clone();
+
     let task_info = state.submit_task(task, creator_id).await?;
+
+    if task_info.status == TaskStatus::Running {
+        let state_for_completion = Arc::clone(&state);
+        let task_id = Uuid::parse_str(&task_info.task_id)
+            .map_err(|_| ApiError::internal_error("Invalid task ID format"))?;
+
+        tokio::spawn(async move {
+            if let Err(err) = state_for_completion
+                .complete_task_if_running(task_id, task_type, task_inputs)
+                .await
+            {
+                error!(%task_id, "Failed to complete task asynchronously: {err}");
+            }
+        });
+    }
 
     Ok((StatusCode::CREATED, Json(task_info)))
 }

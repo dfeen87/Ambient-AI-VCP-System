@@ -192,7 +192,6 @@ impl AppState {
         let task_id = Uuid::new_v4();
         let now = chrono::Utc::now();
         let task_type = task.task_type.clone();
-        let task_inputs = task.inputs.clone();
 
         let task_registry_entry = task_type_registry_entry(&task.task_type)
             .ok_or_else(|| crate::error::ApiError::bad_request("Unsupported task_type"))?;
@@ -230,47 +229,7 @@ impl AppState {
 
         let task_status = self.get_task_status(task_id).await?;
 
-        let (status, result) = if task_status == "running" {
-            let result = analyze_task_payload(&task_type, &task_inputs);
-
-            let mut tx = self.db.begin().await?;
-
-            let assigned_nodes_for_completed_task = sqlx::query_scalar::<_, String>(
-                r#"
-                    SELECT node_id
-                    FROM task_assignments
-                    WHERE task_id = $1
-                      AND disconnected_at IS NULL
-                    "#,
-            )
-            .bind(task_id)
-            .fetch_all(&mut *tx)
-            .await?;
-
-            sqlx::query(
-                r#"
-                UPDATE tasks
-                SET status = 'completed', result = $1, updated_at = NOW()
-                WHERE task_id = $2
-                "#,
-            )
-            .bind(&result)
-            .bind(task_id)
-            .execute(&mut *tx)
-            .await?;
-
-            self.disconnect_task_assignments(task_id, &mut tx).await?;
-
-            tx.commit().await?;
-
-            for node_id in assigned_nodes_for_completed_task {
-                self.assign_pending_tasks_for_node(&node_id).await?;
-            }
-
-            (TaskStatus::Completed, Some(result))
-        } else {
-            (parse_task_status(&task_status), None)
-        };
+        let status = parse_task_status(&task_status);
 
         let assigned_nodes = self.get_assigned_nodes(task_id).await?;
 
@@ -281,11 +240,61 @@ impl AppState {
             assigned_nodes,
             created_at: now.to_rfc3339(),
             updated_at: now.to_rfc3339(),
-            result,
+            result: None,
             proof_id: None,
         };
 
         Ok(task_info)
+    }
+
+    pub async fn complete_task_if_running(
+        &self,
+        task_id: Uuid,
+        task_type: String,
+        task_inputs: serde_json::Value,
+    ) -> ApiResult<()> {
+        let task_status = self.get_task_status(task_id).await?;
+        if task_status != "running" {
+            return Ok(());
+        }
+
+        let result = analyze_task_payload(&task_type, &task_inputs);
+
+        let mut tx = self.db.begin().await?;
+
+        let assigned_nodes_for_completed_task = sqlx::query_scalar::<_, String>(
+            r#"
+                SELECT node_id
+                FROM task_assignments
+                WHERE task_id = $1
+                  AND disconnected_at IS NULL
+                "#,
+        )
+        .bind(task_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            UPDATE tasks
+            SET status = 'completed', result = $1, updated_at = NOW()
+            WHERE task_id = $2
+            "#,
+        )
+        .bind(&result)
+        .bind(task_id)
+        .execute(&mut *tx)
+        .await?;
+
+        self.disconnect_task_assignments(task_id, &mut tx).await?;
+
+        tx.commit().await?;
+
+        for node_id in assigned_nodes_for_completed_task {
+            self.assign_pending_tasks_for_node(&node_id).await?;
+        }
+
+        Ok(())
     }
 
     async fn get_assigned_nodes(&self, task_id: Uuid) -> ApiResult<Vec<String>> {
