@@ -121,7 +121,7 @@ See [ROBUSTNESS_ANALYSIS.md](./ROBUSTNESS_ANALYSIS.md) for complete details.
 - Added `validate()` methods to `NodeRegistration`, `NodeCapabilities`, `TaskSubmission`, `TaskRequirements`
 - Validation rules:
   - Node ID: 1-64 chars, alphanumeric + hyphens/underscores
-  - Node type: Whitelist of `compute`, `gateway`, `storage`, `validator`
+  - Node type: Whitelist of `compute`, `gateway`, `storage`, `validator`, `open_internet`, `any`
   - Bandwidth: 0-100,000 Mbps
   - CPU cores: 1-1024
   - Memory: 0.1-10,000 GB
@@ -273,7 +273,7 @@ Finished release [optimized] target(s) in 1m 10s
 ❌ node_id="" → REJECTED: "node_id cannot be empty"
 
 # Invalid node_type
-❌ node_type="invalid" → REJECTED: "node_type must be one of: compute, gateway, storage, validator, any"
+❌ node_type="invalid" → REJECTED: "node_type must be one of: compute, gateway, storage, validator, open_internet, any"
 
 # Invalid bandwidth
 ❌ bandwidth=-100 → REJECTED: "bandwidth_mbps must be between 0 and 100,000"

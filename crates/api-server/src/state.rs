@@ -1114,6 +1114,10 @@ impl AppState {
 }
 
 fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_json::Value {
+    if task_type == "connect_only" {
+        return analyze_connect_only_payload(inputs);
+    }
+
     match inputs {
         serde_json::Value::Object(map) => {
             match task_type {
@@ -1214,6 +1218,41 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
             "value": primitive
         }),
     }
+}
+
+fn analyze_connect_only_payload(inputs: &serde_json::Value) -> serde_json::Value {
+    let Some(map) = inputs.as_object() else {
+        return serde_json::json!({
+            "task_type": "connect_only",
+            "analysis_mode": "connect_only",
+            "status": "rejected",
+            "summary": "connect_only payload must be a JSON object."
+        });
+    };
+
+    serde_json::json!({
+        "task_type": "connect_only",
+        "analysis_mode": "connect_only",
+        "status": "accepted",
+        "summary": "Connectivity-only session requested. No arbitrary compute payload will be executed.",
+        "session_id": map.get("session_id").cloned().unwrap_or(serde_json::Value::Null),
+        "requester_id": map.get("requester_id").cloned().unwrap_or(serde_json::Value::Null),
+        "duration_seconds": map.get("duration_seconds").cloned().unwrap_or(serde_json::Value::Null),
+        "bandwidth_limit_mbps": map
+            .get("bandwidth_limit_mbps")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        "egress_profile": map.get("egress_profile").cloned().unwrap_or(serde_json::Value::Null),
+        "destination_policy_id": map
+            .get("destination_policy_id")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        "enforcement": {
+            "task_description_allowed": false,
+            "wasm_module_allowed": false,
+            "policy_validation_required": true
+        }
+    })
 }
 
 #[allow(dead_code)]

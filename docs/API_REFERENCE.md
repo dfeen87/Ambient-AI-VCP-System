@@ -16,7 +16,7 @@ ambient-vcp node --id <NODE_ID> --region <REGION> --node-type <TYPE>
 **Arguments:**
 - `--id, -i <NODE_ID>`: Unique identifier for the node
 - `--region, -r <REGION>`: Geographic region (default: "us-west")
-- `--node-type, -t <TYPE>`: Node type: compute, gateway, storage (default: "compute")
+- `--node-type, -t <TYPE>`: Node type: compute, gateway, storage, validator, open_internet, any (default: "compute")
 
 **Example:**
 ```bash

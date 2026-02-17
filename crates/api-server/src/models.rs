@@ -48,7 +48,14 @@ impl NodeRegistration {
         }
 
         // Validate node_type
-        const VALID_NODE_TYPES: &[&str] = &["compute", "gateway", "storage", "validator", "any"];
+        const VALID_NODE_TYPES: &[&str] = &[
+            "compute",
+            "gateway",
+            "storage",
+            "validator",
+            "open_internet",
+            "any",
+        ];
         if !VALID_NODE_TYPES.contains(&self.node_type.as_str()) {
             return Err(ApiError::bad_request(format!(
                 "node_type must be one of: {}",
@@ -109,7 +116,7 @@ pub struct TaskTypeRegistryEntry {
     pub allow_wasm_module: bool,
 }
 
-pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 4] = [
+pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 5] = [
     TaskTypeRegistryEntry {
         task_type: "federated_learning",
         preferred_node_type: "compute",
@@ -160,6 +167,19 @@ pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 4] = [
         },
         max_execution_time_sec: 1800,
         max_input_size_mb: 20,
+        allow_wasm_module: false,
+    },
+    TaskTypeRegistryEntry {
+        task_type: "connect_only",
+        preferred_node_type: "open_internet",
+        minimum_capabilities: NodeCapabilities {
+            bandwidth_mbps: 50.0,
+            cpu_cores: 1,
+            memory_gb: 1.0,
+            gpu_available: false,
+        },
+        max_execution_time_sec: 3600,
+        max_input_size_mb: 1,
         allow_wasm_module: false,
     },
 ];
@@ -235,11 +255,137 @@ impl TaskSubmission {
         // Deep validate arbitrary JSON payloads.
         validate_json_depth(&self.inputs, 0)?;
 
+        if self.task_type == "connect_only" {
+            validate_connect_only_inputs(&self.inputs)?;
+
+            if self.requirements.min_nodes != 1 {
+                return Err(ApiError::bad_request(
+                    "connect_only tasks must set requirements.min_nodes to 1",
+                ));
+            }
+
+            if self.requirements.require_gpu {
+                return Err(ApiError::bad_request(
+                    "connect_only tasks cannot require GPU",
+                ));
+            }
+
+            if self.requirements.require_proof {
+                return Err(ApiError::bad_request(
+                    "connect_only tasks cannot require proof",
+                ));
+            }
+        }
+
         // Validate requirements
         self.requirements.validate()?;
 
         Ok(())
     }
+}
+
+fn validate_connect_only_inputs(inputs: &serde_json::Value) -> Result<(), ApiError> {
+    let obj = inputs
+        .as_object()
+        .ok_or_else(|| ApiError::bad_request("connect_only inputs must be a JSON object"))?;
+
+    let allowed_keys = [
+        "session_id",
+        "requester_id",
+        "duration_seconds",
+        "bandwidth_limit_mbps",
+        "egress_profile",
+        "destination_policy_id",
+    ];
+
+    for key in obj.keys() {
+        if !allowed_keys.contains(&key.as_str()) {
+            return Err(ApiError::bad_request(format!(
+                "connect_only inputs contains unsupported key: {}",
+                key
+            )));
+        }
+    }
+
+    let session_id = obj
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            ApiError::bad_request("connect_only inputs requires string field session_id")
+        })?;
+    if session_id.is_empty() || session_id.len() > 128 {
+        return Err(ApiError::bad_request(
+            "session_id must be between 1 and 128 characters",
+        ));
+    }
+
+    let requester_id = obj
+        .get("requester_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            ApiError::bad_request("connect_only inputs requires string field requester_id")
+        })?;
+    if requester_id.is_empty() || requester_id.len() > 128 {
+        return Err(ApiError::bad_request(
+            "requester_id must be between 1 and 128 characters",
+        ));
+    }
+
+    let duration_seconds = obj
+        .get("duration_seconds")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| {
+            ApiError::bad_request("connect_only inputs requires numeric field duration_seconds")
+        })?;
+    if duration_seconds == 0 || duration_seconds > 3600 {
+        return Err(ApiError::bad_request(
+            "duration_seconds must be between 1 and 3600",
+        ));
+    }
+
+    let bandwidth_limit_mbps = obj
+        .get("bandwidth_limit_mbps")
+        .and_then(|v| v.as_f64())
+        .ok_or_else(|| {
+            ApiError::bad_request("connect_only inputs requires numeric field bandwidth_limit_mbps")
+        })?;
+    if !(1.0..=10_000.0).contains(&bandwidth_limit_mbps) {
+        return Err(ApiError::bad_request(
+            "bandwidth_limit_mbps must be between 1 and 10,000",
+        ));
+    }
+
+    let egress_profile = obj
+        .get("egress_profile")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            ApiError::bad_request("connect_only inputs requires string field egress_profile")
+        })?;
+    const VALID_EGRESS_PROFILES: &[&str] = &[
+        "allowlist_domains",
+        "protocol_limited",
+        "metered_general_egress",
+    ];
+    if !VALID_EGRESS_PROFILES.contains(&egress_profile) {
+        return Err(ApiError::bad_request(format!(
+            "egress_profile must be one of: {}",
+            VALID_EGRESS_PROFILES.join(", ")
+        )));
+    }
+
+    let destination_policy_id = obj
+        .get("destination_policy_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            ApiError::bad_request("connect_only inputs requires string field destination_policy_id")
+        })?;
+    if destination_policy_id.is_empty() || destination_policy_id.len() > 128 {
+        return Err(ApiError::bad_request(
+            "destination_policy_id must be between 1 and 128 characters",
+        ));
+    }
+
+    Ok(())
 }
 
 fn validate_json_depth(value: &serde_json::Value, depth: usize) -> Result<(), ApiError> {
