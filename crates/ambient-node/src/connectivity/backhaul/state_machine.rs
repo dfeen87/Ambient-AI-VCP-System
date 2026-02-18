@@ -270,9 +270,11 @@ mod tests {
 
     #[test]
     fn test_probing_to_up() {
-        let mut config = StateMachineConfig::default();
-        config.min_state_duration_secs = 0;
-        config.probing_to_up_holddown_secs = 0;
+        let config = StateMachineConfig {
+            min_state_duration_secs: 0,
+            probing_to_up_holddown_secs: 0,
+            ..Default::default()
+        };
 
         let mut sm = InterfaceStateMachine::new("eth0".to_string(), config);
 
@@ -283,9 +285,11 @@ mod tests {
 
     #[test]
     fn test_up_to_degraded() {
-        let mut config = StateMachineConfig::default();
-        config.min_state_duration_secs = 0;
-        config.up_to_degraded_holddown_secs = 0;
+        let config = StateMachineConfig {
+            min_state_duration_secs: 0,
+            up_to_degraded_holddown_secs: 0,
+            ..Default::default()
+        };
 
         let mut sm = InterfaceStateMachine::new("eth0".to_string(), config);
         sm.force_state(InterfaceState::Up);
@@ -297,9 +301,11 @@ mod tests {
 
     #[test]
     fn test_degraded_to_down() {
-        let mut config = StateMachineConfig::default();
-        config.min_state_duration_secs = 0;
-        config.degraded_to_down_holddown_secs = 0;
+        let config = StateMachineConfig {
+            min_state_duration_secs: 0,
+            degraded_to_down_holddown_secs: 0,
+            ..Default::default()
+        };
 
         let mut sm = InterfaceStateMachine::new("eth0".to_string(), config);
         sm.force_state(InterfaceState::Degraded);
@@ -322,8 +328,10 @@ mod tests {
 
     #[test]
     fn test_min_state_duration() {
-        let mut config = StateMachineConfig::default();
-        config.min_state_duration_secs = 100; // Long duration
+        let config = StateMachineConfig {
+            min_state_duration_secs: 100, // Long duration
+            ..Default::default()
+        };
 
         let mut sm = InterfaceStateMachine::new("eth0".to_string(), config);
         sm.force_state(InterfaceState::Up);

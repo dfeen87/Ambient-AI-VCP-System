@@ -254,8 +254,10 @@ mod tests {
 
     #[test]
     fn test_score_without_policy_bias() {
-        let mut config = ScoringConfig::default();
-        config.enable_policy_bias = false;
+        let config = ScoringConfig {
+            enable_policy_bias: false,
+            ..Default::default()
+        };
         let scorer = InterfaceScorer::new(config);
 
         let ethernet = mock_interface("eth0", InterfaceType::Ethernet);

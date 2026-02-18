@@ -265,9 +265,11 @@ mod tests {
 
     #[test]
     fn test_onboarding_tokens() {
-        let mut config = SecurityConfig::default();
-        config.enable_onboarding_tokens = true;
-        config.token_lifetime_secs = 3600;
+        let config = SecurityConfig {
+            enable_onboarding_tokens: true,
+            token_lifetime_secs: 3600,
+            ..Default::default()
+        };
 
         let mut manager = SecurityManager::new(config);
 
@@ -280,8 +282,10 @@ mod tests {
 
     #[test]
     fn test_hostapd_config_wpa2() {
-        let mut config = SecurityConfig::default();
-        config.mode = SecurityMode::Wpa2Psk;
+        let config = SecurityConfig {
+            mode: SecurityMode::Wpa2Psk,
+            ..Default::default()
+        };
 
         let manager = SecurityManager::new(config);
         let hostapd_config = manager.get_hostapd_config();
@@ -293,9 +297,11 @@ mod tests {
 
     #[test]
     fn test_token_cleanup() {
-        let mut config = SecurityConfig::default();
-        config.enable_onboarding_tokens = true;
-        config.token_lifetime_secs = 0; // Expire immediately
+        let config = SecurityConfig {
+            enable_onboarding_tokens: true,
+            token_lifetime_secs: 0, // Expire immediately
+            ..Default::default()
+        };
 
         let mut manager = SecurityManager::new(config);
 
