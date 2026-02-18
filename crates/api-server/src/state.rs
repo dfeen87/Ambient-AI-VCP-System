@@ -1616,6 +1616,11 @@ impl AppState {
                         }
                     }
                 }
+            } else {
+                tracing::warn!(
+                    task_id = %task_id,
+                    "Failed to retrieve task status during node deletion; skipping automatic reassignment for this task"
+                );
             }
         }
 

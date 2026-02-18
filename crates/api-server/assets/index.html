@@ -1970,8 +1970,8 @@
                 ? (effectiveStatus === 'completed'
                     ? 'Session ended (disconnected)'
                     : (t.assigned_nodes.length > 0
-                        ? `Connected via: ${t.assigned_nodes.join(', ')}`
-                        : 'Awaiting relay node'))
+                        ? `Connected via node: ${t.assigned_nodes.join(', ')}`
+                        : 'Awaiting node assignment'))
                 : (effectiveStatus === 'completed'
                     ? 'Disconnected from nodes'
                     : (effectiveStatus === 'running'
