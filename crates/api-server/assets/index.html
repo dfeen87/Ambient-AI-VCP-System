@@ -1460,18 +1460,12 @@
     }
 
     function buildRelayConnectionHint(isConnected) {
-        if (!lastRelayConnection) {
+        if (!isConnected || !lastRelayConnection) {
             return '';
         }
 
         const nodeList = lastRelayConnection.nodeIds.join(', ');
-
-        if (isConnected) {
-            return ` • Relay node ${nodeList}`;
-        }
-
-        const ageSeconds = Math.max(0, Math.round((Date.now() - lastRelayConnection.updatedAtMs) / 1000));
-        return ` • Relay last seen on ${nodeList} (${ageSeconds}s ago)`;
+        return ` • Relay node ${nodeList}`;
     }
 
     function refreshRelayConnectionSnapshot(tasks) {
@@ -1480,6 +1474,7 @@
         );
 
         if (!activeConnectTask) {
+            lastRelayConnection = null;
             return;
         }
 
