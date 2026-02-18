@@ -737,10 +737,10 @@ async fn test_node_deletion_disconnects_tasks_and_reassigns() {
         .expect("cleanup tables before integration test");
 
     let state = AppState::new(pool.clone());
-    
+
     // Create owner for nodes
     let owner_id = Uuid::new_v4();
-    
+
     // Register first node
     let node1_id = format!("node-delete-test-1-{}", Uuid::new_v4());
     state
@@ -803,7 +803,7 @@ async fn test_node_deletion_disconnects_tasks_and_reassigns() {
     // Task should be running with at least one node assigned
     assert_eq!(submitted_task.status, TaskStatus::Running);
     assert!(!submitted_task.assigned_nodes.is_empty());
-    
+
     let initially_assigned_node = submitted_task.assigned_nodes[0].clone();
 
     // Delete the assigned node
@@ -826,8 +826,11 @@ async fn test_node_deletion_disconnects_tasks_and_reassigns() {
     .fetch_one(&pool)
     .await
     .expect("query should succeed");
-    
-    assert_eq!(disconnected_count, 1, "task assignment should be marked as disconnected");
+
+    assert_eq!(
+        disconnected_count, 1,
+        "task assignment should be marked as disconnected"
+    );
 
     // Fetch the task again to check if it was reassigned
     let task_after_deletion = state
@@ -841,10 +844,14 @@ async fn test_node_deletion_disconnects_tasks_and_reassigns() {
         // If running, it should have a different node assigned
         assert!(!task_after_deletion.assigned_nodes.is_empty());
         // The new assigned node should NOT be the deleted one
-        assert!(!task_after_deletion.assigned_nodes.contains(&initially_assigned_node));
+        assert!(!task_after_deletion
+            .assigned_nodes
+            .contains(&initially_assigned_node));
     } else {
         // If pending, the deleted node should not be in assigned_nodes
-        assert!(!task_after_deletion.assigned_nodes.contains(&initially_assigned_node));
+        assert!(!task_after_deletion
+            .assigned_nodes
+            .contains(&initially_assigned_node));
     }
 
     sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
@@ -879,10 +886,10 @@ async fn test_node_deletion_reverts_task_to_pending_without_fallback() {
         .expect("cleanup tables before integration test");
 
     let state = AppState::new(pool.clone());
-    
+
     // Create owner for node
     let owner_id = Uuid::new_v4();
-    
+
     // Register only one node
     let node_id = format!("node-delete-only-{}", Uuid::new_v4());
     state
@@ -942,9 +949,11 @@ async fn test_node_deletion_reverts_task_to_pending_without_fallback() {
 
     // Task should revert to pending since no fallback nodes are available
     assert_eq!(task_after_deletion.status, TaskStatus::Pending);
-    assert!(task_after_deletion.assigned_nodes.is_empty() || 
-            !task_after_deletion.assigned_nodes.contains(&node_id),
-            "deleted node should not be in assigned_nodes");
+    assert!(
+        task_after_deletion.assigned_nodes.is_empty()
+            || !task_after_deletion.assigned_nodes.contains(&node_id),
+        "deleted node should not be in assigned_nodes"
+    );
 
     sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
         .execute(&pool)
