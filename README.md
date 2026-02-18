@@ -1,12 +1,12 @@
 # Ambient AI + VCP System
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-48%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-59%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
  
 A **live online application** and implementation of a **Verifiable Computation Protocol (VCP)** for running and verifying distributed compute tasks across many machines.
 
 ## 🎯 Status: **Live in Production (Public Demo Running)**
 
-✅ **All 48 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
+✅ **All 59 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
 
 > Yes — this app is already deployed and running online.
 > You can use it as-is, and if you self-host it, you should still tune infra/security settings for your own environment.
@@ -65,6 +65,7 @@ Tip: To quickly verify the public demo is reachable, run:
   - ✅ View all registered nodes and their health
   - ✅ Monitor submitted tasks and their status
   - ✅ See real-time cluster statistics
+  - ✅ View observability data for your own nodes (owner-only)
 
 📖 **For complete guides:**
 - [Understanding Nodes & Tasks](./docs/NODES_AND_TASKS_GUIDE.md) - What are nodes and tasks?
@@ -332,6 +333,7 @@ curl http://127.0.0.1:9090/node/status | jq
 - 📈 Health score monitoring
 - 🔄 Auto-refresh every 5 seconds
 - 🎨 Modern gradient UI design
+- 👁️ **Owner-only node observability** (v2.1.0): "View" button for local node status inspection
 
 ---
 
@@ -367,7 +369,7 @@ When you clone this repo, you immediately get:
 - ✅ **Zero-Knowledge Proofs** (Groth16, sub-second verification)
 - ✅ **WASM Execution Engine** with sandboxing
 - ✅ **Web Dashboard** for real-time monitoring
-- ✅ **48 Passing Tests** + Zero compiler warnings
+- ✅ **59 Passing Tests** + Zero compiler warnings
 - ✅ **Complete Documentation** (15+ guides)
 - ✅ **MIT License** - Use commercially, modify freely
 
@@ -393,7 +395,7 @@ cd Ambient-AI-VCP-System
 # Build the project (zero warnings!)
 cargo build --release
 
-# Run all tests (42 tests)
+# Run all tests (59 tests)
 cargo test
 ```
 
@@ -903,6 +905,6 @@ MIT License - see [LICENSE](LICENSE) file for details
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=WebAssembly&logoColor=white)](https://webassembly.org/)
 
-**Status**: Production-Ready for Development | **Version**: 1.0.0 | **Tests**: 48 Passing ✅
+**Status**: Production-Ready for Development | **Version**: 2.1.0 | **Tests**: 59 Passing ✅
 
 </div>
