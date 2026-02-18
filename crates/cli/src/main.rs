@@ -1,8 +1,8 @@
+#[cfg(feature = "observability")]
+use ambient_node::LocalObservabilityServer;
 use ambient_node::{
     AmbientNode, DataPlaneGateway, GatewayConfig, NodeId, SafetyPolicy, TelemetrySample,
 };
-#[cfg(feature = "observability")]
-use ambient_node::LocalObservabilityServer;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use mesh_coordinator::{MeshCoordinator, TaskAssignmentStrategy};
@@ -174,14 +174,14 @@ async fn run_node(
     #[cfg(feature = "observability")]
     if observability {
         info!("Local observability enabled on port {}", observability_port);
-        
+
         // Wrap node in Arc<RwLock<>> for shared access
         let node_arc = Arc::new(RwLock::new(node));
-        
+
         // Create and start observability server
         let server = LocalObservabilityServer::new(observability_port, node_arc);
         server.print_curl_command();
-        
+
         // Run server in background
         let server_handle = tokio::spawn(async move {
             if let Err(e) = server.run().await {
@@ -198,7 +198,7 @@ async fn run_node(
                 info!("Observability server stopped");
             }
         }
-        
+
         return Ok(());
     }
 
