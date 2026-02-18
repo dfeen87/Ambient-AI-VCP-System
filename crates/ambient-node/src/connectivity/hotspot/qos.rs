@@ -347,8 +347,10 @@ mod tests {
 
     #[test]
     fn test_qos_disabled() {
-        let mut config = QosConfig::default();
-        config.enabled = false;
+        let config = QosConfig {
+            enabled: false,
+            ..Default::default()
+        };
 
         let manager = QosManager::new(config, false);
 
