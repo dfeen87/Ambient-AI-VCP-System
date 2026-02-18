@@ -1521,6 +1521,11 @@ impl AppState {
         }
 
         let now = chrono::Utc::now();
+        
+        // Start a transaction to ensure atomicity
+        let mut tx = self.db.begin().await?;
+        
+        // Mark the node as deleted
         let result = sqlx::query(
             r#"
             UPDATE nodes
@@ -1531,10 +1536,95 @@ impl AppState {
         .bind(now)
         .bind(node_id)
         .bind(owner_id)
-        .execute(&self.db)
+        .execute(&mut *tx)
         .await?;
 
-        Ok(result.rows_affected() > 0)
+        if result.rows_affected() == 0 {
+            tx.rollback().await?;
+            return Ok(false);
+        }
+
+        // Get all tasks affected by this node deletion
+        let affected_tasks = sqlx::query(
+            r#"
+            SELECT ta.task_id, t.min_nodes
+            FROM task_assignments ta
+            JOIN tasks t ON t.task_id = ta.task_id
+            WHERE ta.node_id = $1
+              AND ta.disconnected_at IS NULL
+            "#,
+        )
+        .bind(node_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        // Mark all task assignments from this node as disconnected
+        sqlx::query(
+            r#"
+            UPDATE task_assignments
+            SET disconnected_at = $1
+            WHERE node_id = $2
+              AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(now)
+        .bind(node_id)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        // For each affected task, update its status and attempt reassignment
+        for task_row in affected_tasks {
+            let task_id: Uuid = task_row.get("task_id");
+            let min_nodes: i32 = task_row.get("min_nodes");
+
+            // Update task status based on remaining connected nodes
+            self.update_task_status_from_assignments(task_id, min_nodes as u32)
+                .await?;
+
+            // Try to assign the task to other available nodes
+            if let Ok(task_status) = self.get_task_status(task_id).await {
+                if task_status == "pending" {
+                    // Get task details for reassignment
+                    let task_details = sqlx::query(
+                        r#"
+                        SELECT task_type, require_gpu
+                        FROM tasks
+                        WHERE task_id = $1
+                        "#,
+                    )
+                    .bind(task_id)
+                    .fetch_optional(&self.db)
+                    .await?;
+
+                    if let Some(task_row) = task_details {
+                        let task_type: String = task_row.get("task_type");
+                        let require_gpu: bool = task_row.get("require_gpu");
+
+                        if let Some(task_registry_entry) = task_type_registry_entry(&task_type) {
+                            // Try to find and assign alternative nodes
+                            let _ = self
+                                .assign_available_nodes_for_task(
+                                    task_id,
+                                    &task_type,
+                                    task_registry_entry,
+                                    min_nodes as u32,
+                                    require_gpu,
+                                )
+                                .await;
+                        }
+                    }
+                }
+            } else {
+                tracing::warn!(
+                    task_id = %task_id,
+                    "Failed to retrieve task status during node deletion; skipping automatic reassignment for this task"
+                );
+            }
+        }
+
+        Ok(true)
     }
 
     /// Update node heartbeat timestamp
