@@ -90,6 +90,7 @@ Tip: To quickly verify the public demo is reachable, run:
 - ✅ **Integration Tests**: 13 new integration tests for API validation
 - ✅ **Error Handling**: Proper error propagation and user-friendly messages
 - ✅ **Type Safety**: Full Rust type system guarantees
+- 🔍 **Local Node Observability**: Privacy-preserving, operator-only inspection interface (localhost-only, read-only, no sensitive data exposure)
 
 ### Security & Infrastructure (LATEST)
 - 🔐 **JWT Middleware Authentication**: Global JWT enforcement at middleware layer (not handler extractors)
@@ -267,7 +268,63 @@ Gateway sessions file format (`gateway-sessions.json`):
 ]
 ```
 
-### 8. **Web Dashboard** (`api-server/assets`)
+### 8. **Local Node Observability** (`ambient-node/observability`) 🆕
+**Purpose**: Privacy-preserving, operator-only node inspection
+
+**🔒 Privacy & Security Design:**
+- ✅ **Local-only access**: Binds strictly to `127.0.0.1` (no external network access)
+- ✅ **Operator-only**: Only the node owner can access this interface
+- ✅ **Read-only**: No mutation or control of execution state
+- ✅ **Privacy-preserving**: Does NOT expose private payloads, secrets, or sensitive data
+- ✅ **No telemetry**: Does NOT send data to centralized systems or enable cross-node visibility
+- ✅ **Optional**: Disabled by default, must be explicitly enabled
+
+**Usage:**
+
+```bash
+# Start a node with local observability enabled
+ambient-vcp node --id node-001 --region us-west --node-type compute \
+  --observability --observability-port 9090
+
+# The node will print a curl command on startup:
+# curl http://127.0.0.1:9090/node/status | jq
+
+# Inspect your node (example output):
+curl http://127.0.0.1:9090/node/status | jq
+```
+
+**Example Response:**
+
+```json
+{
+  "node_region": "us-west",
+  "node_type": "compute",
+  "uptime_seconds": 3600,
+  "current_workload": "generation",
+  "resources": {
+    "cpu_percent": 45.2,
+    "memory_percent": 62.8,
+    "temperature_c": 68.0
+  },
+  "trust_summary": {
+    "trust_threshold": 0.7,
+    "last_trust_score": 0.85,
+    "lineage_hash": "abc123...",
+    "models_used": 2
+  },
+  "health_score": 0.78,
+  "safe_mode": false,
+  "timestamp": 1771453109
+}
+```
+
+**Architecture:**
+- Strict separation: observability MAY read execution state, but execution MUST NEVER depend on observability
+- No blocking operations that could affect node performance
+- Exposes only high-level, non-sensitive metrics (uptime, resource usage, trust scores)
+- Trust decision metadata (scores, thresholds, hashes) - no payloads or model inputs
+
+### 9. **Web Dashboard** (`api-server/assets`)
 **Purpose**: Real-time monitoring interface
 
 - 📊 Real-time cluster metrics visualization
