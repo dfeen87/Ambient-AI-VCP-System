@@ -14,22 +14,22 @@ use serde::{Deserialize, Serialize};
 pub struct ScoringConfig {
     /// Weight for latency component (lower is better)
     pub weight_latency: f64,
-    
+
     /// Weight for packet loss component (lower is better)
     pub weight_loss: f64,
-    
+
     /// Weight for success rate component (higher is better)
     pub weight_success: f64,
-    
+
     /// Enable policy bias based on interface type
     pub enable_policy_bias: bool,
-    
+
     /// Multiplier for policy bias
     pub policy_bias_multiplier: f64,
-    
+
     /// Maximum acceptable RTT in milliseconds
     pub max_rtt_ms: f64,
-    
+
     /// Maximum acceptable packet loss percentage
     pub max_loss_percent: f64,
 }
@@ -66,18 +66,14 @@ impl InterfaceScorer {
     /// - Loss component: lower packet loss gives higher score
     /// - Success component: higher success rate gives higher score
     /// - Policy bias: interface type preference
-    pub fn score(
-        &self,
-        interface: &InterfaceInfo,
-        health_stats: &HealthStats,
-    ) -> InterfaceScore {
+    pub fn score(&self, interface: &InterfaceInfo, health_stats: &HealthStats) -> InterfaceScore {
         let latency_score = self.score_latency(health_stats);
         let loss_score = self.score_loss(health_stats);
         let success_score = self.score_success(health_stats);
         let policy_bias = self.score_policy_bias(interface);
-        
+
         let total_score = latency_score + loss_score + success_score + policy_bias;
-        
+
         InterfaceScore {
             interface: interface.name.clone(),
             total: total_score as u32,
@@ -93,7 +89,7 @@ impl InterfaceScorer {
         if stats.avg_rtt_ms == 0.0 {
             return 0.0;
         }
-        
+
         // Normalize RTT: score decreases as RTT approaches max_rtt_ms
         let normalized = 1.0 - (stats.avg_rtt_ms / self.config.max_rtt_ms).min(1.0);
         normalized * self.config.weight_latency
@@ -111,7 +107,7 @@ impl InterfaceScorer {
         if stats.total_probes == 0 {
             return 0.0;
         }
-        
+
         let success_rate = stats.successful_probes as f64 / stats.total_probes as f64;
         success_rate * self.config.weight_success
     }
@@ -121,7 +117,7 @@ impl InterfaceScorer {
         if !self.config.enable_policy_bias {
             return 0.0;
         }
-        
+
         let bias = interface.iface_type.default_bias() as f64;
         bias * self.config.policy_bias_multiplier
     }
@@ -174,67 +170,67 @@ mod tests {
         let mut stats = HealthStats::new("test".to_string());
         stats.avg_rtt_ms = avg_rtt;
         stats.packet_loss_percent = loss_percent;
-        
+
         let total = 100;
         let successful = (total as f64 * success_rate) as usize;
         stats.total_probes = total;
         stats.successful_probes = successful;
         stats.failed_probes = total - successful;
-        
+
         stats
     }
 
     #[test]
     fn test_latency_scoring() {
         let scorer = InterfaceScorer::default();
-        
+
         let good_latency = mock_health_stats(10.0, 0.0, 1.0);
         let bad_latency = mock_health_stats(200.0, 0.0, 1.0);
-        
+
         let good_score = scorer.score_latency(&good_latency);
         let bad_score = scorer.score_latency(&bad_latency);
-        
+
         assert!(good_score > bad_score);
     }
 
     #[test]
     fn test_loss_scoring() {
         let scorer = InterfaceScorer::default();
-        
+
         let no_loss = mock_health_stats(50.0, 0.0, 1.0);
         let high_loss = mock_health_stats(50.0, 10.0, 1.0);
-        
+
         let good_score = scorer.score_loss(&no_loss);
         let bad_score = scorer.score_loss(&high_loss);
-        
+
         assert!(good_score > bad_score);
     }
 
     #[test]
     fn test_success_scoring() {
         let scorer = InterfaceScorer::default();
-        
+
         let high_success = mock_health_stats(50.0, 0.0, 1.0);
         let low_success = mock_health_stats(50.0, 0.0, 0.5);
-        
+
         let good_score = scorer.score_success(&high_success);
         let bad_score = scorer.score_success(&low_success);
-        
+
         assert!(good_score > bad_score);
     }
 
     #[test]
     fn test_policy_bias() {
         let scorer = InterfaceScorer::default();
-        
+
         let ethernet = mock_interface("eth0", InterfaceType::Ethernet);
         let wifi = mock_interface("wlan0", InterfaceType::WiFi);
         let lte = mock_interface("wwan0", InterfaceType::LteModem);
-        
+
         let eth_bias = scorer.score_policy_bias(&ethernet);
         let wifi_bias = scorer.score_policy_bias(&wifi);
         let lte_bias = scorer.score_policy_bias(&lte);
-        
+
         assert!(eth_bias > wifi_bias);
         assert!(wifi_bias > lte_bias);
     }
@@ -242,16 +238,16 @@ mod tests {
     #[test]
     fn test_total_score_comparison() {
         let scorer = InterfaceScorer::default();
-        
+
         let ethernet = mock_interface("eth0", InterfaceType::Ethernet);
         let wifi = mock_interface("wlan0", InterfaceType::WiFi);
-        
+
         let good_health = mock_health_stats(20.0, 0.0, 1.0);
         let ok_health = mock_health_stats(50.0, 2.0, 0.95);
-        
+
         let eth_score = scorer.score(&ethernet, &good_health);
         let wifi_score = scorer.score(&wifi, &ok_health);
-        
+
         // Ethernet with good health should score higher than WiFi with ok health
         assert!(eth_score.is_better_than(&wifi_score));
     }
@@ -261,15 +257,15 @@ mod tests {
         let mut config = ScoringConfig::default();
         config.enable_policy_bias = false;
         let scorer = InterfaceScorer::new(config);
-        
+
         let ethernet = mock_interface("eth0", InterfaceType::Ethernet);
         let wifi = mock_interface("wlan0", InterfaceType::WiFi);
-        
+
         let same_health = mock_health_stats(50.0, 1.0, 0.98);
-        
+
         let eth_score = scorer.score(&ethernet, &same_health);
         let wifi_score = scorer.score(&wifi, &same_health);
-        
+
         // Without policy bias and same health, scores should be equal
         assert_eq!(eth_score.total, wifi_score.total);
     }

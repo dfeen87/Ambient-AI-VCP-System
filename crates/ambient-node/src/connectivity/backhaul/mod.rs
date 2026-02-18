@@ -20,7 +20,9 @@ pub use discovery::{InterfaceDiscovery, InterfaceInfo, InterfaceRegistry, Interf
 pub use health::{HealthProber, HealthStats, ProbeConfig};
 pub use routing::{RoutingConfig, RoutingManager};
 pub use scoring::{InterfaceScore, InterfaceScorer, ScoringConfig};
-pub use state_machine::{InterfaceState as StateMachineState, InterfaceStateMachine, StateEvent, StateMachineConfig};
+pub use state_machine::{
+    InterfaceState as StateMachineState, InterfaceStateMachine, StateEvent, StateMachineConfig,
+};
 
 /// Backhaul state for public API
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,23 +51,12 @@ pub struct ActiveBackhaul {
 }
 
 /// Complete backhaul manager configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BackhaulConfig {
     pub probe_config: ProbeConfig,
     pub scoring_config: ScoringConfig,
     pub state_machine_config: StateMachineConfig,
     pub routing_config: RoutingConfig,
-}
-
-impl Default for BackhaulConfig {
-    fn default() -> Self {
-        Self {
-            probe_config: ProbeConfig::default(),
-            scoring_config: ScoringConfig::default(),
-            state_machine_config: StateMachineConfig::default(),
-            routing_config: RoutingConfig::default(),
-        }
-    }
 }
 
 /// Per-interface state tracking
@@ -96,7 +87,7 @@ impl BackhaulManager {
         let routing = Arc::new(RwLock::new(RoutingManager::new(
             config.routing_config.clone(),
         )));
-        
+
         Self {
             config,
             registry,
@@ -117,10 +108,10 @@ impl BackhaulManager {
     /// - Routing updates
     pub async fn start(&self) -> Result<()> {
         info!("Starting backhaul manager");
-        
+
         // Start interface discovery
         self.discovery.start_monitoring().await?;
-        
+
         // Spawn main management loop
         let manager = self.clone();
         tokio::spawn(async move {
@@ -128,19 +119,19 @@ impl BackhaulManager {
                 warn!(error = %e, "Management loop terminated");
             }
         });
-        
+
         Ok(())
     }
 
     /// Main management loop
     async fn management_loop(&self) -> Result<()> {
-        let mut interval = tokio::time::interval(
-            tokio::time::Duration::from_secs(self.config.probe_config.interval_secs)
-        );
-        
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(
+            self.config.probe_config.interval_secs,
+        ));
+
         loop {
             interval.tick().await;
-            
+
             if let Err(e) = self.management_iteration().await {
                 warn!(error = %e, "Management iteration failed");
             }
@@ -151,27 +142,25 @@ impl BackhaulManager {
     async fn management_iteration(&self) -> Result<()> {
         // Get current WAN candidates
         let candidates = self.registry.get_wan_candidates().await;
-        
+
         if candidates.is_empty() {
             debug!("No WAN candidates available");
             return Ok(());
         }
-        
+
         let mut states = self.interface_states.write().await;
-        
+
         // Update or create state for each candidate
         for candidate in &candidates {
             if !states.contains_key(&candidate.name) {
                 // New interface - create state
-                let prober = HealthProber::new(
-                    candidate.name.clone(),
-                    self.config.probe_config.clone(),
-                );
+                let prober =
+                    HealthProber::new(candidate.name.clone(), self.config.probe_config.clone());
                 let state_machine = InterfaceStateMachine::new(
                     candidate.name.clone(),
                     self.config.state_machine_config.clone(),
                 );
-                
+
                 states.insert(
                     candidate.name.clone(),
                     InterfaceState {
@@ -181,16 +170,16 @@ impl BackhaulManager {
                         last_score: 0,
                     },
                 );
-                
+
                 info!(interface = %candidate.name, "Registered new WAN candidate");
             }
         }
-        
+
         // Probe all interfaces and update state machines
         for (name, iface_state) in states.iter_mut() {
             // Perform health probes
             let _results = iface_state.prober.probe_once().await;
-            
+
             // Determine state event based on health
             let event = if iface_state.prober.is_healthy() {
                 StateEvent::HealthyProbe
@@ -199,14 +188,16 @@ impl BackhaulManager {
             } else {
                 StateEvent::FailedProbe
             };
-            
+
             // Update state machine
             iface_state.state_machine.process_event(event);
-            
+
             // Update score
-            let score = self.scorer.score(&iface_state.info, iface_state.prober.stats());
+            let score = self
+                .scorer
+                .score(&iface_state.info, iface_state.prober.stats());
             iface_state.last_score = score.total;
-            
+
             debug!(
                 interface = %name,
                 state = ?iface_state.state_machine.state(),
@@ -214,60 +205,57 @@ impl BackhaulManager {
                 "Interface status"
             );
         }
-        
+
         // Select best interface
         self.select_best_interface(&states).await?;
-        
+
         Ok(())
     }
 
     /// Select and activate the best available interface
-    async fn select_best_interface(
-        &self,
-        states: &HashMap<String, InterfaceState>,
-    ) -> Result<()> {
+    async fn select_best_interface(&self, states: &HashMap<String, InterfaceState>) -> Result<()> {
         // Filter to UP interfaces only
         let up_interfaces: Vec<_> = states
             .iter()
             .filter(|(_, state)| state.state_machine.state() == StateMachineState::Up)
             .collect();
-        
+
         if up_interfaces.is_empty() {
             debug!("No UP interfaces available");
             return Ok(());
         }
-        
+
         // Find highest scoring interface
         let best = up_interfaces
             .iter()
             .max_by_key(|(_, state)| state.last_score)
             .map(|(name, _)| name.as_str());
-        
+
         if let Some(best_interface) = best {
             let current_active = self.active_interface.read().await;
-            
+
             // Only switch if different
             if current_active.as_deref() != Some(best_interface) {
                 let old_interface = current_active.as_deref().map(|s| s.to_string());
                 drop(current_active); // Release read lock
-                
+
                 info!(
                     old = ?old_interface,
                     new = best_interface,
                     "Switching active backhaul interface"
                 );
-                
+
                 // Update routing
                 let mut routing = self.routing.write().await;
                 routing.switch_active_interface(best_interface, None)?;
                 drop(routing);
-                
+
                 // Update active interface
                 let mut active = self.active_interface.write().await;
                 *active = Some(best_interface.to_string());
             }
         }
-        
+
         Ok(())
     }
 
@@ -275,10 +263,10 @@ impl BackhaulManager {
     pub async fn current_backhaul(&self) -> Option<ActiveBackhaul> {
         let active = self.active_interface.read().await;
         let active_name = active.as_ref()?;
-        
+
         let states = self.interface_states.read().await;
         let iface_state = states.get(active_name)?;
-        
+
         Some(ActiveBackhaul {
             iface: active_name.clone(),
             state: BackhaulState::from(iface_state.state_machine.state()),
@@ -304,10 +292,10 @@ impl BackhaulManager {
     /// Shutdown the backhaul manager
     pub async fn shutdown(&self) -> Result<()> {
         info!("Shutting down backhaul manager");
-        
+
         let mut routing = self.routing.write().await;
         routing.cleanup_all()?;
-        
+
         Ok(())
     }
 }
@@ -334,9 +322,9 @@ mod tests {
     async fn test_backhaul_manager_creation() {
         let mut config = BackhaulConfig::default();
         config.routing_config.execute_commands = false;
-        
+
         let manager = BackhaulManager::new(config);
-        
+
         let backhaul = manager.current_backhaul().await;
         assert!(backhaul.is_none()); // No interfaces yet
     }
@@ -345,15 +333,15 @@ mod tests {
     async fn test_backhaul_manager_start() {
         let mut config = BackhaulConfig::default();
         config.routing_config.execute_commands = false;
-        
+
         let manager = BackhaulManager::new(config);
-        
+
         let result = manager.start().await;
         assert!(result.is_ok());
-        
+
         // Give it time to discover interfaces
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
+
         // Should have some interfaces discovered (mock or real)
         let all_states = manager.get_all_interface_states().await;
         debug!("Discovered {} interfaces", all_states.len());

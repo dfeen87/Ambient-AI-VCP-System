@@ -21,16 +21,16 @@ use tracing::debug;
 pub struct ProbeConfig {
     /// Probe interval
     pub interval_secs: u64,
-    
+
     /// Probe timeout
     pub timeout_secs: u64,
-    
+
     /// Targets to probe
     pub targets: Vec<ProbeTarget>,
-    
+
     /// Failure threshold before marking degraded
     pub degraded_threshold: usize,
-    
+
     /// Failure threshold before marking down
     pub down_threshold: usize,
 }
@@ -125,16 +125,16 @@ impl HealthStats {
     /// Update statistics with a new probe result
     pub fn update(&mut self, result: &ProbeResult) {
         self.total_probes += 1;
-        
+
         if result.success {
             self.successful_probes += 1;
             self.consecutive_failures = 0;
             self.last_success = Some(result.timestamp);
-            
+
             if let Some(rtt) = result.rtt_ms {
                 self.min_rtt_ms = self.min_rtt_ms.min(rtt);
                 self.max_rtt_ms = self.max_rtt_ms.max(rtt);
-                
+
                 // Running average
                 let total_rtt = self.avg_rtt_ms * (self.successful_probes - 1) as f64;
                 self.avg_rtt_ms = (total_rtt + rtt as f64) / self.successful_probes as f64;
@@ -144,10 +144,10 @@ impl HealthStats {
             self.consecutive_failures += 1;
             self.last_failure = Some(result.timestamp);
         }
-        
+
         // Calculate packet loss percentage
         if self.total_probes > 0 {
-            self.packet_loss_percent = 
+            self.packet_loss_percent =
                 (self.failed_probes as f64 / self.total_probes as f64) * 100.0;
         }
     }
@@ -188,13 +188,13 @@ impl HealthProber {
     /// Perform a single probe cycle
     pub async fn probe_once(&mut self) -> Vec<ProbeResult> {
         let mut results = Vec::new();
-        
+
         for target in &self.config.targets {
             let result = self.probe_target(target).await;
             self.stats.update(&result);
             results.push(result);
         }
-        
+
         results
     }
 
@@ -205,11 +205,9 @@ impl HealthProber {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         match target.probe_type {
-            ProbeType::TcpConnect => {
-                self.tcp_probe(target, start, timestamp).await
-            }
+            ProbeType::TcpConnect => self.tcp_probe(target, start, timestamp).await,
             ProbeType::IcmpPing => {
                 // ICMP ping requires raw sockets / elevated privileges
                 // For this implementation, we'll fall back to TCP
@@ -220,19 +218,14 @@ impl HealthProber {
     }
 
     /// Perform TCP connection probe
-    async fn tcp_probe(
-        &self,
-        target: &ProbeTarget,
-        start: Instant,
-        timestamp: u64,
-    ) -> ProbeResult {
+    async fn tcp_probe(&self, target: &ProbeTarget, start: Instant, timestamp: u64) -> ProbeResult {
         let timeout_duration = Duration::from_secs(self.config.timeout_secs);
         let addr = format!("{}:{}", target.address, target.port);
-        
+
         let result = timeout(timeout_duration, TcpStream::connect(&addr)).await;
-        
+
         let elapsed = start.elapsed();
-        
+
         match result {
             Ok(Ok(_stream)) => {
                 debug!(
@@ -309,7 +302,7 @@ mod tests {
     #[test]
     fn test_health_stats_update() {
         let mut stats = HealthStats::new("eth0".to_string());
-        
+
         let success_result = ProbeResult {
             target_name: "test".to_string(),
             success: true,
@@ -317,12 +310,12 @@ mod tests {
             error: None,
             timestamp: 1000,
         };
-        
+
         stats.update(&success_result);
         assert_eq!(stats.successful_probes, 1);
         assert_eq!(stats.consecutive_failures, 0);
         assert_eq!(stats.avg_rtt_ms, 50.0);
-        
+
         let failure_result = ProbeResult {
             target_name: "test".to_string(),
             success: false,
@@ -330,7 +323,7 @@ mod tests {
             error: Some("timeout".to_string()),
             timestamp: 1005,
         };
-        
+
         stats.update(&failure_result);
         assert_eq!(stats.failed_probes, 1);
         assert_eq!(stats.consecutive_failures, 1);
@@ -341,17 +334,17 @@ mod tests {
     fn test_health_thresholds() {
         let config = ProbeConfig::default();
         let mut stats = HealthStats::new("eth0".to_string());
-        
+
         assert!(stats.is_healthy(&config));
         assert!(!stats.is_degraded(&config));
         assert!(!stats.is_down(&config));
-        
+
         // Add failure to reach degraded threshold
         stats.consecutive_failures = config.degraded_threshold;
         assert!(!stats.is_healthy(&config));
         assert!(stats.is_degraded(&config));
         assert!(!stats.is_down(&config));
-        
+
         // Add failures to reach down threshold
         stats.consecutive_failures = config.down_threshold;
         assert!(!stats.is_healthy(&config));
@@ -373,10 +366,10 @@ mod tests {
             degraded_threshold: 1,
             down_threshold: 2,
         };
-        
+
         let mut prober = HealthProber::new("eth0".to_string(), config);
         let results = prober.probe_once().await;
-        
+
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].target_name, "localhost");
         // Result may be success or failure depending on system state

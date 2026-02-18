@@ -103,13 +103,13 @@ impl InterfaceRegistry {
     pub async fn register(&self, info: InterfaceInfo) {
         let name = info.name.clone();
         let mut interfaces = self.interfaces.write().await;
-        
+
         if interfaces.contains_key(&name) {
             debug!(interface = %name, "Updating interface");
         } else {
             info!(interface = %name, iface_type = ?info.iface_type, "Discovered new interface");
         }
-        
+
         interfaces.insert(name, info);
     }
 
@@ -166,10 +166,10 @@ impl InterfaceDiscovery {
     /// In production, this would use rtnetlink to get real-time notifications
     pub async fn start_monitoring(&self) -> Result<()> {
         info!("Starting interface discovery monitoring");
-        
+
         // Initial discovery
         self.discover_interfaces().await?;
-        
+
         // Spawn monitoring task
         let registry = self.registry.clone();
         tokio::spawn(async move {
@@ -182,7 +182,7 @@ impl InterfaceDiscovery {
                 }
             }
         });
-        
+
         Ok(())
     }
 
@@ -195,7 +195,7 @@ impl InterfaceDiscovery {
         {
             self.discover_linux_interfaces().await
         }
-        
+
         #[cfg(not(target_os = "linux"))]
         {
             warn!("Interface discovery not implemented for this platform");
@@ -206,7 +206,7 @@ impl InterfaceDiscovery {
     #[cfg(target_os = "linux")]
     async fn discover_linux_interfaces(&self) -> Result<()> {
         use std::fs;
-        
+
         // Read /sys/class/net for interface list
         let net_path = "/sys/class/net";
         let entries = match fs::read_dir(net_path) {
@@ -216,34 +216,37 @@ impl InterfaceDiscovery {
                 return self.use_mock_interfaces().await;
             }
         };
-        
+
         for entry in entries {
             let entry = entry.map_err(|e| {
                 ConnectivityError::DiscoveryError(format!("Failed to read directory entry: {}", e))
             })?;
-            
+
             let name = entry.file_name().to_string_lossy().to_string();
-            
+
             // Skip loopback
             if name == "lo" {
                 continue;
             }
-            
+
             // Read interface state
-            let is_up = self.read_sys_int(&format!("{}/{}/operstate", net_path, name))
+            let is_up = self
+                .read_sys_int(&format!("{}/{}/operstate", net_path, name))
                 .map(|state| state == "up")
                 .unwrap_or(false);
-            
-            let has_carrier = self.read_sys_int(&format!("{}/{}/carrier", net_path, name))
+
+            let has_carrier = self
+                .read_sys_int(&format!("{}/{}/carrier", net_path, name))
                 .map(|c| c == "1")
                 .unwrap_or(false);
-            
-            let mtu = self.read_sys_int(&format!("{}/{}/mtu", net_path, name))
+
+            let mtu = self
+                .read_sys_int(&format!("{}/{}/mtu", net_path, name))
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(1500);
-            
+
             let mac_address = self.read_sys_string(&format!("{}/{}/address", net_path, name));
-            
+
             let info = InterfaceInfo {
                 name: name.clone(),
                 iface_type: InterfaceType::from_name(&name),
@@ -255,10 +258,10 @@ impl InterfaceDiscovery {
                 ipv4_addresses: vec![],
                 ipv6_addresses: vec![],
             };
-            
+
             self.registry.register(info).await;
         }
-        
+
         Ok(())
     }
 
@@ -279,7 +282,7 @@ impl InterfaceDiscovery {
     /// Use mock interface data for testing/development
     async fn use_mock_interfaces(&self) -> Result<()> {
         debug!("Using mock interface data");
-        
+
         let mock_interfaces = vec![
             InterfaceInfo {
                 name: "eth0".to_string(),
@@ -304,11 +307,11 @@ impl InterfaceDiscovery {
                 ipv6_addresses: vec![],
             },
         ];
-        
+
         for info in mock_interfaces {
             self.registry.register(info).await;
         }
-        
+
         Ok(())
     }
 }
@@ -323,7 +326,10 @@ mod tests {
         assert_eq!(InterfaceType::from_name("wlan0"), InterfaceType::WiFi);
         assert_eq!(InterfaceType::from_name("wwan0"), InterfaceType::LteModem);
         assert_eq!(InterfaceType::from_name("usb0"), InterfaceType::UsbTether);
-        assert_eq!(InterfaceType::from_name("bnep0"), InterfaceType::BluetoothPan);
+        assert_eq!(
+            InterfaceType::from_name("bnep0"),
+            InterfaceType::BluetoothPan
+        );
         assert_eq!(InterfaceType::from_name("unknown"), InterfaceType::Unknown);
     }
 
@@ -339,7 +345,7 @@ mod tests {
     #[tokio::test]
     async fn test_registry_operations() {
         let registry = InterfaceRegistry::new();
-        
+
         let info = InterfaceInfo {
             name: "eth0".to_string(),
             iface_type: InterfaceType::Ethernet,
@@ -351,16 +357,16 @@ mod tests {
             ipv4_addresses: vec![],
             ipv6_addresses: vec![],
         };
-        
+
         registry.register(info.clone()).await;
-        
+
         let retrieved = registry.get("eth0").await;
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().name, "eth0");
-        
+
         let candidates = registry.get_wan_candidates().await;
         assert_eq!(candidates.len(), 1);
-        
+
         registry.unregister("eth0").await;
         assert!(registry.get("eth0").await.is_none());
     }
@@ -369,11 +375,11 @@ mod tests {
     async fn test_interface_discovery() {
         let registry = Arc::new(InterfaceRegistry::new());
         let discovery = InterfaceDiscovery::new(registry.clone());
-        
+
         // This will use mock data if /sys/class/net is not available
         let result = discovery.discover_interfaces().await;
         assert!(result.is_ok());
-        
+
         let all_interfaces = registry.get_all().await;
         assert!(!all_interfaces.is_empty());
     }

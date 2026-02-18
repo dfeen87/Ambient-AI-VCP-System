@@ -20,10 +20,10 @@ const TABLE_ID_MAX: u32 = 200;
 pub struct RoutingConfig {
     /// Whether to actually execute routing commands (false for testing)
     pub execute_commands: bool,
-    
+
     /// Main routing table priority
     pub main_table_priority: u32,
-    
+
     /// Interface-specific table priority
     pub interface_table_priority: u32,
 }
@@ -70,16 +70,17 @@ impl RoutingManager {
         if let Some(&table_id) = self.table_assignments.get(interface) {
             return table_id;
         }
-        
+
         let table_id = self.next_table_id;
         self.next_table_id += 1;
-        
+
         if self.next_table_id > TABLE_ID_MAX {
             warn!("Routing table ID space exhausted, wrapping around");
             self.next_table_id = TABLE_ID_BASE;
         }
-        
-        self.table_assignments.insert(interface.to_string(), table_id);
+
+        self.table_assignments
+            .insert(interface.to_string(), table_id);
         table_id
     }
 
@@ -100,15 +101,15 @@ impl RoutingManager {
             new_interface = %new_interface,
             "Switching active interface"
         );
-        
+
         let table_id = self.assign_table_id(new_interface);
-        
+
         // Step 1: Set up new interface routing table
         self.setup_interface_table(new_interface, table_id, gateway.as_deref())?;
-        
+
         // Step 2: Add new policy routing rule
         self.add_routing_rule(new_interface, table_id)?;
-        
+
         // Step 3: Remove old policy routing rule (if exists)
         if let Some(old_interface) = &self.active_interface {
             if old_interface != new_interface {
@@ -117,9 +118,9 @@ impl RoutingManager {
                 }
             }
         }
-        
+
         self.active_interface = Some(new_interface.to_string());
-        
+
         Ok(())
     }
 
@@ -136,30 +137,39 @@ impl RoutingManager {
             gateway = ?gateway,
             "Setting up interface routing table"
         );
-        
+
         let table_id_str = table_id.to_string();
-        
+
         // Flush existing routes in this table
-        self.execute_command(&[
-            "ip", "route", "flush", "table", &table_id_str
-        ])?;
-        
+        self.execute_command(&["ip", "route", "flush", "table", &table_id_str])?;
+
         // Add default route through this interface
         if let Some(gw) = gateway {
             self.execute_command(&[
-                "ip", "route", "add", "default",
-                "via", gw,
-                "dev", interface,
-                "table", &table_id_str,
+                "ip",
+                "route",
+                "add",
+                "default",
+                "via",
+                gw,
+                "dev",
+                interface,
+                "table",
+                &table_id_str,
             ])?;
         } else {
             self.execute_command(&[
-                "ip", "route", "add", "default",
-                "dev", interface,
-                "table", &table_id_str,
+                "ip",
+                "route",
+                "add",
+                "default",
+                "dev",
+                interface,
+                "table",
+                &table_id_str,
             ])?;
         }
-        
+
         Ok(())
     }
 
@@ -170,18 +180,23 @@ impl RoutingManager {
             table_id = table_id,
             "Adding policy routing rule"
         );
-        
+
         let table_id_str = table_id.to_string();
         let priority_str = self.config.interface_table_priority.to_string();
-        
+
         // ip rule add from all lookup <table_id> pref <priority>
         self.execute_command(&[
-            "ip", "rule", "add",
-            "from", "all",
-            "lookup", &table_id_str,
-            "pref", &priority_str,
+            "ip",
+            "rule",
+            "add",
+            "from",
+            "all",
+            "lookup",
+            &table_id_str,
+            "pref",
+            &priority_str,
         ])?;
-        
+
         Ok(())
     }
 
@@ -192,20 +207,17 @@ impl RoutingManager {
             table_id = table_id,
             "Removing policy routing rule"
         );
-        
+
         let table_id_str = table_id.to_string();
-        
+
         // ip rule del lookup <table_id>
-        let result = self.execute_command(&[
-            "ip", "rule", "del",
-            "lookup", &table_id_str,
-        ]);
-        
+        let result = self.execute_command(&["ip", "rule", "del", "lookup", &table_id_str]);
+
         // Don't fail if rule doesn't exist
         if let Err(e) = result {
             debug!(error = %e, "Failed to remove routing rule (may not exist)");
         }
-        
+
         Ok(())
     }
 
@@ -215,14 +227,14 @@ impl RoutingManager {
             debug!(command = ?args, "Skipping command execution (dry run)");
             return Ok(());
         }
-        
+
         let output = Command::new(args[0])
             .args(&args[1..])
             .output()
             .map_err(|e| {
                 ConnectivityError::RoutingError(format!("Failed to execute command: {}", e))
             })?;
-        
+
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(ConnectivityError::RoutingError(format!(
@@ -231,7 +243,7 @@ impl RoutingManager {
                 stderr
             )));
         }
-        
+
         Ok(())
     }
 
@@ -243,48 +255,45 @@ impl RoutingManager {
     /// Rollback routing changes for an interface
     pub fn rollback_interface(&mut self, interface: &str) -> Result<()> {
         info!(interface = %interface, "Rolling back routing changes");
-        
+
         if let Some(&table_id) = self.table_assignments.get(interface) {
             let table_id_str = table_id.to_string();
-            
+
             // Remove routing rule
             self.remove_routing_rule(interface, table_id)?;
-            
+
             // Flush routing table
-            self.execute_command(&[
-                "ip", "route", "flush", "table", &table_id_str
-            ])?;
+            self.execute_command(&["ip", "route", "flush", "table", &table_id_str])?;
         }
-        
+
         if self.active_interface.as_deref() == Some(interface) {
             self.active_interface = None;
         }
-        
+
         Ok(())
     }
 
     /// Clean up all routing state (for shutdown)
     pub fn cleanup_all(&mut self) -> Result<()> {
         info!("Cleaning up all routing state");
-        
+
         // Collect table assignments to avoid borrow issues
         let assignments: Vec<_> = self.table_assignments.drain().collect();
-        
+
         for (interface, table_id) in assignments {
             if let Err(e) = self.remove_routing_rule(&interface, table_id) {
                 warn!(interface = %interface, error = %e, "Failed to remove routing rule");
             }
-            
+
             let table_id_str = table_id.to_string();
-            if let Err(e) = self.execute_command(&[
-                "ip", "route", "flush", "table", &table_id_str
-            ]) {
+            if let Err(e) = self.execute_command(&["ip", "route", "flush", "table", &table_id_str])
+            {
                 warn!(interface = %interface, error = %e, "Failed to flush routing table");
             }
         }
-        
+
         self.active_interface = None;
-        
+
         Ok(())
     }
 }
@@ -312,11 +321,11 @@ mod tests {
             execute_commands: false,
             ..Default::default()
         });
-        
+
         let table1 = manager.assign_table_id("eth0");
         let table2 = manager.assign_table_id("wlan0");
         let table3 = manager.assign_table_id("eth0"); // Should reuse
-        
+
         assert_eq!(table1, TABLE_ID_BASE);
         assert_eq!(table2, TABLE_ID_BASE + 1);
         assert_eq!(table1, table3); // Same interface gets same table
@@ -328,11 +337,11 @@ mod tests {
             execute_commands: false, // Don't actually run ip commands in test
             ..Default::default()
         });
-        
+
         let result = manager.switch_active_interface("eth0", Some("192.168.1.1".to_string()));
         assert!(result.is_ok());
         assert_eq!(manager.active_interface(), Some("eth0"));
-        
+
         let result = manager.switch_active_interface("wlan0", None);
         assert!(result.is_ok());
         assert_eq!(manager.active_interface(), Some("wlan0"));
@@ -344,10 +353,10 @@ mod tests {
             execute_commands: false,
             ..Default::default()
         });
-        
+
         manager.switch_active_interface("eth0", None).unwrap();
         assert_eq!(manager.active_interface(), Some("eth0"));
-        
+
         manager.rollback_interface("eth0").unwrap();
         assert_eq!(manager.active_interface(), None);
     }
