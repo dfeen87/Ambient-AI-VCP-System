@@ -17,6 +17,7 @@ pub struct NodeRegistration {
     pub region: String,
     pub node_type: String,
     pub capabilities: NodeCapabilities,
+    pub observability_port: Option<u16>,
 }
 
 impl NodeRegistration {
@@ -202,6 +203,7 @@ pub struct NodeInfo {
     pub status: String,
     pub registered_at: String,
     pub last_seen: String,
+    pub observability_port: Option<u16>,
 }
 
 /// Task submission request
