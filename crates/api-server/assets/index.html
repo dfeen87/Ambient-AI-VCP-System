@@ -552,6 +552,31 @@
             cursor: not-allowed;
         }
 
+        .observability-btn {
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 212, 170, 0.35);
+            background: rgba(0, 212, 170, 0.08);
+            color: var(--accent);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .observability-btn:hover:not(:disabled) {
+            border-color: rgba(0, 212, 170, 0.6);
+            background: rgba(0, 212, 170, 0.16);
+            color: #5ffae0;
+        }
+
+        .observability-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
         .empty-row td {
             text-align: center;
             color: var(--text-muted);
@@ -1243,6 +1268,41 @@
     </div>
 </div>
 
+<!-- Observability Modal -->
+<div class="modal-overlay" id="observability-modal-overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="observability-modal-title">
+        <div class="modal-header">
+            <div>
+                <div class="modal-title" id="observability-modal-title">Node Observability</div>
+                <div class="modal-subtitle">Read-only local observability data from your node.</div>
+            </div>
+            <button type="button" class="modal-close" id="close-observability-modal-btn" aria-label="Close observability modal">×</button>
+        </div>
+
+        <div class="result-grid">
+            <div class="result-meta">
+                <div class="result-meta-label">Node ID</div>
+                <div class="result-meta-value mono-dim" id="obs-node-id">—</div>
+            </div>
+            <div class="result-meta">
+                <div class="result-meta-label">Observability Port</div>
+                <div class="result-meta-value" id="obs-port">—</div>
+            </div>
+        </div>
+
+        <pre class="result-payload" id="obs-data-payload">Loading observability data...</pre>
+
+        <div class="result-actions">
+            <div class="result-actions-left">
+                <button type="button" class="btn" id="refresh-observability-btn">Refresh</button>
+            </div>
+            <div class="result-actions-right">
+                <button type="button" class="btn btn-ghost" id="close-observability-modal-footer-btn">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     const DEFAULT_API_BASE_URL = 'https://ambient-ai-vcp-system.onrender.com';
     let apiBaseUrl = localStorage.getItem('vcp_api_base_url') || DEFAULT_API_BASE_URL;
@@ -1908,6 +1968,52 @@
         }
     }
 
+    async function handleViewObservability(nodeId, port) {
+        // Open the modal
+        openObservabilityModal(nodeId, port);
+        
+        // Fetch the observability data
+        await fetchObservabilityData(nodeId, port);
+    }
+
+    function openObservabilityModal(nodeId, port) {
+        document.getElementById('obs-node-id').textContent = nodeId;
+        document.getElementById('obs-port').textContent = port || 'Not configured';
+        document.getElementById('obs-data-payload').textContent = 'Loading observability data...';
+        document.getElementById('observability-modal-overlay').classList.add('open');
+        document.getElementById('observability-modal-overlay').setAttribute('aria-hidden', 'false');
+    }
+
+    function closeObservabilityModal() {
+        document.getElementById('observability-modal-overlay').classList.remove('open');
+        document.getElementById('observability-modal-overlay').setAttribute('aria-hidden', 'true');
+    }
+
+    async function fetchObservabilityData(nodeId, port) {
+        const payloadEl = document.getElementById('obs-data-payload');
+        
+        if (!port) {
+            payloadEl.textContent = 'No observability port configured for this node.\n\nTo enable observability, register your node with the observability_port parameter.';
+            return;
+        }
+
+        try {
+            payloadEl.textContent = 'Fetching data from http://127.0.0.1:' + port + '/node/status ...';
+            
+            // Fetch from local observability endpoint
+            const response = await fetch(`http://127.0.0.1:${port}/node/status`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            payloadEl.textContent = JSON.stringify(data, null, 2);
+        } catch (err) {
+            payloadEl.textContent = `Error fetching observability data:\n\n${err.message}\n\nNote: The observability endpoint is only accessible from the local machine (127.0.0.1) where the node is running. Make sure:\n1. You are accessing this UI from the same machine as the node\n2. The node is running with observability enabled\n3. The observability port (${port}) is correct`;
+        }
+    }
+
     function renderNodes(nodes) {
         const tbody = document.getElementById('nodes-table');
         if (!nodes.length) {
@@ -1935,6 +2041,7 @@
                     <td>
                         <div class="status-cell">
                             <span class="badge ${statusClass}">${n.status}</span>
+                            ${isOwner && n.observability_port ? `<button class="observability-btn" onclick='handleViewObservability(${JSON.stringify(n.node_id)}, ${n.observability_port})'>View</button>` : ''}
                             ${canEject ? `<button class="eject-btn" onclick='handleEjectNode(${JSON.stringify(n.node_id)}, this)'>Eject</button>` : ''}
                         </div>
                     </td>
@@ -2333,6 +2440,30 @@
     document.getElementById('close-task-result-modal-footer-btn').addEventListener('click', closeTaskResultModal);
     document.getElementById('download-task-result-btn').addEventListener('click', downloadSelectedTaskResult);
     document.getElementById('send-task-result-email-btn').addEventListener('click', sendSelectedTaskResultEmail);
+
+    // Observability modal event listeners
+    document.getElementById('close-observability-modal-btn').addEventListener('click', closeObservabilityModal);
+    document.getElementById('close-observability-modal-footer-btn').addEventListener('click', closeObservabilityModal);
+    document.getElementById('refresh-observability-btn').addEventListener('click', () => {
+        const nodeId = document.getElementById('obs-node-id').textContent;
+        const portText = document.getElementById('obs-port').textContent;
+        const port = portText !== 'Not configured' ? parseInt(portText) : null;
+        if (port) {
+            fetchObservabilityData(nodeId, port);
+        }
+    });
+
+    document.getElementById('observability-modal-overlay').addEventListener('click', (e) => {
+        if (e.target.id === 'observability-modal-overlay') {
+            closeObservabilityModal();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && document.getElementById('observability-modal-overlay').classList.contains('open')) {
+            closeObservabilityModal();
+        }
+    });
 
     async function submitTaskForm(formEl) {
         const btn = document.getElementById('submit-task-btn');

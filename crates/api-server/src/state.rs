@@ -89,9 +89,9 @@ impl AppState {
             INSERT INTO nodes (
                 node_id, region, node_type, bandwidth_mbps, cpu_cores, 
                 memory_gb, gpu_available, health_score, status, 
-                registered_at, last_seen, owner_id, last_heartbeat
+                registered_at, last_seen, owner_id, last_heartbeat, observability_port
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             "#,
         )
         .bind(&registration.node_id)
@@ -107,6 +107,7 @@ impl AppState {
         .bind(now)
         .bind(owner_id)
         .bind(now)
+        .bind(registration.observability_port.map(|p| p as i32))
         .execute(&self.db)
         .await?;
 
@@ -126,6 +127,7 @@ impl AppState {
             owner_id: owner_id.to_string(),
             registered_at: now.to_rfc3339(),
             last_seen: now.to_rfc3339(),
+            observability_port: registration.observability_port,
         };
 
         Ok(node_info)
@@ -138,7 +140,7 @@ impl AppState {
             SELECT 
                 node_id, region, node_type, owner_id, bandwidth_mbps, cpu_cores,
                 memory_gb, gpu_available, health_score, status,
-                registered_at, last_seen
+                registered_at, last_seen, observability_port
             FROM nodes
             WHERE deleted_at IS NULL
               AND status != 'rejected'
@@ -170,6 +172,7 @@ impl AppState {
                     last_seen: row
                         .get::<chrono::DateTime<chrono::Utc>, _>("last_seen")
                         .to_rfc3339(),
+                    observability_port: row.get::<Option<i32>, _>("observability_port").map(|p| p as u16),
                 })
                 .collect(),
             Err(e) => {
@@ -186,7 +189,7 @@ impl AppState {
             SELECT 
                 node_id, region, node_type, owner_id, bandwidth_mbps, cpu_cores,
                 memory_gb, gpu_available, health_score, status,
-                registered_at, last_seen
+                registered_at, last_seen, observability_port
             FROM nodes
             WHERE node_id = $1 AND deleted_at IS NULL
             "#,
@@ -215,6 +218,7 @@ impl AppState {
                 last_seen: row
                     .get::<chrono::DateTime<chrono::Utc>, _>("last_seen")
                     .to_rfc3339(),
+                observability_port: row.get::<Option<i32>, _>("observability_port").map(|p| p as u16),
             }),
             Ok(None) => None,
             Err(e) => {
@@ -1682,7 +1686,7 @@ impl AppState {
             SELECT 
                 node_id, region, node_type, owner_id, bandwidth_mbps, cpu_cores,
                 memory_gb, gpu_available, health_score, status,
-                registered_at, last_seen
+                registered_at, last_seen, observability_port
             FROM nodes
             WHERE owner_id = $1 AND deleted_at IS NULL
               AND status != 'rejected'
@@ -1715,6 +1719,7 @@ impl AppState {
                     last_seen: row
                         .get::<chrono::DateTime<chrono::Utc>, _>("last_seen")
                         .to_rfc3339(),
+                    observability_port: row.get::<Option<i32>, _>("observability_port").map(|p| p as u16),
                 })
                 .collect(),
             Err(e) => {
