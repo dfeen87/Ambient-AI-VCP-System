@@ -107,10 +107,7 @@ impl NodeStatus {
     /// Create status snapshot from node state
     pub fn from_node(node: &AmbientNode, start_time: SystemTime) -> Self {
         let now = SystemTime::now();
-        let uptime = now
-            .duration_since(start_time)
-            .unwrap_or_default()
-            .as_secs();
+        let uptime = now.duration_since(start_time).unwrap_or_default().as_secs();
 
         Self {
             node_region: node.id.region.clone(),
@@ -200,20 +197,21 @@ impl LocalObservabilityServer {
         let state = self.state.clone();
 
         // Define the /node/status endpoint
-        let app = Router::new().route(
-            "/node/status",
-            get(|State(state): State<ObservableNodeState>| async move {
-                let status = state.status().await;
-                Json(status)
-            }),
-        )
-        .with_state(state);
+        let app = Router::new()
+            .route(
+                "/node/status",
+                get(|State(state): State<ObservableNodeState>| async move {
+                    let status = state.status().await;
+                    Json(status)
+                }),
+            )
+            .with_state(state);
 
         // Bind STRICTLY to 127.0.0.1 (local-only access)
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
-        
+
         tracing::info!("Starting local observability server on {}", addr);
-        
+
         let listener = tokio::net::TcpListener::bind(addr).await?;
         axum::serve(listener, app).await?;
 
@@ -252,7 +250,7 @@ mod tests {
         let node_id = NodeId::new("test-node", "eu-central", "gateway");
         let node = AmbientNode::new(node_id, SafetyPolicy::default());
         let node_arc = Arc::new(RwLock::new(node));
-        
+
         let state = ObservableNodeState::new(node_arc);
         let status = state.status().await;
 
