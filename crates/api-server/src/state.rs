@@ -45,16 +45,16 @@ impl AppState {
         Self::parse_node_heartbeat_stale_timeout_seconds(configured.as_deref())
     }
 
-    fn parse_connect_session_eligibility_grace_seconds(value: Option<&str>) -> i64 {
+    fn parse_connect_session_monitor_interval_seconds(value: Option<&str>) -> u64 {
         value
-            .and_then(|raw| raw.parse::<i64>().ok())
-            .filter(|parsed| *parsed >= 0)
-            .unwrap_or(3600)
+            .and_then(|raw| raw.parse::<u64>().ok())
+            .filter(|parsed| *parsed > 0)
+            .unwrap_or(15)
     }
 
-    fn connect_session_eligibility_grace_seconds() -> i64 {
-        let configured = std::env::var("CONNECT_SESSION_ELIGIBILITY_GRACE_SECONDS").ok();
-        Self::parse_connect_session_eligibility_grace_seconds(configured.as_deref())
+    pub fn connect_session_monitor_interval_seconds() -> u64 {
+        let configured = std::env::var("CONNECT_SESSION_MONITOR_INTERVAL_SECONDS").ok();
+        Self::parse_connect_session_monitor_interval_seconds(configured.as_deref())
     }
 
     /// Create new application state with database pool
@@ -245,6 +245,7 @@ impl AppState {
 
         self.assign_available_nodes_for_task(
             task_id,
+            &task.task_type,
             task_registry_entry,
             task.requirements.min_nodes,
             task.requirements.require_gpu,
@@ -381,6 +382,7 @@ impl AppState {
     async fn assign_available_nodes_for_task(
         &self,
         task_id: Uuid,
+        task_type: &str,
         task_registry_entry: &TaskTypeRegistryEntry,
         min_nodes: u32,
         require_gpu: bool,
@@ -406,7 +408,7 @@ impl AppState {
 
         let additional_nodes_needed = min_nodes as i64 - assigned_nodes;
         let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
-        let connect_session_grace_seconds = Self::connect_session_eligibility_grace_seconds();
+        let forbid_active_connect_session = task_type == "connect_only";
 
         let node_ids = sqlx::query_scalar::<_, String>(
             r#"
@@ -432,6 +434,16 @@ impl AppState {
               AND n.memory_gb >= $3
               AND n.bandwidth_mbps >= $4
               AND ($5 = FALSE OR n.gpu_available = TRUE)
+              AND (
+                    $10 = FALSE
+                    OR NOT EXISTS (
+                        SELECT 1
+                        FROM connect_sessions cs_busy
+                        WHERE cs_busy.node_id = n.node_id
+                          AND cs_busy.status = 'active'
+                          AND cs_busy.expires_at > NOW()
+                    )
+                  )
               AND NOT EXISTS (
                   SELECT 1
                   FROM task_assignments existing
@@ -454,7 +466,7 @@ impl AppState {
         .bind(max_attachments)
         .bind(heartbeat_stale_timeout_seconds)
         .bind(additional_nodes_needed)
-        .bind(connect_session_grace_seconds)
+        .bind(forbid_active_connect_session)
         .fetch_all(&self.db)
         .await?;
 
@@ -546,7 +558,7 @@ impl AppState {
             };
 
             let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
-            let connect_session_grace_seconds = Self::connect_session_eligibility_grace_seconds();
+            let forbid_active_connect_session = task_type == "connect_only";
 
             let node_is_eligible = sqlx::query_scalar::<_, bool>(
                 r#"
@@ -571,6 +583,16 @@ impl AppState {
                       AND n.memory_gb >= $4
                       AND n.bandwidth_mbps >= $5
                       AND ($6 = FALSE OR n.gpu_available = TRUE)
+                      AND (
+                            $8 = FALSE
+                            OR NOT EXISTS (
+                                SELECT 1
+                                FROM connect_sessions cs_busy
+                                WHERE cs_busy.node_id = n.node_id
+                                  AND cs_busy.status = 'active'
+                                  AND cs_busy.expires_at > NOW()
+                            )
+                          )
                 )
                 "#,
             )
@@ -581,7 +603,7 @@ impl AppState {
             .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
             .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
             .bind(heartbeat_stale_timeout_seconds)
-            .bind(connect_session_grace_seconds)
+            .bind(forbid_active_connect_session)
             .fetch_one(&self.db)
             .await?;
 
@@ -724,6 +746,7 @@ impl AppState {
             .ok_or_else(|| {
                 ApiError::bad_request("connect_only task missing bandwidth_limit_mbps")
             })?;
+        let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
 
         let node_id = sqlx::query_scalar::<_, String>(
             r#"
@@ -734,12 +757,14 @@ impl AppState {
               AND ta.disconnected_at IS NULL
               AND n.deleted_at IS NULL
               AND n.status = 'online'
+              AND n.last_heartbeat >= NOW() - ($2::bigint * INTERVAL '1 second')
               AND (n.node_type = 'open_internet' OR n.node_type = 'any')
             ORDER BY ta.assigned_at ASC
             LIMIT 1
             "#,
         )
         .bind(task_uuid)
+        .bind(heartbeat_stale_timeout_seconds)
         .fetch_optional(&self.db)
         .await?
         .ok_or_else(|| ApiError::service_unavailable("No eligible open_internet node assigned"))?;
@@ -857,7 +882,98 @@ impl AppState {
         .fetch_optional(&self.db)
         .await?;
 
-        Ok(row.map(map_connect_session_row))
+        let Some(session_row) = row else {
+            return Ok(None);
+        };
+
+        let session = map_connect_session_row(session_row);
+        if !matches!(session.status, ConnectSessionStatus::Active) {
+            return Ok(Some(session));
+        }
+
+        let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
+        let node_is_healthy = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM nodes n
+                WHERE n.node_id = $1
+                  AND n.deleted_at IS NULL
+                  AND n.status = 'online'
+                  AND n.last_heartbeat >= NOW() - ($2::bigint * INTERVAL '1 second')
+            )
+            "#,
+        )
+        .bind(&session.node_id)
+        .bind(heartbeat_stale_timeout_seconds)
+        .fetch_one(&self.db)
+        .await?;
+
+        if node_is_healthy {
+            return Ok(Some(session));
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE connect_sessions
+            SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+            WHERE session_id = $1
+              AND requester_id = $2
+              AND status = 'active'
+            "#,
+        )
+        .bind(session_id)
+        .bind(requester_id)
+        .execute(&self.db)
+        .await?;
+
+        let task_uuid = Uuid::parse_str(&session.task_id)
+            .map_err(|_| ApiError::internal_error("Invalid task ID format"))?;
+
+        sqlx::query(
+            r#"
+            UPDATE task_assignments
+            SET disconnected_at = NOW()
+            WHERE task_id = $1
+              AND node_id = $2
+              AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(task_uuid)
+        .bind(&session.node_id)
+        .execute(&self.db)
+        .await?;
+
+        let task_meta = sqlx::query(
+            r#"
+            SELECT task_type, min_nodes, require_gpu
+            FROM tasks
+            WHERE task_id = $1
+              AND status IN ('pending', 'running')
+            "#,
+        )
+        .bind(task_uuid)
+        .fetch_optional(&self.db)
+        .await?;
+
+        if let Some(task_meta) = task_meta {
+            let task_type: String = task_meta.get("task_type");
+            let min_nodes: i32 = task_meta.get("min_nodes");
+            let require_gpu: bool = task_meta.get("require_gpu");
+
+            if let Some(task_registry_entry) = task_type_registry_entry(&task_type) {
+                self.assign_available_nodes_for_task(
+                    task_uuid,
+                    &task_type,
+                    task_registry_entry,
+                    min_nodes as u32,
+                    require_gpu,
+                )
+                .await?;
+            }
+        }
+
+        self.get_connect_session(session_id, requester_id).await
     }
 
     pub async fn stop_connect_session(
@@ -883,6 +999,95 @@ impl AppState {
         .await?;
 
         Ok(row.map(map_connect_session_row))
+    }
+
+    /// Sweep active connect sessions and terminate sessions bound to stale/offline nodes.
+    pub async fn sweep_connect_sessions(&self) -> ApiResult<usize> {
+        let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
+        let affected_task_ids = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            WITH stale_sessions AS (
+                SELECT
+                    cs.session_id,
+                    cs.task_id,
+                    cs.node_id,
+                    CASE
+                        WHEN cs.expires_at < NOW() THEN 'expired'
+                        ELSE 'ended'
+                    END AS next_status
+                FROM connect_sessions cs
+                LEFT JOIN nodes n
+                    ON n.node_id = cs.node_id
+                    AND n.deleted_at IS NULL
+                WHERE cs.status = 'active'
+                  AND (
+                        cs.expires_at < NOW()
+                        OR n.node_id IS NULL
+                        OR n.status <> 'online'
+                        OR n.last_heartbeat < NOW() - ($1::bigint * INTERVAL '1 second')
+                      )
+            ),
+            updated_sessions AS (
+                UPDATE connect_sessions cs
+                SET status = stale_sessions.next_status::connect_session_status,
+                    ended_at = CASE
+                        WHEN stale_sessions.next_status = 'ended' THEN NOW()
+                        ELSE cs.ended_at
+                    END,
+                    updated_at = NOW()
+                FROM stale_sessions
+                WHERE cs.session_id = stale_sessions.session_id
+                RETURNING stale_sessions.task_id, stale_sessions.node_id
+            ),
+            disconnected_assignments AS (
+                UPDATE task_assignments ta
+                SET disconnected_at = NOW()
+                FROM updated_sessions us
+                WHERE ta.task_id = us.task_id
+                  AND ta.node_id = us.node_id
+                  AND ta.disconnected_at IS NULL
+                RETURNING ta.task_id
+            )
+            SELECT DISTINCT task_id
+            FROM disconnected_assignments
+            "#,
+        )
+        .bind(heartbeat_stale_timeout_seconds)
+        .fetch_all(&self.db)
+        .await?;
+
+        for task_id in &affected_task_ids {
+            let task_meta = sqlx::query(
+                r#"
+                SELECT task_type, min_nodes, require_gpu
+                FROM tasks
+                WHERE task_id = $1
+                  AND status IN ('pending', 'running')
+                "#,
+            )
+            .bind(task_id)
+            .fetch_optional(&self.db)
+            .await?;
+
+            if let Some(task_meta) = task_meta {
+                let task_type: String = task_meta.get("task_type");
+                let min_nodes: i32 = task_meta.get("min_nodes");
+                let require_gpu: bool = task_meta.get("require_gpu");
+
+                if let Some(task_registry_entry) = task_type_registry_entry(&task_type) {
+                    self.assign_available_nodes_for_task(
+                        *task_id,
+                        &task_type,
+                        task_registry_entry,
+                        min_nodes as u32,
+                        require_gpu,
+                    )
+                    .await?;
+                }
+            }
+        }
+
+        Ok(affected_task_ids.len())
     }
 
     /// Delete a task created by the requesting user
@@ -2294,30 +2499,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_connect_session_eligibility_grace_seconds() {
-        assert_eq!(
-            AppState::parse_connect_session_eligibility_grace_seconds(Some("7200")),
-            7200
-        );
-        assert_eq!(
-            AppState::parse_connect_session_eligibility_grace_seconds(Some("0")),
-            0
-        );
-        assert_eq!(
-            AppState::parse_connect_session_eligibility_grace_seconds(Some("-1")),
-            3600
-        );
-        assert_eq!(
-            AppState::parse_connect_session_eligibility_grace_seconds(Some("bogus")),
-            3600
-        );
-        assert_eq!(
-            AppState::parse_connect_session_eligibility_grace_seconds(None),
-            3600
-        );
-    }
-
-    #[test]
     fn parses_heartbeat_stale_timeout_seconds() {
         assert_eq!(
             AppState::parse_node_heartbeat_stale_timeout_seconds(Some("45")),
@@ -2339,6 +2520,30 @@ mod tests {
         assert_eq!(
             AppState::parse_node_heartbeat_stale_timeout_seconds(None),
             90
+        );
+    }
+
+    #[test]
+    fn parses_connect_session_monitor_interval_seconds() {
+        assert_eq!(
+            AppState::parse_connect_session_monitor_interval_seconds(Some("30")),
+            30
+        );
+        assert_eq!(
+            AppState::parse_connect_session_monitor_interval_seconds(Some("0")),
+            15
+        );
+        assert_eq!(
+            AppState::parse_connect_session_monitor_interval_seconds(Some("-5")),
+            15
+        );
+        assert_eq!(
+            AppState::parse_connect_session_monitor_interval_seconds(Some("bogus")),
+            15
+        );
+        assert_eq!(
+            AppState::parse_connect_session_monitor_interval_seconds(None),
+            15
         );
     }
 
