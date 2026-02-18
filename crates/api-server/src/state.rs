@@ -14,6 +14,31 @@ pub struct AppState {
 }
 
 impl AppState {
+    async fn select_active_connect_node_for_task(
+        &self,
+        task_id: Uuid,
+    ) -> ApiResult<Option<String>> {
+        let node_id = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT ta.node_id
+            FROM task_assignments ta
+            JOIN nodes n ON n.node_id = ta.node_id
+            WHERE ta.task_id = $1
+              AND ta.disconnected_at IS NULL
+              AND n.deleted_at IS NULL
+              AND n.status = 'online'
+              AND (n.node_type = 'open_internet' OR n.node_type = 'any')
+            ORDER BY ta.assigned_at ASC
+            LIMIT 1
+            "#,
+        )
+        .bind(task_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        Ok(node_id)
+    }
+
     fn parse_max_concurrent_tasks_per_node(value: Option<&str>) -> i64 {
         value
             .and_then(|raw| raw.parse::<i64>().ok())
@@ -710,24 +735,12 @@ impl AppState {
             .ok_or_else(|| {
                 ApiError::bad_request("connect_only task missing bandwidth_limit_mbps")
             })?;
-        let node_id = sqlx::query_scalar::<_, String>(
-            r#"
-            SELECT ta.node_id
-            FROM task_assignments ta
-            JOIN nodes n ON n.node_id = ta.node_id
-            WHERE ta.task_id = $1
-              AND ta.disconnected_at IS NULL
-              AND n.deleted_at IS NULL
-              AND n.status = 'online'
-              AND (n.node_type = 'open_internet' OR n.node_type = 'any')
-            ORDER BY ta.assigned_at ASC
-            LIMIT 1
-            "#,
-        )
-        .bind(task_uuid)
-        .fetch_optional(&self.db)
-        .await?
-        .ok_or_else(|| ApiError::service_unavailable("No eligible open_internet node assigned"))?;
+        let node_id = self
+            .select_active_connect_node_for_task(task_uuid)
+            .await?
+            .ok_or_else(|| {
+                ApiError::service_unavailable("No eligible open_internet node assigned")
+            })?;
 
         let protocol = request
             .tunnel_protocol
@@ -851,13 +864,14 @@ impl AppState {
             return Ok(Some(session));
         }
 
-        let node_exists = sqlx::query_scalar::<_, bool>(
+        let node_ready = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS (
                 SELECT 1
                 FROM nodes n
                 WHERE n.node_id = $1
                   AND n.deleted_at IS NULL
+                  AND n.status = 'online'
             )
             "#,
         )
@@ -865,7 +879,39 @@ impl AppState {
         .fetch_one(&self.db)
         .await?;
 
-        if node_exists {
+        if node_ready {
+            return Ok(Some(session));
+        }
+
+        let task_uuid = Uuid::parse_str(&session.task_id)
+            .map_err(|_| ApiError::internal_error("Invalid task ID format"))?;
+
+        if let Some(replacement_node_id) =
+            self.select_active_connect_node_for_task(task_uuid).await?
+        {
+            if replacement_node_id != session.node_id {
+                let replacement_row = sqlx::query(
+                    r#"
+                    UPDATE connect_sessions
+                    SET node_id = $1,
+                        updated_at = NOW()
+                    WHERE session_id = $2
+                      AND requester_id = $3
+                      AND status = 'active'
+                    RETURNING session_id, task_id, requester_id, node_id, tunnel_protocol,
+                           egress_profile, destination_policy_id, bandwidth_limit_mbps,
+                           status, created_at, expires_at, last_heartbeat_at, ended_at
+                    "#,
+                )
+                .bind(&replacement_node_id)
+                .bind(session_id)
+                .bind(requester_id)
+                .fetch_optional(&self.db)
+                .await?;
+
+                return Ok(replacement_row.map(map_connect_session_row));
+            }
+
             return Ok(Some(session));
         }
 
@@ -882,9 +928,6 @@ impl AppState {
         .bind(requester_id)
         .execute(&self.db)
         .await?;
-
-        let task_uuid = Uuid::parse_str(&session.task_id)
-            .map_err(|_| ApiError::internal_error("Invalid task ID format"))?;
 
         sqlx::query(
             r#"
