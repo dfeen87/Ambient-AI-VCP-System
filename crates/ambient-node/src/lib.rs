@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub mod ailee;
+// VCP modules
 pub mod connectivity;
 pub mod gateway;
 pub mod health;
@@ -9,11 +9,19 @@ pub mod offline;
 pub mod reputation;
 pub mod telemetry;
 
-// Re-export commonly used ailee types for convenience
-pub use ailee::{
-    ConsensusEngine, ExecutionMode, GenerationRequest, GenerationResult, ModelAdapter,
-    ModelLocality, ModelOutput, TaskType, TrustScores,
+// AILEE Integration - Clean boundary to external trust layer
+pub mod ailee_integration;
+
+// Re-export AILEE types from external crate (not re-implemented)
+pub use ailee_trust_layer::{
+    ConsensusEngine, ExecutionMode, GenerationRequest, GenerationResult, LocalModelAdapter,
+    ModelAdapter, ModelLocality, ModelOutput, RemoteModelAdapter, TaskType, TrustScores,
 };
+
+// Re-export VCP integration adapter
+pub use ailee_integration::{AileeEngineAdapter, VcpExecutionContext};
+
+// Re-export VCP types
 pub use connectivity::*;
 pub use gateway::*;
 pub use health::*;

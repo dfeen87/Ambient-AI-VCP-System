@@ -46,10 +46,22 @@ impl Default for TrustScores {
 pub struct ConsistencyScore;
 
 impl ConsistencyScore {
-    /// Compute semantic similarity between two texts (simple stub implementation)
-    /// In production, this would use embeddings and cosine similarity
+    /// Compute semantic similarity between two texts
+    ///
+    /// **STUB IMPLEMENTATION**: This is a placeholder for demonstration purposes.
+    ///
+    /// Production implementations should use:
+    /// - Sentence embeddings (e.g., Sentence-BERT, USE)
+    /// - Cosine similarity on embedding vectors
+    /// - Pre-trained language models
+    /// - Levenshtein distance for character-level similarity
+    ///
+    /// Current approach has known limitations:
+    /// - Only counts character overlap, not semantic meaning
+    /// - Doesn't consider word boundaries or order
+    /// - Inefficient HashSet allocation per call
     pub fn compute_similarity(text1: &str, text2: &str) -> f64 {
-        // Simple stub: normalized string distance
+        // Simple stub: normalized character overlap
         let len1 = text1.len();
         let len2 = text2.len();
 
@@ -62,6 +74,7 @@ impl ConsistencyScore {
         }
 
         // Convert text2 to HashSet for O(1) lookups
+        // NOTE: This is inefficient and should be replaced with proper similarity algorithm
         use std::collections::HashSet;
         let text2_chars: HashSet<char> = text2.chars().collect();
 
@@ -93,10 +106,25 @@ impl ConsistencyScore {
 pub struct SafetyChecker;
 
 impl SafetyChecker {
-    /// Check if output is safe (stub implementation)
-    /// In production, this would use content moderation APIs
+    /// Check if output is safe
+    ///
+    /// **STUB IMPLEMENTATION**: This is a placeholder for demonstration purposes.
+    ///
+    /// Production implementations should use:
+    /// - Professional content moderation APIs (e.g., OpenAI Moderation, Perspective API)
+    /// - Multi-category safety classification (hate speech, violence, etc.)
+    /// - Text normalization to prevent bypassing (l33tspeak, unicode tricks)
+    /// - Context-aware analysis (not just keyword matching)
+    /// - Regular updates to safety patterns
+    ///
+    /// Current approach has critical limitations:
+    /// - Easily bypassed with character substitution (e.g., "expl0it")
+    /// - Only covers a tiny subset of unsafe content
+    /// - No normalization or case variations
+    /// - Fixed patterns without learning or updates
     pub fn check_safety(text: &str) -> f64 {
         // Simple heuristic: check for prohibited patterns
+        // WARNING: This is NOT production-ready security
         let text_lower = text.to_lowercase();
 
         let unsafe_patterns = ["exploit", "hack", "malware", "virus", "attack"];
