@@ -68,6 +68,11 @@ DB_CONNECTION_TIMEOUT_SECS=30
 JWT_SECRET=your-jwt-secret-key-change-this-in-production
 JWT_EXPIRATION_HOURS=24
 
+# Hash pepper configuration (set one shared value or per-purpose values)
+AUTH_HASH_PEPPER=your-random-32-byte-plus-secret
+# REFRESH_TOKEN_PEPPER=your-random-32-byte-plus-secret
+# API_KEY_PEPPER=your-random-32-byte-plus-secret
+
 # Rate Limiting
 RATE_LIMIT_REQUESTS_PER_MINUTE=60
 RATE_LIMIT_BURST=10

@@ -37,6 +37,7 @@ services:
       - DATABASE_URL=postgres://vcp_user:vcp_password@postgres:5432/ambient_vcp
       - JWT_SECRET=docker-dev-secret-change-in-production
       - JWT_EXPIRATION_HOURS=24
+      - AUTH_HASH_PEPPER=docker-dev-auth-pepper-change-in-production
       - RATE_LIMIT_REQUESTS_PER_MINUTE=60
       - RATE_LIMIT_BURST=10
     networks:
