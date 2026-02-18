@@ -20,6 +20,7 @@ fn test_node_validation_empty_id() {
             memory_gb: 16.0,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     assert!(node_reg.validate().is_err());
@@ -38,6 +39,7 @@ fn test_node_validation_invalid_type() {
             memory_gb: 16.0,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     assert!(node_reg.validate().is_err());
@@ -56,6 +58,7 @@ fn test_node_validation_invalid_bandwidth() {
             memory_gb: 16.0,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     assert!(node_reg.validate().is_err());
@@ -74,6 +77,7 @@ fn test_node_validation_bandwidth_below_whitelist_min() {
             memory_gb: 16.0,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     assert!(node_reg.validate().is_err());
@@ -92,6 +96,7 @@ fn test_node_validation_invalid_cpu_cores() {
             memory_gb: 16.0,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     assert!(node_reg.validate().is_err());
@@ -110,6 +115,7 @@ fn test_node_validation_invalid_memory() {
             memory_gb: 0.05,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     assert!(node_reg.validate().is_err());
@@ -128,6 +134,7 @@ fn test_node_validation_valid() {
             memory_gb: 16.0,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     assert!(node_reg.validate().is_ok());
@@ -146,6 +153,7 @@ fn test_node_validation_any_type() {
             memory_gb: 16.0,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     assert!(node_reg.validate().is_ok());
@@ -164,6 +172,7 @@ fn test_node_validation_open_internet_type() {
             memory_gb: 16.0,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     assert!(node_reg.validate().is_ok());
@@ -409,6 +418,7 @@ async fn test_pending_task_captures_newly_registered_node() {
             memory_gb: 16.0,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     state
@@ -469,6 +479,7 @@ async fn test_completed_task_marks_assignments_disconnected() {
                     memory_gb: 32.0,
                     gpu_available: false,
                 },
+                observability_port: None,
             },
             Uuid::new_v4(),
         )
@@ -558,6 +569,7 @@ async fn test_task_assignment_uses_universal_node_type_any() {
                     memory_gb: 64.0,
                     gpu_available: false,
                 },
+                observability_port: None,
             },
             Uuid::new_v4(),
         )
@@ -636,6 +648,7 @@ async fn test_task_assignment_excludes_non_matching_node_types() {
                     memory_gb: 64.0,
                     gpu_available: false,
                 },
+                observability_port: None,
             },
             Uuid::new_v4(),
         )
@@ -700,6 +713,7 @@ async fn test_state_register_node() {
             memory_gb: 16.0,
             gpu_available: false,
         },
+        observability_port: None,
     };
 
     let node_info = state.register_node(node_reg).await.unwrap();
@@ -755,6 +769,7 @@ async fn test_node_deletion_disconnects_tasks_and_reassigns() {
                     memory_gb: 16.0,
                     gpu_available: false,
                 },
+                observability_port: None,
             },
             owner_id,
         )
@@ -775,6 +790,7 @@ async fn test_node_deletion_disconnects_tasks_and_reassigns() {
                     memory_gb: 16.0,
                     gpu_available: false,
                 },
+                observability_port: None,
             },
             owner_id,
         )
@@ -904,6 +920,7 @@ async fn test_node_deletion_reverts_task_to_pending_without_fallback() {
                     memory_gb: 16.0,
                     gpu_available: false,
                 },
+                observability_port: None,
             },
             owner_id,
         )
