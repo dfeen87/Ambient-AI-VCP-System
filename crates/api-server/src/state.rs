@@ -172,7 +172,9 @@ impl AppState {
                     last_seen: row
                         .get::<chrono::DateTime<chrono::Utc>, _>("last_seen")
                         .to_rfc3339(),
-                    observability_port: row.get::<Option<i32>, _>("observability_port").map(|p| p as u16),
+                    observability_port: row
+                        .get::<Option<i32>, _>("observability_port")
+                        .map(|p| p as u16),
                 })
                 .collect(),
             Err(e) => {
@@ -218,7 +220,9 @@ impl AppState {
                 last_seen: row
                     .get::<chrono::DateTime<chrono::Utc>, _>("last_seen")
                     .to_rfc3339(),
-                observability_port: row.get::<Option<i32>, _>("observability_port").map(|p| p as u16),
+                observability_port: row
+                    .get::<Option<i32>, _>("observability_port")
+                    .map(|p| p as u16),
             }),
             Ok(None) => None,
             Err(e) => {
@@ -1719,7 +1723,9 @@ impl AppState {
                     last_seen: row
                         .get::<chrono::DateTime<chrono::Utc>, _>("last_seen")
                         .to_rfc3339(),
-                    observability_port: row.get::<Option<i32>, _>("observability_port").map(|p| p as u16),
+                    observability_port: row
+                        .get::<Option<i32>, _>("observability_port")
+                        .map(|p| p as u16),
                 })
                 .collect(),
             Err(e) => {
