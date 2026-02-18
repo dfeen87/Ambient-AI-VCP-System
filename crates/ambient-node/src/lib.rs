@@ -2,14 +2,14 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub mod health;
+pub mod offline;
 pub mod reputation;
 pub mod telemetry;
-pub mod offline;
 
 pub use health::*;
+pub use offline::*;
 pub use reputation::*;
 pub use telemetry::*;
-pub use offline::*;
 
 /// Unique identifier for an ambient node
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
