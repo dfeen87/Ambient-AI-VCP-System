@@ -77,6 +77,7 @@ Tip: To quickly verify the public demo is reachable, run:
 ### Core Capabilities
 - 🌐 **Ambient Node Mesh**: Self-organizing network of heterogeneous edge devices
 - 🧠 **Intelligent Orchestration**: Health-based task assignment with reputation scoring
+- 🤖 **AILEE Trust Layer**: External generative intelligence with multi-model consensus and trust scoring
 - 🔒 **WASM Execution Engine**: Secure sandboxed computation with strict resource limits
 - 🔐 **Zero-Knowledge Proofs**: Cryptographic verification with Groth16 implementation
 - 🤝 **Federated Learning**: Privacy-preserving multi-node model training with FedAvg and differential privacy

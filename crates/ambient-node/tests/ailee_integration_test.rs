@@ -1,10 +1,17 @@
 //! Integration tests for AILEE Trust Layer
+//!
+//! These tests verify:
+//! 1. Direct AILEE API usage (substrate-agnostic)
+//! 2. VCP integration adapter (VCP-specific context passing)
 
-use ambient_node::ailee::{
-    adapters::{LocalModelAdapter, ModelAdapter, RemoteModelAdapter},
-    consensus::ConsensusEngine,
-    generation::{ExecutionMode, GenerationRequest, TaskType},
+use ambient_node::{
+    AileeEngineAdapter, ConsensusEngine, ExecutionMode, GenerationRequest, LocalModelAdapter,
+    ModelAdapter, RemoteModelAdapter, TaskType, VcpExecutionContext,
 };
+
+// ============================================================================
+// Direct AILEE API Tests (substrate-agnostic)
+// ============================================================================
 
 #[tokio::test]
 async fn test_end_to_end_generation_local_only() {
@@ -254,5 +261,193 @@ async fn test_multiple_task_types() {
 
         let result = engine.execute(&request, adapters).await.unwrap();
         assert!(!result.final_output.is_empty());
+    }
+}
+
+// ============================================================================
+// VCP Integration Adapter Tests (VCP-specific context passing)
+// ============================================================================
+
+#[tokio::test]
+async fn test_vcp_adapter_online_execution() {
+    let adapter = AileeEngineAdapter::new(2);
+
+    let context = VcpExecutionContext::new(
+        true, // Online
+        "us-west-1",
+        "gateway",
+        5000, // 5 second execution budget
+        true, // Allow offline fallback
+    );
+
+    let result = adapter
+        .execute_with_context(
+            "Explain distributed consensus",
+            TaskType::Analysis,
+            0.7,
+            &context,
+        )
+        .await
+        .unwrap();
+
+    // Verify execution succeeded
+    assert!(!result.final_output.is_empty());
+    assert!(result.trust_score >= 0.0 && result.trust_score <= 1.0);
+    assert!(result.model_lineage.len() >= 2);
+
+    // Verify deterministic hashing
+    assert!(result.verify_hash());
+}
+
+#[tokio::test]
+async fn test_vcp_adapter_offline_resilience() {
+    let adapter = AileeEngineAdapter::new(2);
+
+    let context = VcpExecutionContext::new(
+        false, // Offline
+        "eu-central-1",
+        "compute",
+        3000,
+        true, // Allow offline execution
+    );
+
+    let result = adapter
+        .execute_with_context(
+            "Generate Python fibonacci function",
+            TaskType::Code,
+            0.6,
+            &context,
+        )
+        .await
+        .unwrap();
+
+    // Should succeed using local models only
+    assert!(!result.final_output.is_empty());
+    assert!(result.execution_metadata.was_offline);
+
+    // Should only use local models (no remote when offline)
+    assert_eq!(result.model_lineage.len(), 2);
+}
+
+#[tokio::test]
+async fn test_vcp_adapter_deterministic_replay() {
+    let adapter = AileeEngineAdapter::new(1);
+
+    let context = VcpExecutionContext::new(
+        false, // Offline for determinism
+        "ap-south-1",
+        "validator",
+        2000,
+        true,
+    );
+
+    let prompt = "Deterministic test prompt";
+
+    // Execute twice with same inputs
+    let result1 = adapter
+        .execute_with_context(prompt, TaskType::Chat, 0.5, &context)
+        .await
+        .unwrap();
+
+    let result2 = adapter
+        .execute_with_context(prompt, TaskType::Chat, 0.5, &context)
+        .await
+        .unwrap();
+
+    // Same inputs should produce same input hash (deterministic request)
+    assert_eq!(result1.input_hash, result2.input_hash);
+
+    // Output verification
+    assert!(result1.verify_hash());
+    assert!(result2.verify_hash());
+}
+
+#[tokio::test]
+async fn test_vcp_adapter_trust_threshold_not_met() {
+    let adapter = AileeEngineAdapter::new(1);
+
+    let context = VcpExecutionContext::new(true, "us-east-1", "storage", 4000, true);
+
+    // Very high trust threshold
+    let result = adapter
+        .execute_with_context(
+            "Critical security analysis",
+            TaskType::Analysis,
+            0.98, // 98% trust threshold (very high)
+            &context,
+        )
+        .await;
+
+    // Should still succeed (consensus engine uses best available)
+    assert!(result.is_ok());
+
+    let result = result.unwrap();
+    assert!(!result.final_output.is_empty());
+}
+
+#[tokio::test]
+async fn test_vcp_adapter_connectivity_aware() {
+    let adapter = AileeEngineAdapter::new(2);
+
+    // Test 1: Online execution should use hybrid mode
+    let online_context = VcpExecutionContext::new(true, "us-west", "gateway", 5000, true);
+
+    let online_result = adapter
+        .execute_with_context("Test online", TaskType::Chat, 0.5, &online_context)
+        .await
+        .unwrap();
+
+    // When online with hybrid mode, could use remote adapters
+    assert!(online_result.model_lineage.len() >= 2);
+
+    // Test 2: Offline execution should use local-only mode
+    let offline_context = VcpExecutionContext::new(false, "us-west", "gateway", 5000, true);
+
+    let offline_result = adapter
+        .execute_with_context("Test offline", TaskType::Chat, 0.5, &offline_context)
+        .await
+        .unwrap();
+
+    // When offline, should only use local adapters
+    assert_eq!(offline_result.model_lineage.len(), 2);
+    assert!(offline_result.execution_metadata.was_offline);
+}
+
+#[tokio::test]
+async fn test_vcp_adapter_multiple_task_types() {
+    let adapter = AileeEngineAdapter::new(1);
+
+    let context = VcpExecutionContext::new(false, "eu-west-1", "compute", 3000, true);
+
+    // Test all task types
+    for task_type in [TaskType::Chat, TaskType::Code, TaskType::Analysis] {
+        let result = adapter
+            .execute_with_context("Test prompt for task type", task_type, 0.5, &context)
+            .await
+            .unwrap();
+
+        assert!(!result.final_output.is_empty());
+        assert!(result.trust_score >= 0.0 && result.trust_score <= 1.0);
+    }
+}
+
+#[tokio::test]
+async fn test_vcp_adapter_lineage_tracking() {
+    let adapter = AileeEngineAdapter::new(2);
+
+    let context = VcpExecutionContext::new(false, "ap-northeast-1", "validator", 4000, true);
+
+    let result = adapter
+        .execute_with_context("Track model lineage", TaskType::Analysis, 0.6, &context)
+        .await
+        .unwrap();
+
+    // Verify lineage tracking
+    assert!(!result.model_lineage.is_empty());
+    assert!(result.model_lineage.len() >= 2);
+
+    // All models should have non-empty IDs
+    for model_id in &result.model_lineage {
+        assert!(!model_id.is_empty());
     }
 }
