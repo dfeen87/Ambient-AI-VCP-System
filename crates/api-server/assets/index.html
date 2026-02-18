@@ -1250,6 +1250,7 @@
     let currentUser = localStorage.getItem('vcp_username');
     let currentUserId = parseUserIdFromToken(authToken);
     let isApiConnected = false;
+    let lastRelayConnection = null;
     const taskProgressMemory = new Map();
     const TASK_COMPLETION_LOCKS_STORAGE_KEY = 'vcp_task_completion_locks_v1';
     let taskCompletionLocks = loadTaskCompletionLocks();
@@ -1452,9 +1453,41 @@
             return;
         }
 
-        const statusLabel = isConnected ? 'Live / Connected' : 'Live / Disconnected';
+        const relayHint = buildRelayConnectionHint(isConnected);
+        const statusLabel = `API / ${isConnected ? 'Connected' : 'Disconnected'}${relayHint}`;
         liveLabel.textContent = statusLabel;
         liveBadge.classList.toggle('connected', isConnected);
+    }
+
+    function buildRelayConnectionHint(isConnected) {
+        if (!lastRelayConnection) {
+            return '';
+        }
+
+        const nodeList = lastRelayConnection.nodeIds.join(', ');
+
+        if (isConnected) {
+            return ` • Relay node ${nodeList}`;
+        }
+
+        const ageSeconds = Math.max(0, Math.round((Date.now() - lastRelayConnection.updatedAtMs) / 1000));
+        return ` • Relay last seen on ${nodeList} (${ageSeconds}s ago)`;
+    }
+
+    function refreshRelayConnectionSnapshot(tasks) {
+        const activeConnectTask = tasks.find(task =>
+            task.task_type === 'connect_only' && task.assigned_nodes && task.assigned_nodes.length > 0
+        );
+
+        if (!activeConnectTask) {
+            return;
+        }
+
+        lastRelayConnection = {
+            taskId: activeConnectTask.task_id,
+            nodeIds: [...activeConnectTask.assigned_nodes],
+            updatedAtMs: Date.now(),
+        };
     }
 
     function requireApiConnection(actionLabel = 'perform this action') {
@@ -1824,6 +1857,7 @@
 
             if (tasksRes.ok) {
                 const tasks = await tasksRes.json();
+                refreshRelayConnectionSnapshot(tasks);
                 renderTasks(tasks);
                 document.getElementById('tasks-count').textContent = tasks.length;
             }
@@ -1937,9 +1971,15 @@
             const cls = effectiveStatus === 'completed' ? 'badge-completed'
                       : effectiveStatus === 'failed'    ? 'badge-failed'
                       :                                  'badge-pending';
-            const nodeDisplay = effectiveStatus === 'completed'
-                ? 'Disconnected to nodes'
-                : `${t.assigned_nodes.length} nodes`;
+            const nodeDisplay = t.task_type === 'connect_only'
+                ? (effectiveStatus === 'completed'
+                    ? 'Session ended (disconnected)'
+                    : (t.assigned_nodes.length > 0
+                        ? `Connected via relay node${t.assigned_nodes.length > 1 ? 's' : ''}: ${t.assigned_nodes.join(', ')}`
+                        : 'Awaiting relay node assignment'))
+                : (effectiveStatus === 'completed'
+                    ? 'Disconnected to nodes'
+                    : `${t.assigned_nodes.length} nodes`);
             return `
                 <tr>
                     <td><span class="mono-dim">${t.task_id.substring(0, 12)}···</span></td>
