@@ -26,13 +26,13 @@ pub enum TetherPolicy {
 pub struct TetherPolicyConfig {
     /// Policy profile
     pub policy: TetherPolicy,
-    
+
     /// Enable battery-aware mode
     pub battery_aware: bool,
-    
+
     /// Probe frequency reduction factor for battery-aware mode
     pub battery_aware_probe_reduction: u32,
-    
+
     /// Data usage tracking
     pub track_data_usage: bool,
 }
@@ -97,16 +97,16 @@ mod tests {
     #[test]
     fn test_data_usage_tracker() {
         let mut tracker = DataUsageTracker::new(Some(100)); // 100 MB budget
-        
+
         assert_eq!(tracker.total_usage_mb(), 0);
         assert!(!tracker.is_budget_exceeded());
-        
+
         // Use 50 MB
         tracker.record_usage(50 * 1024 * 1024);
         assert_eq!(tracker.total_usage_mb(), 50);
         assert_eq!(tracker.remaining_budget_mb(), Some(50));
         assert!(!tracker.is_budget_exceeded());
-        
+
         // Use another 60 MB (total 110 MB, exceeding budget)
         tracker.record_usage(60 * 1024 * 1024);
         assert_eq!(tracker.total_usage_mb(), 110);
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn test_unlimited_budget() {
         let mut tracker = DataUsageTracker::new(None);
-        
+
         tracker.record_usage(1024 * 1024 * 1024); // 1 GB
         assert!(!tracker.is_budget_exceeded());
         assert!(tracker.remaining_budget_mb().is_none());

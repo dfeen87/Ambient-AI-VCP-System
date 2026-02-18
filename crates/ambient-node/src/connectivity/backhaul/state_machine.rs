@@ -53,16 +53,16 @@ pub enum StateEvent {
 pub struct StateMachineConfig {
     /// Time to wait before transitioning from UP to DEGRADED
     pub up_to_degraded_holddown_secs: u64,
-    
+
     /// Time to wait before transitioning from DEGRADED to DOWN
     pub degraded_to_down_holddown_secs: u64,
-    
+
     /// Time to wait before transitioning from DOWN to PROBING
     pub down_to_probing_holddown_secs: u64,
-    
+
     /// Time to wait before transitioning from PROBING to UP
     pub probing_to_up_holddown_secs: u64,
-    
+
     /// Minimum time in a state before allowing transition
     pub min_state_duration_secs: u64,
 }
@@ -151,12 +151,12 @@ impl InterfaceStateMachine {
     /// Queue event or process if holddown expired
     fn queue_or_process_event(&mut self, event: StateEvent) -> bool {
         let holddown = self.get_holddown_for_transition(event);
-        
+
         // If holddown is 0, process immediately
         if holddown == 0 {
             return self.process_transition(event);
         }
-        
+
         // Check if we already have a pending event for this transition
         if let Some((pending_event, queued_at)) = self.pending_event {
             if pending_event == event {
@@ -168,7 +168,7 @@ impl InterfaceStateMachine {
                 return false;
             }
         }
-        
+
         // Queue new event
         self.pending_event = Some((event, Instant::now()));
         false
@@ -200,22 +200,22 @@ impl InterfaceStateMachine {
             (InterfaceState::Up, StateEvent::DegradedProbe) => Some(InterfaceState::Degraded),
             (InterfaceState::Up, StateEvent::FailedProbe) => Some(InterfaceState::Degraded),
             (InterfaceState::Up, StateEvent::HealthyProbe) => None, // Stay in UP
-            
+
             // DEGRADED state transitions
             (InterfaceState::Degraded, StateEvent::HealthyProbe) => Some(InterfaceState::Up),
             (InterfaceState::Degraded, StateEvent::FailedProbe) => Some(InterfaceState::Down),
             (InterfaceState::Degraded, StateEvent::DegradedProbe) => None, // Stay in DEGRADED
-            
+
             // DOWN state transitions
             (InterfaceState::Down, StateEvent::HealthyProbe) => Some(InterfaceState::Probing),
             (InterfaceState::Down, StateEvent::DegradedProbe) => Some(InterfaceState::Probing),
             (InterfaceState::Down, StateEvent::FailedProbe) => None, // Stay in DOWN
-            
+
             // PROBING state transitions
             (InterfaceState::Probing, StateEvent::HealthyProbe) => Some(InterfaceState::Up),
             (InterfaceState::Probing, StateEvent::DegradedProbe) => Some(InterfaceState::Degraded),
             (InterfaceState::Probing, StateEvent::FailedProbe) => Some(InterfaceState::Down),
-            
+
             _ => None,
         };
 
@@ -236,7 +236,7 @@ impl InterfaceStateMachine {
                 duration_secs = self.time_in_state().as_secs(),
                 "State transition"
             );
-            
+
             self.current_state = new_state;
             self.state_entered_at = Instant::now();
             self.pending_event = None;
@@ -264,7 +264,7 @@ mod tests {
     fn test_initial_state() {
         let config = StateMachineConfig::default();
         let sm = InterfaceStateMachine::new("eth0".to_string(), config);
-        
+
         assert_eq!(sm.state(), InterfaceState::Probing);
     }
 
@@ -273,9 +273,9 @@ mod tests {
         let mut config = StateMachineConfig::default();
         config.min_state_duration_secs = 0;
         config.probing_to_up_holddown_secs = 0;
-        
+
         let mut sm = InterfaceStateMachine::new("eth0".to_string(), config);
-        
+
         let changed = sm.process_event(StateEvent::HealthyProbe);
         assert!(changed);
         assert_eq!(sm.state(), InterfaceState::Up);
@@ -286,10 +286,10 @@ mod tests {
         let mut config = StateMachineConfig::default();
         config.min_state_duration_secs = 0;
         config.up_to_degraded_holddown_secs = 0;
-        
+
         let mut sm = InterfaceStateMachine::new("eth0".to_string(), config);
         sm.force_state(InterfaceState::Up);
-        
+
         let changed = sm.process_event(StateEvent::DegradedProbe);
         assert!(changed);
         assert_eq!(sm.state(), InterfaceState::Degraded);
@@ -300,10 +300,10 @@ mod tests {
         let mut config = StateMachineConfig::default();
         config.min_state_duration_secs = 0;
         config.degraded_to_down_holddown_secs = 0;
-        
+
         let mut sm = InterfaceStateMachine::new("eth0".to_string(), config);
         sm.force_state(InterfaceState::Degraded);
-        
+
         let changed = sm.process_event(StateEvent::FailedProbe);
         assert!(changed);
         assert_eq!(sm.state(), InterfaceState::Down);
@@ -314,7 +314,7 @@ mod tests {
         let config = StateMachineConfig::default();
         let mut sm = InterfaceStateMachine::new("eth0".to_string(), config);
         sm.force_state(InterfaceState::Up);
-        
+
         let changed = sm.process_event(StateEvent::PhysicalDown);
         assert!(changed);
         assert_eq!(sm.state(), InterfaceState::Down);
@@ -324,15 +324,15 @@ mod tests {
     fn test_min_state_duration() {
         let mut config = StateMachineConfig::default();
         config.min_state_duration_secs = 100; // Long duration
-        
+
         let mut sm = InterfaceStateMachine::new("eth0".to_string(), config);
         sm.force_state(InterfaceState::Up);
-        
+
         // Try to transition immediately - should be queued
         let changed = sm.process_event(StateEvent::DegradedProbe);
         assert!(!changed);
         assert_eq!(sm.state(), InterfaceState::Up);
-        
+
         // Event should be queued
         assert!(sm.pending_event.is_some());
     }
