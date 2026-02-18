@@ -67,25 +67,13 @@ pub struct EgressPolicy {
     pub allowed_destinations: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LocalPolicyCache {
     pub allowed_protocols: HashSet<Protocol>,
     pub egress_policies: HashMap<String, EgressPolicy>,
     pub verification_keys: HashMap<String, Vec<u8>>,
     pub lease_metadata: HashMap<String, SessionLeaseClaims>,
     offline_read_only: bool,
-}
-
-impl Default for LocalPolicyCache {
-    fn default() -> Self {
-        Self {
-            allowed_protocols: HashSet::new(),
-            egress_policies: HashMap::new(),
-            verification_keys: HashMap::new(),
-            lease_metadata: HashMap::new(),
-            offline_read_only: false,
-        }
-    }
 }
 
 impl LocalPolicyCache {
