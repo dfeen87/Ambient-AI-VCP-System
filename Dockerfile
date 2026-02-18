@@ -1,5 +1,6 @@
 # Multi-stage build for Ambient AI VCP API Server
-FROM rust:1.88 as builder
+# Use slim image to reduce mirrored layer downloads on Render build workers.
+FROM rust:1.88-slim-bookworm AS builder
 WORKDIR /app
 
 # Install WasmEdge native libraries
@@ -17,7 +18,7 @@ COPY crates ./crates
 RUN cargo build --release --bin api-server
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
 # Install runtime dependencies
