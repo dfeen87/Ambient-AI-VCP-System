@@ -1,6 +1,7 @@
 use anyhow::Result;
 use api_server::{create_router, db, rate_limit, state::AppState};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{info, Level};
 
 #[tokio::main]
@@ -42,6 +43,28 @@ async fn main() -> Result<()> {
 
     // Create application state
     let state = Arc::new(AppState::new(pool));
+
+    let monitor_interval_seconds = AppState::connect_session_monitor_interval_seconds();
+    let monitor_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(monitor_interval_seconds));
+        loop {
+            ticker.tick().await;
+            match monitor_state.sweep_connect_sessions().await {
+                Ok(swept) if swept > 0 => {
+                    info!(swept, "Connect session monitor swept stale sessions");
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    tracing::error!("Connect session monitor sweep failed: {err}");
+                }
+            }
+        }
+    });
+    info!(
+        monitor_interval_seconds,
+        "Connect session monitor task started"
+    );
 
     // Create router
     let app = create_router(state);

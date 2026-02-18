@@ -989,6 +989,95 @@ impl AppState {
         Ok(row.map(map_connect_session_row))
     }
 
+    /// Sweep active connect sessions and terminate sessions bound to stale/offline nodes.
+    pub async fn sweep_connect_sessions(&self) -> ApiResult<usize> {
+        let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
+        let affected_task_ids = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            WITH stale_sessions AS (
+                SELECT
+                    cs.session_id,
+                    cs.task_id,
+                    cs.node_id,
+                    CASE
+                        WHEN cs.expires_at < NOW() THEN 'expired'
+                        ELSE 'ended'
+                    END AS next_status
+                FROM connect_sessions cs
+                LEFT JOIN nodes n
+                    ON n.node_id = cs.node_id
+                    AND n.deleted_at IS NULL
+                WHERE cs.status = 'active'
+                  AND (
+                        cs.expires_at < NOW()
+                        OR n.node_id IS NULL
+                        OR n.status <> 'online'
+                        OR n.last_heartbeat < NOW() - ($1::bigint * INTERVAL '1 second')
+                      )
+            ),
+            updated_sessions AS (
+                UPDATE connect_sessions cs
+                SET status = stale_sessions.next_status::connect_session_status,
+                    ended_at = CASE
+                        WHEN stale_sessions.next_status = 'ended' THEN NOW()
+                        ELSE cs.ended_at
+                    END,
+                    updated_at = NOW()
+                FROM stale_sessions
+                WHERE cs.session_id = stale_sessions.session_id
+                RETURNING stale_sessions.task_id, stale_sessions.node_id
+            ),
+            disconnected_assignments AS (
+                UPDATE task_assignments ta
+                SET disconnected_at = NOW()
+                FROM updated_sessions us
+                WHERE ta.task_id = us.task_id
+                  AND ta.node_id = us.node_id
+                  AND ta.disconnected_at IS NULL
+                RETURNING ta.task_id
+            )
+            SELECT DISTINCT task_id
+            FROM disconnected_assignments
+            "#,
+        )
+        .bind(heartbeat_stale_timeout_seconds)
+        .fetch_all(&self.db)
+        .await?;
+
+        for task_id in &affected_task_ids {
+            let task_meta = sqlx::query(
+                r#"
+                SELECT task_type, min_nodes, require_gpu
+                FROM tasks
+                WHERE task_id = $1
+                  AND status IN ('pending', 'running')
+                "#,
+            )
+            .bind(task_id)
+            .fetch_optional(&self.db)
+            .await?;
+
+            if let Some(task_meta) = task_meta {
+                let task_type: String = task_meta.get("task_type");
+                let min_nodes: i32 = task_meta.get("min_nodes");
+                let require_gpu: bool = task_meta.get("require_gpu");
+
+                if let Some(task_registry_entry) = task_type_registry_entry(&task_type) {
+                    self.assign_available_nodes_for_task(
+                        *task_id,
+                        &task_type,
+                        task_registry_entry,
+                        min_nodes as u32,
+                        require_gpu,
+                    )
+                    .await?;
+                }
+            }
+        }
+
+        Ok(affected_task_ids.len())
+    }
+
     /// Delete a task created by the requesting user
     pub async fn delete_task(&self, task_id: &str, requester_id: Uuid) -> ApiResult<bool> {
         let task_uuid = match Uuid::parse_str(task_id) {
@@ -2400,25 +2489,24 @@ mod tests {
     #[test]
     fn parses_heartbeat_stale_timeout_seconds() {
         assert_eq!(
-            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("45")),
-            45
-        );
-
-        assert_eq!(
-            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("0")),
-            90
+            AppState::parse_connect_session_monitor_interval_seconds(Some("30")),
+            30
         );
         assert_eq!(
-            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("-10")),
-            90
+            AppState::parse_connect_session_monitor_interval_seconds(Some("0")),
+            15
         );
         assert_eq!(
-            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("bogus")),
-            90
+            AppState::parse_connect_session_monitor_interval_seconds(Some("-5")),
+            15
         );
         assert_eq!(
-            AppState::parse_node_heartbeat_stale_timeout_seconds(None),
-            90
+            AppState::parse_connect_session_monitor_interval_seconds(Some("bogus")),
+            15
+        );
+        assert_eq!(
+            AppState::parse_connect_session_monitor_interval_seconds(None),
+            15
         );
     }
 
