@@ -710,3 +710,244 @@ async fn test_state_register_node() {
     common::cleanup_test_db(&pool).await;
 }
 */
+
+/// Test that deleting a node marks task assignments as disconnected and attempts reassignment
+#[tokio::test]
+async fn test_node_deletion_disconnects_tasks_and_reassigns() {
+    let db_url = match std::env::var("TEST_DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("Skipping test_node_deletion_disconnects_tasks_and_reassigns — no TEST_DATABASE_URL set");
+            return;
+        }
+    };
+
+    let pool = PgPool::connect(&db_url)
+        .await
+        .expect("connect to postgres for integration test");
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations should apply successfully for integration test");
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables before integration test");
+
+    let state = AppState::new(pool.clone());
+    
+    // Create owner for nodes
+    let owner_id = Uuid::new_v4();
+    
+    // Register first node
+    let node1_id = format!("node-delete-test-1-{}", Uuid::new_v4());
+    state
+        .register_node(
+            NodeRegistration {
+                node_id: node1_id.clone(),
+                region: "us-west".to_string(),
+                node_type: "compute".to_string(),
+                capabilities: NodeCapabilities {
+                    bandwidth_mbps: 500.0,
+                    cpu_cores: 8,
+                    memory_gb: 16.0,
+                    gpu_available: false,
+                },
+            },
+            owner_id,
+        )
+        .await
+        .expect("first node registration should succeed");
+
+    // Register second node (fallback node)
+    let node2_id = format!("node-delete-test-2-{}", Uuid::new_v4());
+    state
+        .register_node(
+            NodeRegistration {
+                node_id: node2_id.clone(),
+                region: "us-west".to_string(),
+                node_type: "compute".to_string(),
+                capabilities: NodeCapabilities {
+                    bandwidth_mbps: 500.0,
+                    cpu_cores: 8,
+                    memory_gb: 16.0,
+                    gpu_available: false,
+                },
+            },
+            owner_id,
+        )
+        .await
+        .expect("second node registration should succeed");
+
+    // Submit a task that requires 1 node
+    let creator_id = Uuid::new_v4();
+    let task = TaskSubmission {
+        task_type: "computation".to_string(),
+        wasm_module: None,
+        inputs: serde_json::json!({"test": "node_deletion"}),
+        requirements: TaskRequirements {
+            min_nodes: 1,
+            max_execution_time_sec: 300,
+            require_gpu: false,
+            require_proof: false,
+        },
+    };
+
+    let submitted_task = state
+        .submit_task(task, creator_id)
+        .await
+        .expect("task submission should succeed");
+
+    // Task should be running with at least one node assigned
+    assert_eq!(submitted_task.status, TaskStatus::Running);
+    assert!(!submitted_task.assigned_nodes.is_empty());
+    
+    let initially_assigned_node = submitted_task.assigned_nodes[0].clone();
+
+    // Delete the assigned node
+    let deleted = state
+        .delete_node(&initially_assigned_node, owner_id)
+        .await
+        .expect("node deletion should succeed");
+    assert!(deleted, "node should be deleted");
+
+    // Verify the task assignment was marked as disconnected
+    let disconnected_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM task_assignments
+        WHERE node_id = $1
+          AND disconnected_at IS NOT NULL
+        "#,
+    )
+    .bind(&initially_assigned_node)
+    .fetch_one(&pool)
+    .await
+    .expect("query should succeed");
+    
+    assert_eq!(disconnected_count, 1, "task assignment should be marked as disconnected");
+
+    // Fetch the task again to check if it was reassigned
+    let task_after_deletion = state
+        .get_task(&submitted_task.task_id, creator_id)
+        .await
+        .expect("task should still exist");
+
+    // Task should still be running (reassigned to the other node)
+    // OR pending if reassignment hasn't happened yet (depends on whether other node was available)
+    if task_after_deletion.status == TaskStatus::Running {
+        // If running, it should have a different node assigned
+        assert!(!task_after_deletion.assigned_nodes.is_empty());
+        // The new assigned node should NOT be the deleted one
+        assert!(!task_after_deletion.assigned_nodes.contains(&initially_assigned_node));
+    } else {
+        // If pending, the deleted node should not be in assigned_nodes
+        assert!(!task_after_deletion.assigned_nodes.contains(&initially_assigned_node));
+    }
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables after integration test");
+}
+
+/// Test that when a node is deleted, tasks revert to pending if no fallback nodes are available
+#[tokio::test]
+async fn test_node_deletion_reverts_task_to_pending_without_fallback() {
+    let db_url = match std::env::var("TEST_DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("Skipping test_node_deletion_reverts_task_to_pending_without_fallback — no TEST_DATABASE_URL set");
+            return;
+        }
+    };
+
+    let pool = PgPool::connect(&db_url)
+        .await
+        .expect("connect to postgres for integration test");
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations should apply successfully for integration test");
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables before integration test");
+
+    let state = AppState::new(pool.clone());
+    
+    // Create owner for node
+    let owner_id = Uuid::new_v4();
+    
+    // Register only one node
+    let node_id = format!("node-delete-only-{}", Uuid::new_v4());
+    state
+        .register_node(
+            NodeRegistration {
+                node_id: node_id.clone(),
+                region: "us-west".to_string(),
+                node_type: "compute".to_string(),
+                capabilities: NodeCapabilities {
+                    bandwidth_mbps: 500.0,
+                    cpu_cores: 8,
+                    memory_gb: 16.0,
+                    gpu_available: false,
+                },
+            },
+            owner_id,
+        )
+        .await
+        .expect("node registration should succeed");
+
+    // Submit a task that requires 1 node
+    let creator_id = Uuid::new_v4();
+    let task = TaskSubmission {
+        task_type: "computation".to_string(),
+        wasm_module: None,
+        inputs: serde_json::json!({"test": "revert_to_pending"}),
+        requirements: TaskRequirements {
+            min_nodes: 1,
+            max_execution_time_sec: 300,
+            require_gpu: false,
+            require_proof: false,
+        },
+    };
+
+    let submitted_task = state
+        .submit_task(task, creator_id)
+        .await
+        .expect("task submission should succeed");
+
+    // Task should be running with the node assigned
+    assert_eq!(submitted_task.status, TaskStatus::Running);
+    assert_eq!(submitted_task.assigned_nodes.len(), 1);
+    assert_eq!(submitted_task.assigned_nodes[0], node_id);
+
+    // Delete the only node
+    let deleted = state
+        .delete_node(&node_id, owner_id)
+        .await
+        .expect("node deletion should succeed");
+    assert!(deleted, "node should be deleted");
+
+    // Fetch the task again
+    let task_after_deletion = state
+        .get_task(&submitted_task.task_id, creator_id)
+        .await
+        .expect("task should still exist");
+
+    // Task should revert to pending since no fallback nodes are available
+    assert_eq!(task_after_deletion.status, TaskStatus::Pending);
+    assert!(task_after_deletion.assigned_nodes.is_empty() || 
+            !task_after_deletion.assigned_nodes.contains(&node_id),
+            "deleted node should not be in assigned_nodes");
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables after integration test");
+}
