@@ -1970,11 +1970,17 @@
                 ? (effectiveStatus === 'completed'
                     ? 'Session ended (disconnected)'
                     : (t.assigned_nodes.length > 0
-                        ? `Connected via relay node${t.assigned_nodes.length > 1 ? 's' : ''}: ${t.assigned_nodes.join(', ')}`
-                        : 'Awaiting relay node assignment'))
+                        ? `Connected via: ${t.assigned_nodes.join(', ')}`
+                        : 'Awaiting relay node'))
                 : (effectiveStatus === 'completed'
-                    ? 'Disconnected to nodes'
-                    : `${t.assigned_nodes.length} nodes`);
+                    ? 'Disconnected from nodes'
+                    : (effectiveStatus === 'running'
+                        ? (t.assigned_nodes.length > 0 
+                            ? `Running on: ${t.assigned_nodes.join(', ')}`
+                            : `${t.assigned_nodes.length} nodes`)
+                        : (t.assigned_nodes.length > 0
+                            ? `Pending (${t.assigned_nodes.length} assigned, waiting for more)`
+                            : 'Awaiting node assignment')));
             return `
                 <tr>
                     <td><span class="mono-dim">${t.task_id.substring(0, 12)}···</span></td>
@@ -2005,10 +2011,9 @@
             return 'completed';
         }
 
-        if (task.assigned_nodes.length > 0) {
-            return 'running';
-        }
-
+        // Trust the backend status - it knows if there are enough nodes
+        // 'running' means min_nodes requirement is met
+        // 'pending' means waiting for more nodes (even if some are assigned)
         return task.status;
     }
 
