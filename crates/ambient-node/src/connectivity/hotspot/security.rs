@@ -64,10 +64,23 @@ impl Default for SecurityConfig {
 
 impl SecurityConfig {
     /// Generate a random PSK
+    /// 
+    /// **SECURITY NOTE**: This implementation uses timestamp-based generation
+    /// which is NOT cryptographically secure and is predictable.
+    /// 
+    /// For production use, replace with:
+    /// ```rust
+    /// use ring::rand::{SystemRandom, SecureRandom};
+    /// let rng = SystemRandom::new();
+    /// let mut bytes = [0u8; 32];
+    /// rng.fill(&mut bytes).unwrap();
+    /// hex::encode(bytes)
+    /// ```
+    /// 
+    /// This simplified implementation is provided for demonstration purposes only.
     fn generate_psk() -> String {
         use std::time::{SystemTime, UNIX_EPOCH};
         
-        // In production, would use proper crypto RNG
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -103,6 +116,12 @@ impl SecurityManager {
     }
 
     /// Rotate PSK
+    /// 
+    /// **SECURITY NOTE**: This implementation uses a counter which is predictable.
+    /// For production use, replace with cryptographically secure random generation
+    /// as documented in `SecurityConfig::generate_psk()`.
+    /// 
+    /// This simplified implementation is provided for demonstration purposes only.
     pub fn rotate_psk(&mut self) -> String {
         info!("Rotating PSK");
         

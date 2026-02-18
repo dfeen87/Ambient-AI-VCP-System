@@ -446,7 +446,7 @@ async fn main() -> Result<()> {
 - Hostapd config generation
 - Token expiration cleanup
 
-**QoS** (2 tests):
+**QoS** (3 tests):
 - Traffic class DSCP values
 - QoS application lifecycle
 - Disabled mode
@@ -461,7 +461,7 @@ async fn main() -> Result<()> {
 - Interface lifecycle
 - Pattern matching
 
-**Tether Policy** (2 tests):
+**Tether Policy** (3 tests):
 - Data usage tracking
 - Budget enforcement
 - Unlimited budget
