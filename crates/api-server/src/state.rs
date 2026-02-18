@@ -1029,7 +1029,7 @@ impl AppState {
             ),
             updated_sessions AS (
                 UPDATE connect_sessions cs
-                SET status = stale_sessions.next_status::connect_session_status,
+                SET status = stale_sessions.next_status,
                     ended_at = CASE
                         WHEN stale_sessions.next_status = 'ended' THEN NOW()
                         ELSE cs.ended_at
