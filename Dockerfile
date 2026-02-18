@@ -4,7 +4,7 @@ FROM rust:1.88-slim-bookworm AS builder
 WORKDIR /app
 # Install WasmEdge native libraries
 RUN apt-get update && \
-    apt-get install -y curl libssl-dev pkg-config git && \
+    apt-get install -y curl libssl-dev pkg-config git python3 && \
     rm -rf /var/lib/apt/lists/* && \
     curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | \
     bash -s -- -p /usr/local
