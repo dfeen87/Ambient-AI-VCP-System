@@ -1521,10 +1521,10 @@ impl AppState {
         }
 
         let now = chrono::Utc::now();
-        
+
         // Start a transaction to ensure atomicity
         let mut tx = self.db.begin().await?;
-        
+
         // Mark the node as deleted
         let result = sqlx::query(
             r#"
