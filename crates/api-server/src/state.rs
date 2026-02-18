@@ -33,18 +33,6 @@ impl AppState {
         Self::parse_max_active_task_attachments_per_node(configured.as_deref())
     }
 
-    fn parse_node_heartbeat_stale_timeout_seconds(value: Option<&str>) -> i64 {
-        value
-            .and_then(|raw| raw.parse::<i64>().ok())
-            .filter(|parsed| *parsed > 0)
-            .unwrap_or(90)
-    }
-
-    fn node_heartbeat_stale_timeout_seconds() -> i64 {
-        let configured = std::env::var("NODE_HEARTBEAT_STALE_TIMEOUT_SECONDS").ok();
-        Self::parse_node_heartbeat_stale_timeout_seconds(configured.as_deref())
-    }
-
     fn parse_connect_session_monitor_interval_seconds(value: Option<&str>) -> u64 {
         value
             .and_then(|raw| raw.parse::<u64>().ok())
@@ -407,7 +395,6 @@ impl AppState {
         }
 
         let additional_nodes_needed = min_nodes as i64 - assigned_nodes;
-        let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
         let forbid_active_connect_session = task_type == "connect_only";
 
         let node_ids = sqlx::query_scalar::<_, String>(
@@ -419,23 +406,13 @@ impl AppState {
              AND ta.disconnected_at IS NULL
             WHERE n.deleted_at IS NULL
               AND n.status = 'online'
-              AND (
-                    n.last_heartbeat >= NOW() - ($8::bigint * INTERVAL '1 second')
-                    OR EXISTS (
-                        SELECT 1
-                        FROM connect_sessions cs
-                        WHERE cs.node_id = n.node_id
-                          AND cs.status = 'active'
-                          AND cs.expires_at > NOW()
-                    )
-                  )
               AND (n.node_type = $1 OR n.node_type = 'any')
               AND n.cpu_cores >= $2
               AND n.memory_gb >= $3
               AND n.bandwidth_mbps >= $4
               AND ($5 = FALSE OR n.gpu_available = TRUE)
               AND (
-                    $10 = FALSE
+                    $9 = FALSE
                     OR NOT EXISTS (
                         SELECT 1
                         FROM connect_sessions cs_busy
@@ -454,7 +431,7 @@ impl AppState {
             GROUP BY n.node_id, n.registered_at
             HAVING COUNT(ta.task_id) < $7
             ORDER BY n.registered_at ASC
-            LIMIT $9
+            LIMIT $8
             "#,
         )
         .bind(task_registry_entry.preferred_node_type)
@@ -464,7 +441,6 @@ impl AppState {
         .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
         .bind(task_id)
         .bind(max_attachments)
-        .bind(heartbeat_stale_timeout_seconds)
         .bind(additional_nodes_needed)
         .bind(forbid_active_connect_session)
         .fetch_all(&self.db)
@@ -557,7 +533,6 @@ impl AppState {
                 continue;
             };
 
-            let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
             let forbid_active_connect_session = task_type == "connect_only";
 
             let node_is_eligible = sqlx::query_scalar::<_, bool>(
@@ -568,23 +543,13 @@ impl AppState {
                     WHERE n.node_id = $1
                       AND n.deleted_at IS NULL
                       AND n.status = 'online'
-                      AND (
-                            n.last_heartbeat >= NOW() - ($7::bigint * INTERVAL '1 second')
-                            OR EXISTS (
-                                SELECT 1
-                                FROM connect_sessions cs
-                                WHERE cs.node_id = n.node_id
-                                  AND cs.status = 'active'
-                                  AND cs.expires_at > NOW()
-                            )
-                          )
                       AND (n.node_type = $2 OR n.node_type = 'any')
                       AND n.cpu_cores >= $3
                       AND n.memory_gb >= $4
                       AND n.bandwidth_mbps >= $5
                       AND ($6 = FALSE OR n.gpu_available = TRUE)
                       AND (
-                            $8 = FALSE
+                            $7 = FALSE
                             OR NOT EXISTS (
                                 SELECT 1
                                 FROM connect_sessions cs_busy
@@ -602,7 +567,6 @@ impl AppState {
             .bind(task_registry_entry.minimum_capabilities.memory_gb)
             .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
             .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
-            .bind(heartbeat_stale_timeout_seconds)
             .bind(forbid_active_connect_session)
             .fetch_one(&self.db)
             .await?;
@@ -746,8 +710,6 @@ impl AppState {
             .ok_or_else(|| {
                 ApiError::bad_request("connect_only task missing bandwidth_limit_mbps")
             })?;
-        let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
-
         let node_id = sqlx::query_scalar::<_, String>(
             r#"
             SELECT ta.node_id
@@ -757,14 +719,12 @@ impl AppState {
               AND ta.disconnected_at IS NULL
               AND n.deleted_at IS NULL
               AND n.status = 'online'
-              AND n.last_heartbeat >= NOW() - ($2::bigint * INTERVAL '1 second')
               AND (n.node_type = 'open_internet' OR n.node_type = 'any')
             ORDER BY ta.assigned_at ASC
             LIMIT 1
             "#,
         )
         .bind(task_uuid)
-        .bind(heartbeat_stale_timeout_seconds)
         .fetch_optional(&self.db)
         .await?
         .ok_or_else(|| ApiError::service_unavailable("No eligible open_internet node assigned"))?;
@@ -891,7 +851,6 @@ impl AppState {
             return Ok(Some(session));
         }
 
-        let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
         let node_is_healthy = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS (
@@ -900,12 +859,10 @@ impl AppState {
                 WHERE n.node_id = $1
                   AND n.deleted_at IS NULL
                   AND n.status = 'online'
-                  AND n.last_heartbeat >= NOW() - ($2::bigint * INTERVAL '1 second')
             )
             "#,
         )
         .bind(&session.node_id)
-        .bind(heartbeat_stale_timeout_seconds)
         .fetch_one(&self.db)
         .await?;
 
@@ -1001,9 +958,8 @@ impl AppState {
         Ok(row.map(map_connect_session_row))
     }
 
-    /// Sweep active connect sessions and terminate sessions bound to stale/offline nodes.
+    /// Sweep active connect sessions and terminate sessions bound to expired/offline nodes.
     pub async fn sweep_connect_sessions(&self) -> ApiResult<usize> {
-        let heartbeat_stale_timeout_seconds = Self::node_heartbeat_stale_timeout_seconds();
         let affected_task_ids = sqlx::query_scalar::<_, Uuid>(
             r#"
             WITH stale_sessions AS (
@@ -1024,7 +980,6 @@ impl AppState {
                         cs.expires_at < NOW()
                         OR n.node_id IS NULL
                         OR n.status <> 'online'
-                        OR n.last_heartbeat < NOW() - ($1::bigint * INTERVAL '1 second')
                       )
             ),
             updated_sessions AS (
@@ -1052,7 +1007,6 @@ impl AppState {
             FROM disconnected_assignments
             "#,
         )
-        .bind(heartbeat_stale_timeout_seconds)
         .fetch_all(&self.db)
         .await?;
 
@@ -2499,7 +2453,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_heartbeat_stale_timeout_seconds() {
+    fn parses_connect_session_monitor_interval_seconds() {
         assert_eq!(
             AppState::parse_connect_session_monitor_interval_seconds(Some("30")),
             30
