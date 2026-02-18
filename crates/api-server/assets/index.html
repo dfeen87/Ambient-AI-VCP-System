@@ -2048,6 +2048,24 @@
         const elapsedSec = Math.max(0, (nowMs - createdMs) / 1000);
         const baselineSec = taskDurationByTypeSec[task.task_type] || 480;
         const effectiveStatus = getEffectiveTaskStatus(task);
+        const isConnectOnlyConnected = task.task_type === 'connect_only'
+            && effectiveStatus === 'running'
+            && task.assigned_nodes.length > 0;
+
+        if (isConnectOnlyConnected) {
+            taskProgressMemory.set(task.task_id, {
+                percent: 100,
+                sampledAtMs: nowMs,
+            });
+
+            return {
+                percent: 100,
+                progressLabel: 'Connected',
+                etaLabel: 'ETA disabled',
+                etaTooltip: 'Connect-only session established. ETA is disabled once a node is attached.'
+            };
+        }
+
         const projectedTotalSec = effectiveStatus === 'pending'
             ? Math.max(20, baselineSec * 1.2)
             : Math.max(30, baselineSec);
