@@ -45,6 +45,18 @@ impl AppState {
         Self::parse_node_heartbeat_stale_timeout_seconds(configured.as_deref())
     }
 
+    fn parse_connect_session_monitor_interval_seconds(value: Option<&str>) -> u64 {
+        value
+            .and_then(|raw| raw.parse::<u64>().ok())
+            .filter(|parsed| *parsed > 0)
+            .unwrap_or(15)
+    }
+
+    pub fn connect_session_monitor_interval_seconds() -> u64 {
+        let configured = std::env::var("CONNECT_SESSION_MONITOR_INTERVAL_SECONDS").ok();
+        Self::parse_connect_session_monitor_interval_seconds(configured.as_deref())
+    }
+
     /// Create new application state with database pool
     pub fn new(db: PgPool) -> Self {
         Self { db }
