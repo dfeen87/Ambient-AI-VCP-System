@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod ailee;
 pub mod connectivity;
 pub mod gateway;
 pub mod health;
@@ -8,6 +9,11 @@ pub mod offline;
 pub mod reputation;
 pub mod telemetry;
 
+// Re-export commonly used ailee types for convenience
+pub use ailee::{
+    ConsensusEngine, ExecutionMode, GenerationRequest, GenerationResult, ModelAdapter,
+    ModelLocality, ModelOutput, TaskType, TrustScores,
+};
 pub use connectivity::*;
 pub use gateway::*;
 pub use health::*;
