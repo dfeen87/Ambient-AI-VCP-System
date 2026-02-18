@@ -45,18 +45,6 @@ impl AppState {
         Self::parse_node_heartbeat_stale_timeout_seconds(configured.as_deref())
     }
 
-    fn parse_connect_session_monitor_interval_seconds(value: Option<&str>) -> u64 {
-        value
-            .and_then(|raw| raw.parse::<u64>().ok())
-            .filter(|parsed| *parsed > 0)
-            .unwrap_or(15)
-    }
-
-    pub fn connect_session_monitor_interval_seconds() -> u64 {
-        let configured = std::env::var("CONNECT_SESSION_MONITOR_INTERVAL_SECONDS").ok();
-        Self::parse_connect_session_monitor_interval_seconds(configured.as_deref())
-    }
-
     /// Create new application state with database pool
     pub fn new(db: PgPool) -> Self {
         Self { db }
@@ -2500,31 +2488,6 @@ mod tests {
 
     #[test]
     fn parses_heartbeat_stale_timeout_seconds() {
-        assert_eq!(
-            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("45")),
-            45
-        );
-
-        assert_eq!(
-            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("0")),
-            90
-        );
-        assert_eq!(
-            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("-10")),
-            90
-        );
-        assert_eq!(
-            AppState::parse_node_heartbeat_stale_timeout_seconds(Some("bogus")),
-            90
-        );
-        assert_eq!(
-            AppState::parse_node_heartbeat_stale_timeout_seconds(None),
-            90
-        );
-    }
-
-    #[test]
-    fn parses_connect_session_monitor_interval_seconds() {
         assert_eq!(
             AppState::parse_connect_session_monitor_interval_seconds(Some("30")),
             30
