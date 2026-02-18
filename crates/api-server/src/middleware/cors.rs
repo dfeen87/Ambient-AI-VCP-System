@@ -5,11 +5,7 @@ use axum::http::{HeaderValue, Method};
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
-/// Create CORS layer from environment configuration
-pub fn create_cors_layer() -> CorsLayer {
-    let allowed_origins = std::env::var("CORS_ALLOWED_ORIGINS")
-        .unwrap_or_else(|_| "http://localhost:3000,http://localhost:5173".to_string());
-
+fn create_cors_layer_from_allowed_origins(allowed_origins: &str) -> CorsLayer {
     if allowed_origins.contains("*") {
         panic!("CORS_ALLOWED_ORIGINS cannot contain wildcard (*)");
     }
@@ -49,6 +45,14 @@ pub fn create_cors_layer() -> CorsLayer {
         .max_age(std::time::Duration::from_secs(3600))
 }
 
+/// Create CORS layer from environment configuration
+pub fn create_cors_layer() -> CorsLayer {
+    let allowed_origins = std::env::var("CORS_ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| "http://localhost:3000,http://localhost:5173".to_string());
+
+    create_cors_layer_from_allowed_origins(&allowed_origins)
+}
+
 /// Create permissive CORS layer (development only)
 pub fn create_permissive_cors_layer() -> CorsLayer {
     let is_production = std::env::var("ENVIRONMENT")
@@ -77,8 +81,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "wildcard")]
     fn test_production_wildcard_rejected() {
-        std::env::set_var("ENVIRONMENT", "production");
-        std::env::set_var("CORS_ALLOWED_ORIGINS", "*");
-        let _layer = create_cors_layer();
+        let _layer = create_cors_layer_from_allowed_origins("*");
     }
 }
