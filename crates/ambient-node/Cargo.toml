@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[features]
+# Optional local observability interface (disabled by default)
+# Enables operator-only, privacy-preserving node status inspection
+observability = ["dep:axum"]
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
@@ -25,3 +30,6 @@ ring.workspace = true
 hex = "0.4"
 
 chrono = { version = "0.4", features = ["clock"] }
+
+# Optional dependency for observability feature
+axum = { version = "0.7", optional = true }

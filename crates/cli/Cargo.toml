@@ -9,6 +9,10 @@ authors.workspace = true
 name = "ambient-vcp"
 path = "src/main.rs"
 
+[features]
+default = ["observability"]
+observability = ["ambient-node/observability"]
+
 [dependencies]
 tokio.workspace = true
 anyhow.workspace = true

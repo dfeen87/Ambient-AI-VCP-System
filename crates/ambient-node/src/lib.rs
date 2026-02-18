@@ -9,6 +9,10 @@ pub mod offline;
 pub mod reputation;
 pub mod telemetry;
 
+// Local observability (operator-only, privacy-preserving)
+#[cfg(feature = "observability")]
+pub mod observability;
+
 // AILEE Integration - Clean boundary to external trust layer
 pub mod ailee_integration;
 
@@ -28,6 +32,10 @@ pub use health::*;
 pub use offline::*;
 pub use reputation::*;
 pub use telemetry::*;
+
+// Re-export observability types when feature is enabled
+#[cfg(feature = "observability")]
+pub use observability::*;
 
 /// Unique identifier for an ambient node
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
