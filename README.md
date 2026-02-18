@@ -13,10 +13,10 @@ A **live online application** and implementation of a **Verifiable Computation P
 
 ## 🧾 In Plain English: What this app does
 
-Think of this app as a **marketplace for compute power**:
+Think of this app as a **service for compute power**:
 
-- Some people have spare machines (laptops, servers, edge devices) and register them as **nodes**.
-- Other people submit **tasks** they want computed.
+- Some people have spare machines (laptops, servers, edge devices) and register them as **nodes**, metadata per node is private but all avaialable publicly.
+- Other people submit **tasks** they want computed, they are private to the user.
 - The system finds appropriate nodes, runs the work, and tracks results.
 - It can also verify that work was executed correctly using cryptographic proofs.
 
@@ -45,7 +45,7 @@ Tip: To quickly verify the public demo is reachable, run:
 
 **New to the system?** Here's what you need to know:
 
-**The System is a Two-Sided Marketplace:**
+**The System is a Two-Sided Service:**
 - **Node Operators** (Supply) = People who provide computing power (you register your device)
 - **Task Submitters** (Demand) = People who need computing power (developers, researchers, businesses)
 - **The System** = Matches tasks to nodes, orchestrates execution, returns results
