@@ -6,7 +6,8 @@ members = [
     "crates/mesh-coordinator",
     "crates/federated-learning",
     "crates/cli",
-    "crates/api-server", "crates/ailee-trust-layer",
+    "crates/api-server",
+    "crates/ailee-trust-layer",
 ]
 resolver = "2"
 
