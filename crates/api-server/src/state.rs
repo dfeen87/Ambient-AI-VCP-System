@@ -851,14 +851,13 @@ impl AppState {
             return Ok(Some(session));
         }
 
-        let node_is_healthy = sqlx::query_scalar::<_, bool>(
+        let node_exists = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS (
                 SELECT 1
                 FROM nodes n
                 WHERE n.node_id = $1
                   AND n.deleted_at IS NULL
-                  AND n.status = 'online'
             )
             "#,
         )
@@ -866,7 +865,7 @@ impl AppState {
         .fetch_one(&self.db)
         .await?;
 
-        if node_is_healthy {
+        if node_exists {
             return Ok(Some(session));
         }
 
@@ -958,7 +957,7 @@ impl AppState {
         Ok(row.map(map_connect_session_row))
     }
 
-    /// Sweep active connect sessions and terminate sessions bound to expired/offline nodes.
+    /// Sweep active connect sessions and terminate sessions bound to expired/deleted nodes.
     pub async fn sweep_connect_sessions(&self) -> ApiResult<usize> {
         let affected_task_ids = sqlx::query_scalar::<_, Uuid>(
             r#"
@@ -979,7 +978,6 @@ impl AppState {
                   AND (
                         cs.expires_at < NOW()
                         OR n.node_id IS NULL
-                        OR n.status <> 'online'
                       )
             ),
             updated_sessions AS (
