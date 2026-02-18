@@ -1,11 +1,16 @@
 use ambient_node::{
     AmbientNode, DataPlaneGateway, GatewayConfig, NodeId, SafetyPolicy, TelemetrySample,
 };
+#[cfg(feature = "observability")]
+use ambient_node::LocalObservabilityServer;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use mesh_coordinator::{MeshCoordinator, TaskAssignmentStrategy};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(feature = "observability")]
+use tokio::sync::RwLock;
 use tracing::{info, Level};
 
 #[derive(Parser)]
@@ -31,6 +36,15 @@ enum Commands {
         /// Node type
         #[arg(short = 't', long, default_value = "compute")]
         node_type: String,
+
+        /// Enable local observability interface (operator-only, privacy-preserving)
+        /// Note: Disabled by default for privacy. Explicitly enable with --observability
+        #[arg(long)]
+        observability: bool,
+
+        /// Observability server port (default: 9090)
+        #[arg(long, default_value_t = 9090)]
+        observability_port: u16,
     },
 
     /// Start a data-plane gateway for connect_only relay sessions
@@ -86,8 +100,10 @@ async fn main() -> Result<()> {
             id,
             region,
             node_type,
+            observability,
+            observability_port,
         } => {
-            run_node(id, region, node_type).await?;
+            run_node(id, region, node_type, observability, observability_port).await?;
         }
         Commands::Gateway {
             listen,
@@ -120,7 +136,13 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn run_node(id: String, region: String, node_type: String) -> Result<()> {
+async fn run_node(
+    id: String,
+    region: String,
+    node_type: String,
+    observability: bool,
+    observability_port: u16,
+) -> Result<()> {
     info!("Starting ambient node: {}", id);
 
     let node_id = NodeId::new(&id, &region, &node_type);
@@ -148,10 +170,48 @@ async fn run_node(id: String, region: String, node_type: String) -> Result<()> {
 
     info!("Node running... Press Ctrl+C to stop");
 
-    // Keep running until interrupted
-    tokio::signal::ctrl_c().await?;
+    // Start local observability server if enabled
+    #[cfg(feature = "observability")]
+    if observability {
+        info!("Local observability enabled on port {}", observability_port);
+        
+        // Wrap node in Arc<RwLock<>> for shared access
+        let node_arc = Arc::new(RwLock::new(node));
+        
+        // Create and start observability server
+        let server = LocalObservabilityServer::new(observability_port, node_arc);
+        server.print_curl_command();
+        
+        // Run server in background
+        let server_handle = tokio::spawn(async move {
+            if let Err(e) = server.run().await {
+                tracing::error!("Observability server error: {}", e);
+            }
+        });
 
+        // Keep running until interrupted
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("Shutting down node...");
+            }
+            _ = server_handle => {
+                info!("Observability server stopped");
+            }
+        }
+        
+        return Ok(());
+    }
+
+    #[cfg(feature = "observability")]
+    let _ = observability_port; // Suppress unused warning when observability is false
+
+    #[cfg(not(feature = "observability"))]
+    let _ = (observability, observability_port); // Suppress unused warnings
+
+    // Default path: run without observability
+    tokio::signal::ctrl_c().await?;
     info!("Shutting down node...");
+
     Ok(())
 }
 
