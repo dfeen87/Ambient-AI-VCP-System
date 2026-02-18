@@ -61,8 +61,12 @@ impl ConsistencyScore {
             return 0.0;
         }
 
-        // Count common characters (very simple similarity)
-        let common = text1.chars().filter(|c| text2.contains(*c)).count();
+        // Convert text2 to HashSet for O(1) lookups
+        use std::collections::HashSet;
+        let text2_chars: HashSet<char> = text2.chars().collect();
+
+        // Count common characters
+        let common = text1.chars().filter(|c| text2_chars.contains(c)).count();
 
         let max_len = len1.max(len2) as f64;
         (common as f64 / max_len).clamp(0.0, 1.0)

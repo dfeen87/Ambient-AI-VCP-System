@@ -9,7 +9,11 @@ pub mod offline;
 pub mod reputation;
 pub mod telemetry;
 
-pub use ailee::*;
+// Re-export commonly used ailee types for convenience
+pub use ailee::{
+    ConsensusEngine, ExecutionMode, GenerationRequest, GenerationResult, ModelAdapter,
+    ModelLocality, ModelOutput, TaskType, TrustScores,
+};
 pub use connectivity::*;
 pub use gateway::*;
 pub use health::*;

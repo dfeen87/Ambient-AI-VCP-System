@@ -33,7 +33,9 @@ async fn test_end_to_end_generation_local_only() {
     assert!(!result.final_output.is_empty());
     assert!(result.trust_score >= 0.0 && result.trust_score <= 1.0);
     assert_eq!(result.model_lineage.len(), 2);
-    assert!(result.model_lineage.contains(&"local-gpt-small".to_string()));
+    assert!(result
+        .model_lineage
+        .contains(&"local-gpt-small".to_string()));
     assert!(result.model_lineage.contains(&"local-llama".to_string()));
 
     // Verify metadata
@@ -117,7 +119,7 @@ async fn test_high_trust_threshold() {
 
     // This should still succeed but might warn about threshold
     let result = engine.execute(&request, adapters).await;
-    
+
     // The consensus engine will use best available even if below threshold
     assert!(result.is_ok());
 }
@@ -126,8 +128,7 @@ async fn test_high_trust_threshold() {
 async fn test_insufficient_models() {
     let engine = ConsensusEngine::new(3); // Require 3 models
 
-    let adapters: Vec<Box<dyn ModelAdapter>> =
-        vec![Box::new(LocalModelAdapter::new("only-one"))];
+    let adapters: Vec<Box<dyn ModelAdapter>> = vec![Box::new(LocalModelAdapter::new("only-one"))];
 
     let request = GenerationRequest::new(
         "Test prompt",
