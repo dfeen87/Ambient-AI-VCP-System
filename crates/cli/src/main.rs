@@ -1,7 +1,10 @@
-use ambient_node::{AmbientNode, NodeId, SafetyPolicy, TelemetrySample};
+use ambient_node::{
+    AmbientNode, DataPlaneGateway, GatewayConfig, NodeId, SafetyPolicy, TelemetrySample,
+};
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use mesh_coordinator::{MeshCoordinator, TaskAssignmentStrategy};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, Level};
 
@@ -28,6 +31,25 @@ enum Commands {
         /// Node type
         #[arg(short = 't', long, default_value = "compute")]
         node_type: String,
+    },
+
+    /// Start a data-plane gateway for connect_only relay sessions
+    Gateway {
+        /// Listen address for the relay tunnel entrypoint
+        #[arg(long, default_value = "0.0.0.0:7000")]
+        listen: String,
+
+        /// JSON file containing active gateway sessions
+        #[arg(long)]
+        sessions_file: PathBuf,
+
+        /// Upstream connect timeout in seconds
+        #[arg(long, default_value_t = 5)]
+        connect_timeout_seconds: u64,
+
+        /// Idle timeout in seconds for handshake + relay sessions
+        #[arg(long, default_value_t = 600)]
+        idle_timeout_seconds: u64,
     },
 
     /// Start a mesh coordinator
@@ -66,6 +88,20 @@ async fn main() -> Result<()> {
             node_type,
         } => {
             run_node(id, region, node_type).await?;
+        }
+        Commands::Gateway {
+            listen,
+            sessions_file,
+            connect_timeout_seconds,
+            idle_timeout_seconds,
+        } => {
+            run_gateway(
+                listen,
+                sessions_file,
+                connect_timeout_seconds,
+                idle_timeout_seconds,
+            )
+            .await?;
         }
         Commands::Coordinator {
             cluster_id,
@@ -119,6 +155,27 @@ async fn run_node(id: String, region: String, node_type: String) -> Result<()> {
     Ok(())
 }
 
+async fn run_gateway(
+    listen: String,
+    sessions_file: PathBuf,
+    connect_timeout_seconds: u64,
+    idle_timeout_seconds: u64,
+) -> Result<()> {
+    info!("Starting data-plane gateway on {}", listen);
+
+    let gateway = DataPlaneGateway::from_sessions_file(
+        GatewayConfig {
+            listen_addr: listen,
+            connect_timeout_seconds,
+            idle_timeout_seconds,
+        },
+        sessions_file,
+    )
+    .await?;
+
+    gateway.run().await
+}
+
 async fn run_coordinator(cluster_id: String, strategy_str: String) -> Result<()> {
     info!("Starting mesh coordinator: {}", cluster_id);
 
@@ -163,6 +220,7 @@ async fn run_health_check() -> Result<()> {
 
     // Check system components
     info!("✓ Ambient Node module loaded");
+    info!("✓ Data-plane gateway module loaded");
     info!("✓ WASM Engine module loaded");
     info!("✓ ZK Prover module loaded");
     info!("✓ Mesh Coordinator module loaded");

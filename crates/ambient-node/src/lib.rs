@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod gateway;
 pub mod health;
 pub mod offline;
 pub mod reputation;
 pub mod telemetry;
 
+pub use gateway::*;
 pub use health::*;
 pub use offline::*;
 pub use reputation::*;

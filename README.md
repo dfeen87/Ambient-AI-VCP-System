@@ -241,11 +241,29 @@ Tip: To quickly verify the public demo is reachable, run:
 # Start a compute node
 ambient-vcp node --id node-001 --region us-west --node-type compute
 
+# Start connect_only data-plane gateway on an open_internet node
+ambient-vcp gateway --listen 0.0.0.0:7000 --sessions-file ./gateway-sessions.json
+
 # Start a coordinator
 ambient-vcp coordinator --cluster-id cluster-001 --strategy weighted
 
 # Check node health
 ambient-vcp health
+```
+
+Gateway sessions file format (`gateway-sessions.json`):
+
+```json
+[
+  {
+    "session_id": "sess_123",
+    "session_token": "cs_your_ephemeral_token",
+    "egress_profile": "allowlist_domains",
+    "destination_policy_id": "policy_web_basic_v1",
+    "allowed_destinations": ["*.example.com", "1.1.1.1"],
+    "expires_at_epoch_seconds": 1735689600
+  }
+]
 ```
 
 ### 8. **Web Dashboard** (`api-server/assets`)
