@@ -4,6 +4,3 @@
 
 ALTER TABLE nodes
     ADD COLUMN IF NOT EXISTS observability_port INTEGER;
-
--- Create index on observability_port for faster lookups (optional, for future use)
-CREATE INDEX IF NOT EXISTS idx_nodes_observability_port ON nodes(observability_port);

@@ -2000,7 +2000,9 @@
         try {
             payloadEl.textContent = 'Fetching data from http://127.0.0.1:' + port + '/node/status ...';
             
-            // Fetch from local observability endpoint
+            // Fetch from local observability endpoint (127.0.0.1 only)
+            // NOTE: This will only work when the UI is accessed from the same machine as the node
+            // due to same-origin policy and localhost binding.
             const response = await fetch(`http://127.0.0.1:${port}/node/status`);
             
             if (!response.ok) {
@@ -2010,7 +2012,7 @@
             const data = await response.json();
             payloadEl.textContent = JSON.stringify(data, null, 2);
         } catch (err) {
-            payloadEl.textContent = `Error fetching observability data:\n\n${err.message}\n\nNote: The observability endpoint is only accessible from the local machine (127.0.0.1) where the node is running. Make sure:\n1. You are accessing this UI from the same machine as the node\n2. The node is running with observability enabled\n3. The observability port (${port}) is correct`;
+            payloadEl.textContent = `Error fetching observability data:\n\n${err.message}\n\nNote: The observability endpoint is ONLY accessible from the local machine (127.0.0.1) where the node is running.\n\nCommon issues:\n1. This UI must be accessed from the SAME machine as the node (not remotely)\n2. The node must be running with observability enabled on port ${port}\n3. CORS policies prevent cross-origin requests to localhost from remote origins\n4. Some browsers block localhost requests when the page is served over HTTPS\n\nIf you're running the node on this machine, ensure:\n- The node is running: check with 'curl http://127.0.0.1:${port}/node/status'\n- The observability port ${port} is correct`;
         }
     }
 
