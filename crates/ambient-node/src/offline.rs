@@ -35,7 +35,11 @@ pub struct SessionLease {
 }
 
 impl SessionLease {
-    pub fn sign(key_id: impl Into<String>, claims: SessionLeaseClaims, key_pair: &signature::Ed25519KeyPair) -> Self {
+    pub fn sign(
+        key_id: impl Into<String>,
+        claims: SessionLeaseClaims,
+        key_pair: &signature::Ed25519KeyPair,
+    ) -> Self {
         let payload = serde_json::to_vec(&claims).expect("lease claims should serialize");
         let signature = key_pair.sign(&payload).as_ref().to_vec();
         Self {
@@ -89,7 +93,11 @@ impl LocalPolicyCache {
         Ok(())
     }
 
-    pub fn upsert_verification_key(&mut self, key_id: impl Into<String>, key: Vec<u8>) -> Result<(), &'static str> {
+    pub fn upsert_verification_key(
+        &mut self,
+        key_id: impl Into<String>,
+        key: Vec<u8>,
+    ) -> Result<(), &'static str> {
         if self.offline_read_only {
             return Err("cache is read-only in offline mode");
         }
@@ -158,8 +166,15 @@ impl PersistentAuditQueue {
             hash,
         };
 
-        let mut file = OpenOptions::new().create(true).append(true).open(&self.path)?;
-        writeln!(file, "{}", serde_json::to_string(&record).expect("audit serialization"))?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&record).expect("audit serialization")
+        )?;
         Ok(record)
     }
 
@@ -216,7 +231,14 @@ impl PersistentAuditQueue {
     }
 }
 
-fn hash_record(event_type: &str, session_id: &str, details: &str, bytes: u64, at: u64, prev_hash: &str) -> String {
+fn hash_record(
+    event_type: &str,
+    session_id: &str,
+    details: &str,
+    bytes: u64,
+    at: u64,
+    prev_hash: &str,
+) -> String {
     let mut hasher = Sha3_256::new();
     hasher.update(event_type.as_bytes());
     hasher.update(session_id.as_bytes());
@@ -281,7 +303,11 @@ impl LocalSessionManager {
         }
     }
 
-    pub fn refresh_state<M: BackhaulMonitor>(&mut self, control_plane_reachable: bool, monitor: &M) -> NodeState {
+    pub fn refresh_state<M: BackhaulMonitor>(
+        &mut self,
+        control_plane_reachable: bool,
+        monitor: &M,
+    ) -> NodeState {
         let any_upstream = monitor.available_paths().iter().any(|path| path.is_up);
         let next_state = if !any_upstream {
             NodeState::NoUpstream
@@ -302,8 +328,10 @@ impl LocalSessionManager {
         }
 
         self.state = next_state.clone();
-        self.cache
-            .set_offline_read_only(matches!(self.state, NodeState::OfflineControlPlane | NodeState::NoUpstream));
+        self.cache.set_offline_read_only(matches!(
+            self.state,
+            NodeState::OfflineControlPlane | NodeState::NoUpstream
+        ));
         next_state
     }
 
@@ -345,9 +373,13 @@ impl LocalSessionManager {
                 bytes_sent: 0,
             },
         );
-        let _ = self
-            .audit_queue
-            .append("session_activated", lease.claims.session_id, "lease accepted", 0, now);
+        let _ = self.audit_queue.append(
+            "session_activated",
+            lease.claims.session_id,
+            "lease accepted",
+            0,
+            now,
+        );
         Ok(())
     }
 
@@ -508,7 +540,9 @@ mod tests {
     fn offline_mode_enforces_without_control_plane() {
         let kp = key_pair();
         let mut cache = LocalPolicyCache::default();
-        cache.allowed_protocols.extend([Protocol::Tcp, Protocol::Https]);
+        cache
+            .allowed_protocols
+            .extend([Protocol::Tcp, Protocol::Https]);
         cache
             .upsert_egress_policy(EgressPolicy {
                 id: "policy-1".into(),
@@ -529,7 +563,10 @@ mod tests {
                 is_up: true,
             }],
         };
-        assert_eq!(mgr.refresh_state(false, &monitor), NodeState::OfflineControlPlane);
+        assert_eq!(
+            mgr.refresh_state(false, &monitor),
+            NodeState::OfflineControlPlane
+        );
 
         let lease = SessionLease::sign("k1", lease_template(3600), &kp);
         mgr.activate_session(lease, 120).unwrap();
@@ -544,10 +581,22 @@ mod tests {
         )
         .unwrap();
         assert!(mgr
-            .record_traffic("s-1", Protocol::Udp, "https://allowed.example/path", 1_000, 141)
+            .record_traffic(
+                "s-1",
+                Protocol::Udp,
+                "https://allowed.example/path",
+                1_000,
+                141
+            )
             .is_err());
         assert!(mgr
-            .record_traffic("s-1", Protocol::Https, "https://blocked.example", 1_000, 141)
+            .record_traffic(
+                "s-1",
+                Protocol::Https,
+                "https://blocked.example",
+                1_000,
+                141
+            )
             .is_err());
 
         assert!(mgr
@@ -563,7 +612,9 @@ mod tests {
     fn reconciliation_after_reconnect_drains_queue() {
         let kp = key_pair();
         let mut cache = LocalPolicyCache::default();
-        cache.allowed_protocols.extend([Protocol::Tcp, Protocol::Https]);
+        cache
+            .allowed_protocols
+            .extend([Protocol::Tcp, Protocol::Https]);
         cache
             .upsert_egress_policy(EgressPolicy {
                 id: "policy-1".into(),
