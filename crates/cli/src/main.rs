@@ -9,6 +9,7 @@ use mesh_coordinator::{MeshCoordinator, TaskAssignmentStrategy};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(feature = "observability")]
 use tokio::sync::RwLock;
 use tracing::{info, Level};
 
@@ -37,7 +38,8 @@ enum Commands {
         node_type: String,
 
         /// Enable local observability interface (operator-only, privacy-preserving)
-        #[arg(long, default_value = "false")]
+        /// Note: Disabled by default for privacy. Explicitly enable with --observability
+        #[arg(long)]
         observability: bool,
 
         /// Observability server port (default: 9090)
@@ -166,6 +168,8 @@ async fn run_node(
     info!("Health Score: {:.2}", node.health_score());
     info!("Safe Mode: {}", node.is_safe_mode());
 
+    info!("Node running... Press Ctrl+C to stop");
+
     // Start local observability server if enabled
     #[cfg(feature = "observability")]
     if observability {
@@ -175,7 +179,7 @@ async fn run_node(
         let node_arc = Arc::new(RwLock::new(node));
         
         // Create and start observability server
-        let server = LocalObservabilityServer::new(observability_port, node_arc.clone());
+        let server = LocalObservabilityServer::new(observability_port, node_arc);
         server.print_curl_command();
         
         // Run server in background
@@ -184,8 +188,6 @@ async fn run_node(
                 tracing::error!("Observability server error: {}", e);
             }
         });
-
-        info!("Node running... Press Ctrl+C to stop");
 
         // Keep running until interrupted
         tokio::select! {
@@ -196,26 +198,19 @@ async fn run_node(
                 info!("Observability server stopped");
             }
         }
-    } else {
-        info!("Node running... Press Ctrl+C to stop");
-
-        // Keep running until interrupted
-        tokio::signal::ctrl_c().await?;
-
-        info!("Shutting down node...");
+        
+        return Ok(());
     }
+
+    #[cfg(feature = "observability")]
+    let _ = observability_port; // Suppress unused warning when observability is false
 
     #[cfg(not(feature = "observability"))]
-    {
-        let _ = (observability, observability_port); // Suppress unused warnings
-        
-        info!("Node running... Press Ctrl+C to stop");
+    let _ = (observability, observability_port); // Suppress unused warnings
 
-        // Keep running until interrupted
-        tokio::signal::ctrl_c().await?;
-
-        info!("Shutting down node...");
-    }
+    // Default path: run without observability
+    tokio::signal::ctrl_c().await?;
+    info!("Shutting down node...");
 
     Ok(())
 }
