@@ -1441,6 +1441,7 @@
     let currentUserId = parseUserIdFromToken(authToken);
     let isApiConnected = false;
     let lastRelayConnection = null;
+    let nodes = [];
     const taskProgressMemory = new Map();
     const TASK_COMPLETION_LOCKS_STORAGE_KEY = 'vcp_task_completion_locks_v1';
     let taskCompletionLocks = loadTaskCompletionLocks();
@@ -2035,7 +2036,7 @@
             }
 
             if (nodesRes.ok) {
-                const nodes = await nodesRes.json();
+                nodes = await nodesRes.json();
                 renderNodes(nodes);
                 document.getElementById('nodes-count').textContent = nodes.length;
             }
