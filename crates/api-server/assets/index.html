@@ -2302,34 +2302,42 @@
             tasksSection.hidden = false;
         }
 
-        // Pre-populate activity log with finished and disconnected task details
+        // Pre-populate activity log with all task activity for this node
         const pingLog = document.getElementById('heartbeat-ping-log');
         const pingEntries = document.getElementById('heartbeat-ping-entries');
         pingEntries.textContent = '';
 
+        // Active tasks: currently assigned to this node and not yet in a terminal status
+        const activeNodeTasks = tasks.filter(t =>
+            Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId) &&
+            t.status !== 'completed' && t.status !== 'failed');
         // Finished tasks: currently or formerly assigned to this node and reached a terminal status
         const finishedNodeTasks = tasks.filter(t =>
             (Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId) ||
              Array.isArray(t.former_assigned_nodes) && t.former_assigned_nodes.includes(nodeId)) &&
             (t.status === 'completed' || t.status === 'failed'));
-        // Disconnected tasks: formerly assigned to this node but no longer active on it
-        const disconnectedNodeTasks = tasks.filter(t =>
+        // Cleared tasks: formerly assigned to this node but cleared before reaching a terminal status
+        const clearedNodeTasks = tasks.filter(t =>
             Array.isArray(t.former_assigned_nodes) && t.former_assigned_nodes.includes(nodeId) &&
             !(Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId)) &&
             t.status !== 'completed' && t.status !== 'failed');
 
-        if (finishedNodeTasks.length > 0 || disconnectedNodeTasks.length > 0) {
+        const hasAnyActivity = activeNodeTasks.length > 0 || finishedNodeTasks.length > 0 || clearedNodeTasks.length > 0;
+        if (hasAnyActivity) {
+            activeNodeTasks.forEach(t => {
+                addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — ${t.status} (active)`, 'ok');
+            });
             finishedNodeTasks.forEach(t => {
                 if (t.task_type === 'connect_only' && t.status === 'completed') {
-                    addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [connect_only] — session ended (disconnected)`, 'err');
+                    addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [connect_only] — session completed ✓`, 'ok');
                 } else {
                     const cls = t.status === 'completed' ? 'ok' : 'err';
                     const symbol = t.status === 'completed' ? '✓' : '✗';
                     addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — finished (${t.status}) ${symbol}`, cls);
                 }
             });
-            disconnectedNodeTasks.forEach(t => {
-                addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — disconnected from node`, 'err');
+            clearedNodeTasks.forEach(t => {
+                addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — cleared from node`, 'err');
             });
             pingLog.hidden = false;
         } else {
