@@ -1419,7 +1419,7 @@
                 <li>Indicate that your node is still active and online</li>
                 <li>Help prevent your node from being marked as stale</li>
             </ul>
-            <div id="heartbeat-message" class="heartbeat-status-message" role="status" aria-live="polite"></div>
+            <div id="heartbeat-message" class="heartbeat-status-message" role="status" aria-live="polite" hidden></div>
         </div>
 
         <div class="result-actions">
@@ -2167,8 +2167,10 @@
     function openHeartbeatModal(nodeId, nodeStatus) {
         document.getElementById('heartbeat-node-id').textContent = nodeId;
         document.getElementById('heartbeat-node-status').textContent = nodeStatus;
-        document.getElementById('heartbeat-message').textContent = '';
-        document.getElementById('heartbeat-message').className = 'heartbeat-status-message';
+        const messageEl = document.getElementById('heartbeat-message');
+        messageEl.textContent = '';
+        messageEl.className = 'heartbeat-status-message';
+        messageEl.hidden = true;
         
         // Enable the send button
         const sendBtn = document.getElementById('send-heartbeat-btn');
@@ -2225,6 +2227,7 @@
                 messageEl.textContent = '';
                 messageEl.appendChild(successMsg);
                 messageEl.classList.add('success');
+                messageEl.hidden = false;
                 showToast(`Heartbeat sent for ${nodeId}`);
                 await fetchData();
                 
@@ -2236,6 +2239,7 @@
                 const err = await res.json();
                 messageEl.textContent = `✗ Failed to send heartbeat: ${err.message || 'Unknown error'}`;
                 messageEl.classList.add('error');
+                messageEl.hidden = false;
                 showToast(err.message || 'Failed to send heartbeat', true);
                 sendBtn.textContent = originalText;
                 sendBtn.disabled = false;
@@ -2243,6 +2247,7 @@
         } catch (err) {
             messageEl.textContent = `✗ Network error: ${err.message}`;
             messageEl.classList.add('error');
+            messageEl.hidden = false;
             showToast('Network error: ' + err.message, true);
             sendBtn.textContent = originalText;
             sendBtn.disabled = false;
