@@ -6,10 +6,12 @@ use wasm_engine::WasmCall;
 use zk_prover::{ZKProof, ZKVerifier};
 
 pub mod assignment;
+pub mod peer_routing;
 pub mod registry;
 pub mod settlement;
 
 pub use assignment::*;
+pub use peer_routing::*;
 pub use registry::*;
 pub use settlement::*;
 
@@ -58,6 +60,7 @@ pub struct MeshCoordinator {
     nodes: HashMap<String, AmbientNode>,
     strategy: TaskAssignmentStrategy,
     verifier: ZKVerifier,
+    peer_router: PeerRouter,
 }
 
 impl MeshCoordinator {
@@ -67,18 +70,48 @@ impl MeshCoordinator {
             nodes: HashMap::new(),
             strategy,
             verifier: ZKVerifier::default(),
+            peer_router: PeerRouter::new(),
         }
     }
 
     /// Register a new node in the mesh
     pub fn register_node(&mut self, node: AmbientNode) {
         let node_id = node.id.id.clone();
+        let node_type = node.id.node_type.clone();
+        // New nodes start with Unknown connectivity until explicitly updated.
+        self.peer_router
+            .update_node(&node_id, &node_type, NodeConnectivityStatus::Unknown);
         self.nodes.insert(node_id, node);
     }
 
     /// Unregister a node
     pub fn unregister_node(&mut self, node_id: &str) {
+        self.peer_router.remove_node(node_id);
         self.nodes.remove(node_id);
+    }
+
+    /// Update the internet connectivity status of a registered node.
+    ///
+    /// Call this whenever the node's backhaul state changes so that
+    /// [`MeshCoordinator::find_peer_route`] always reflects current
+    /// network conditions.
+    pub fn sync_connectivity(
+        &mut self,
+        node_id: &str,
+        status: NodeConnectivityStatus,
+    ) {
+        if let Some(node) = self.nodes.get(node_id) {
+            let node_type = node.id.node_type.clone();
+            self.peer_router.update_node(node_id, &node_type, status);
+        }
+    }
+
+    /// Find the best peer route for `node_id` to reach the internet.
+    ///
+    /// Returns `None` if the node is not registered or no internet path
+    /// exists (direct or via relay).
+    pub fn find_peer_route(&self, node_id: &str) -> Option<PeerRoute> {
+        self.peer_router.find_route(node_id)
     }
 
     /// Select best node for a task based on requirements and strategy
@@ -304,5 +337,74 @@ mod tests {
         };
 
         assert!(!coordinator.verify_result(&result, &proof));
+    }
+
+    #[test]
+    fn test_sync_connectivity_and_find_peer_route_direct() {
+        let mut coordinator =
+            MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
+
+        let node_id = NodeId::new("node-gw", "us-east", "gateway");
+        let node = AmbientNode::new(node_id, SafetyPolicy::default());
+        coordinator.register_node(node);
+
+        // Mark node as online → direct route with no hops.
+        coordinator.sync_connectivity("node-gw", NodeConnectivityStatus::Online);
+
+        let route = coordinator.find_peer_route("node-gw").expect("route expected");
+        assert!(route.is_direct());
+        assert_eq!(route.source_node_id, "node-gw");
+    }
+
+    #[test]
+    fn test_sync_connectivity_and_find_peer_route_relayed() {
+        let mut coordinator =
+            MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
+
+        // A universal relay that is online.
+        let relay_id = NodeId::new("relay-uni", "us-east", "universal");
+        let relay = AmbientNode::new(relay_id, SafetyPolicy::default());
+        coordinator.register_node(relay);
+        coordinator.sync_connectivity("relay-uni", NodeConnectivityStatus::Online);
+
+        // An offline worker that needs to reach the internet.
+        let worker_id = NodeId::new("worker-1", "us-east", "worker");
+        let worker = AmbientNode::new(worker_id, SafetyPolicy::default());
+        coordinator.register_node(worker);
+        coordinator.sync_connectivity("worker-1", NodeConnectivityStatus::Offline);
+
+        let route = coordinator
+            .find_peer_route("worker-1")
+            .expect("relay route expected");
+        assert!(!route.is_direct());
+        assert_eq!(route.hops.len(), 1);
+        assert_eq!(route.hops[0].node_id, "relay-uni");
+        assert_eq!(route.hops[0].kind, NodeKind::Universal);
+    }
+
+    #[test]
+    fn test_unregister_removes_from_peer_router() {
+        let mut coordinator =
+            MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
+
+        let node_id = NodeId::new("node-x", "eu-west", "open");
+        let node = AmbientNode::new(node_id, SafetyPolicy::default());
+        coordinator.register_node(node);
+        coordinator.sync_connectivity("node-x", NodeConnectivityStatus::Online);
+
+        // Removing the node should leave no route for other offline nodes
+        // (only node was the potential relay).
+        let offline_id = NodeId::new("node-y", "eu-west", "worker");
+        let offline = AmbientNode::new(offline_id, SafetyPolicy::default());
+        coordinator.register_node(offline);
+        coordinator.sync_connectivity("node-y", NodeConnectivityStatus::Offline);
+
+        // Before removal: relay is available.
+        assert!(coordinator.find_peer_route("node-y").is_some());
+
+        coordinator.unregister_node("node-x");
+
+        // After removal: no relay → no route.
+        assert!(coordinator.find_peer_route("node-y").is_none());
     }
 }
