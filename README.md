@@ -1,12 +1,12 @@
 # Ambient AI + VCP System
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-246%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-254%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
  
 A **live online application** and implementation of a **Verifiable Computation Protocol (VCP)** for running and verifying distributed compute tasks across many machines.
 
 ## 🎯 Status: **Live in Production (Public Demo Running)**
 
-✅ **All 246 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
+✅ **All 254 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
 
 > Yes — this app is already deployed and running online.
 > You can use it as-is, and if you self-host it, you should still tune infra/security settings for your own environment.
@@ -113,6 +113,7 @@ Tip: To quickly verify the public demo is reachable, run:
 - 🔔 **Heartbeat-Triggered Task Sync**: `update_node_heartbeat` now calls `assign_pending_tasks_for_node` on every ping, so live nodes receive eligible pending tasks continuously — not only at registration
 - 🎨 **Offline-First Dashboard Fonts**: Syne and JetBrains Mono fonts are self-hosted from bundled woff2 files; no Google Fonts CDN dependency, dashboard renders fully in air-gapped environments
 - 🛡️ **Safe-Default Backhaul Routing**: `monitor_only = true` is the new default — the backhaul manager observes interfaces and scores them without touching kernel routing tables until explicitly opted in; `ip rule` entries are scoped to `from <src-ip>` to avoid affecting unrelated host traffic; health probes bind to the interface's own address for accurate per-interface metrics
+- 🌐 **NCSI Spoof Server**: `NcsiSpoofServer` prevents false `ERR_INTERNET_DISCONNECTED` errors when the node acts as internet gateway for connected clients. When a client's direct internet is gone and the VCP node is the upstream provider, the client OS connectivity checks (Windows NCSI `GET /connecttest.txt`, Linux NetworkManager `GET /check_network_status.txt`, and generic captive-portal probes) are answered locally by a lightweight HTTP listener configured with `NcsiSpoofConfig`, stopping the OS from blocking traffic with a false disconnection signal.
 
 ### Security & Infrastructure
 - 🔐 **JWT Middleware Authentication**: Global JWT enforcement at middleware layer (not handler extractors)
@@ -521,14 +522,14 @@ open http://localhost:3000/
 
 | Component | Unit Tests | Integration Tests | Load Tests | Total |
 |-----------|-----------|-------------------|------------|-------|
-| ambient-node | 83 | 17 | - | 100 |
+| ambient-node | 91 | 17 | - | 108 |
 | ailee-trust-layer | 38 | - | - | 38 |
 | api-server | 36 | 24 | 2 | 62 |
 | federated-learning | 8 | - | - | 8 |
 | mesh-coordinator | 21 | - | - | 21 |
 | wasm-engine | 6 | - | - | 6 |
 | zk-prover | 8 | - | - | 8 |
-| **TOTAL** | **200** | **41** | **2** | **246** |
+| **TOTAL** | **208** | **41** | **2** | **254** |
 
 ### Running Tests
 
