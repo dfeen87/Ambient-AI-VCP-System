@@ -577,6 +577,31 @@
             cursor: not-allowed;
         }
 
+        .heartbeat-btn {
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(96, 165, 250, 0.35);
+            background: rgba(96, 165, 250, 0.08);
+            color: #93c5fd;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .heartbeat-btn:hover:not(:disabled) {
+            border-color: rgba(96, 165, 250, 0.6);
+            background: rgba(96, 165, 250, 0.16);
+            color: #bfdbfe;
+        }
+
+        .heartbeat-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
         .empty-row td {
             text-align: center;
             color: var(--text-muted);
@@ -1968,6 +1993,41 @@
         }
     }
 
+    async function handleHeartbeat(nodeId, buttonEl) {
+        if (!requireApiConnection('send heartbeat')) {
+            return;
+        }
+
+        if (!authToken) {
+            showToast('Please login to send heartbeat', true);
+            return;
+        }
+
+        const originalText = buttonEl.textContent;
+        buttonEl.textContent = 'Sending...';
+        buttonEl.disabled = true;
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/v1/nodes/${encodeURIComponent(nodeId)}/heartbeat`, {
+                method: 'PUT',
+                headers: getAuthHeaders(),
+            });
+
+            if (res.ok) {
+                showToast(`Heartbeat sent for ${nodeId}`);
+                await fetchData();
+            } else {
+                const err = await res.json();
+                showToast(err.message || 'Failed to send heartbeat', true);
+            }
+        } catch (err) {
+            showToast('Network error: ' + err.message, true);
+        } finally {
+            buttonEl.textContent = originalText;
+            buttonEl.disabled = false;
+        }
+    }
+
     async function handleViewObservability(nodeId, port) {
         // Open the modal
         openObservabilityModal(nodeId, port);
@@ -2044,6 +2104,7 @@
                         <div class="status-cell">
                             <span class="badge ${statusClass}">${n.status}</span>
                             ${canEject ? `<button class="eject-btn" onclick='handleEjectNode(${JSON.stringify(n.node_id)}, this)'>Eject</button>` : ''}
+                            ${isOwner ? `<button class="heartbeat-btn" onclick='handleHeartbeat(${JSON.stringify(n.node_id)}, this)' aria-label="Send heartbeat for ${n.node_id}">Heartbeat</button>` : ''}
                             ${isOwner && n.observability_port ? `<button class="observability-btn" onclick='handleViewObservability(${JSON.stringify(n.node_id)}, ${n.observability_port})'>View</button>` : ''}
                         </div>
                     </td>
