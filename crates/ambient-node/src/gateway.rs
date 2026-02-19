@@ -79,6 +79,26 @@ impl DataPlaneGateway {
         Ok(Self::new(config, sessions))
     }
 
+    /// Provision a new session into the gateway's live session store.
+    ///
+    /// Call this when a connect session is started so the endpoint can
+    /// immediately begin relaying traffic through this node.
+    pub async fn add_session(&self, session: GatewaySession) {
+        let mut sessions = self.sessions.write().await;
+        sessions.insert(session.session_id.clone(), session);
+    }
+
+    /// Remove a session from the gateway's live session store.
+    ///
+    /// Call this when a connect session is stopped or expires so the
+    /// node stops relaying internet traffic on behalf of the endpoint.
+    /// Returns `true` if the session existed and was removed, `false`
+    /// if it was not present (already removed or never added).
+    pub async fn revoke_session(&self, session_id: &str) -> bool {
+        let mut sessions = self.sessions.write().await;
+        sessions.remove(session_id).is_some()
+    }
+
     pub async fn run(self) -> Result<()> {
         let listener = TcpListener::bind(&self.config.listen_addr)
             .await
@@ -251,6 +271,63 @@ mod tests {
             allowed_destinations: vec!["127.0.0.1".to_string(), "*.example.com".to_string()],
             expires_at_epoch_seconds: (chrono::Utc::now().timestamp() as u64) + 300,
         }
+    }
+
+    #[tokio::test]
+    async fn add_session_allows_relay() {
+        let gateway = DataPlaneGateway::new(GatewayConfig::default(), vec![]);
+
+        // No sessions initially – unknown session_id should cause a relay failure.
+        let sessions_before = gateway.sessions.read().await;
+        assert!(sessions_before.is_empty());
+        drop(sessions_before);
+
+        // After adding a session the gateway can look it up.
+        let session = sample_session();
+        gateway.add_session(session.clone()).await;
+
+        let sessions_after = gateway.sessions.read().await;
+        assert!(sessions_after.contains_key(&session.session_id));
+    }
+
+    #[tokio::test]
+    async fn revoke_session_removes_existing() {
+        let session = sample_session();
+        let gateway = DataPlaneGateway::new(GatewayConfig::default(), vec![session.clone()]);
+
+        // Session present before revocation.
+        let before = gateway.sessions.read().await;
+        assert!(before.contains_key(&session.session_id));
+        drop(before);
+
+        // Revoke returns true and session is gone.
+        let removed = gateway.revoke_session(&session.session_id).await;
+        assert!(removed);
+
+        let after = gateway.sessions.read().await;
+        assert!(!after.contains_key(&session.session_id));
+    }
+
+    #[tokio::test]
+    async fn revoke_session_returns_false_when_not_present() {
+        let gateway = DataPlaneGateway::new(GatewayConfig::default(), vec![]);
+        let removed = gateway.revoke_session("nonexistent_session").await;
+        assert!(!removed);
+    }
+
+    #[tokio::test]
+    async fn revoke_session_prevents_relay_after_endpoint_disconnects() {
+        // Simulate the lifecycle: session added when endpoint connects, revoked when it leaves.
+        let session = sample_session();
+        let gateway = DataPlaneGateway::new(GatewayConfig::default(), vec![]);
+
+        gateway.add_session(session.clone()).await;
+        assert!(gateway.sessions.read().await.contains_key(&session.session_id));
+
+        // Endpoint disconnects → revoke so the node no longer relays for it.
+        let removed = gateway.revoke_session(&session.session_id).await;
+        assert!(removed);
+        assert!(gateway.sessions.read().await.is_empty());
     }
 
     #[test]
