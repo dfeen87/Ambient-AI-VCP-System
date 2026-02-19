@@ -1819,6 +1819,9 @@ impl AppState {
         .execute(&self.db)
         .await?;
 
+        // Sync any pending tasks that this node is eligible for.
+        self.assign_pending_tasks_for_node(node_id).await?;
+
         Ok(true)
     }
 
