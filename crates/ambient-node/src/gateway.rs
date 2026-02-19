@@ -322,7 +322,11 @@ mod tests {
         let gateway = DataPlaneGateway::new(GatewayConfig::default(), vec![]);
 
         gateway.add_session(session.clone()).await;
-        assert!(gateway.sessions.read().await.contains_key(&session.session_id));
+        assert!(gateway
+            .sessions
+            .read()
+            .await
+            .contains_key(&session.session_id));
 
         // Endpoint disconnects → revoke so the node no longer relays for it.
         let removed = gateway.revoke_session(&session.session_id).await;
