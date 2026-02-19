@@ -1219,8 +1219,7 @@ impl AppState {
             .into_iter()
             .filter_map(|row| {
                 let metadata: Option<serde_json::Value> = row.try_get("metadata").ok();
-                let recorded_at: chrono::DateTime<chrono::Utc> =
-                    row.try_get("recorded_at").ok()?;
+                let recorded_at: chrono::DateTime<chrono::Utc> = row.try_get("recorded_at").ok()?;
                 metadata.map(|mut m| {
                     m["cleared_at"] = serde_json::Value::String(recorded_at.to_rfc3339());
                     m
