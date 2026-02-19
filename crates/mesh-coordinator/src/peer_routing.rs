@@ -89,12 +89,7 @@ impl PeerRouter {
     }
 
     /// Register or update a node's connectivity status and role.
-    pub fn update_node(
-        &mut self,
-        node_id: &str,
-        node_type: &str,
-        status: NodeConnectivityStatus,
-    ) {
+    pub fn update_node(&mut self, node_id: &str, node_type: &str, status: NodeConnectivityStatus) {
         self.connectivity.insert(node_id.to_string(), status);
         self.kinds
             .insert(node_id.to_string(), NodeKind::from_node_type(node_type));
@@ -147,8 +142,7 @@ impl PeerRouter {
             .connectivity
             .iter()
             .filter(|(id, status)| {
-                id.as_str() != source_node_id
-                    && **status == NodeConnectivityStatus::Online
+                id.as_str() != source_node_id && **status == NodeConnectivityStatus::Online
             })
             .filter_map(|(id, _)| {
                 let kind = self
@@ -270,10 +264,7 @@ mod tests {
         assert_eq!(r.connectivity_status("n1"), NodeConnectivityStatus::Offline);
 
         r.remove_node("n1");
-        assert_eq!(
-            r.connectivity_status("n1"),
-            NodeConnectivityStatus::Unknown
-        );
+        assert_eq!(r.connectivity_status("n1"), NodeConnectivityStatus::Unknown);
     }
 
     #[test]
