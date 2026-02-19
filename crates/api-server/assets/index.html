@@ -2211,7 +2211,19 @@
 
             if (res.ok) {
                 const data = await res.json();
-                messageEl.innerHTML = `<p>✓ Heartbeat sent successfully!</p><p>Timestamp: ${data.timestamp || new Date().toISOString()}</p><p>Your node's heartbeat has been updated. You can close this window.</p>`;
+                // Create DOM elements safely to avoid XSS
+                const successMsg = document.createElement('div');
+                const p1 = document.createElement('p');
+                p1.textContent = '✓ Heartbeat sent successfully!';
+                const p2 = document.createElement('p');
+                p2.textContent = `Timestamp: ${data.timestamp || new Date().toISOString()}`;
+                const p3 = document.createElement('p');
+                p3.textContent = 'Your node\'s heartbeat has been updated. You can close this window.';
+                successMsg.appendChild(p1);
+                successMsg.appendChild(p2);
+                successMsg.appendChild(p3);
+                messageEl.textContent = '';
+                messageEl.appendChild(successMsg);
                 messageEl.classList.add('success');
                 showToast(`Heartbeat sent for ${nodeId}`);
                 await fetchData();
@@ -2702,8 +2714,12 @@
     });
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && document.getElementById('observability-modal-overlay').classList.contains('open')) {
-            closeObservabilityModal();
+        if (e.key === 'Escape') {
+            if (document.getElementById('heartbeat-modal-overlay').classList.contains('open')) {
+                closeHeartbeatModal();
+            } else if (document.getElementById('observability-modal-overlay').classList.contains('open')) {
+                closeObservabilityModal();
+            }
         }
     });
 
