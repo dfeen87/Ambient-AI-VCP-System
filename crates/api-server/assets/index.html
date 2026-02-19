@@ -2003,6 +2003,10 @@
             return;
         }
 
+        if (!confirm(`Send heartbeat for node ${nodeId}?\n\nThis will update the node's last heartbeat timestamp to indicate it is still active.`)) {
+            return;
+        }
+
         const originalText = buttonEl.textContent;
         buttonEl.textContent = 'Sending...';
         buttonEl.disabled = true;
