@@ -510,16 +510,10 @@ async fn test_vcp_adapter_all_node_types() {
 
     for node_type in node_types {
         let adapter = AileeEngineAdapter::new(1);
-        let context =
-            VcpExecutionContext::new(false, "us-east-1", node_type, 3000, true);
+        let context = VcpExecutionContext::new(false, "us-east-1", node_type, 3000, true);
 
         let result = adapter
-            .execute_with_context(
-                "Test for node type",
-                TaskType::Chat,
-                0.5,
-                &context,
-            )
+            .execute_with_context("Test for node type", TaskType::Chat, 0.5, &context)
             .await
             .unwrap_or_else(|e| panic!("AILEE execution failed for node_type='{node_type}': {e}"));
 
