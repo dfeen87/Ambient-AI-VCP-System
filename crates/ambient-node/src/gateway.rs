@@ -13,7 +13,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::RwLock,
 };
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatewaySession {
@@ -180,6 +180,160 @@ impl DataPlaneGateway {
 
         Ok(())
     }
+}
+
+/// Configuration for the NCSI (Network Connectivity Status Indicator) spoof server.
+///
+/// When a VCP node provides internet access to connected endpoints, the endpoint's
+/// OS may incorrectly report `ERR_INTERNET_DISCONNECTED` because its NCSI probes
+/// travel via the broken direct internet path rather than through the VCP tunnel.
+///
+/// This server listens on a local address and returns valid NCSI-compatible HTTP
+/// responses so that OS connectivity checks succeed when routed through the VCP
+/// node, preventing false `ERR_INTERNET_DISCONNECTED` errors for connected clients.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NcsiSpoofConfig {
+    /// Address and port to listen on for NCSI HTTP probes.
+    pub listen_addr: String,
+    /// Whether the NCSI spoof server is enabled.
+    pub enabled: bool,
+}
+
+impl Default for NcsiSpoofConfig {
+    fn default() -> Self {
+        Self {
+            listen_addr: "0.0.0.0:80".to_string(),
+            enabled: false,
+        }
+    }
+}
+
+/// Lightweight HTTP server that serves NCSI-compatible responses to prevent
+/// false `ERR_INTERNET_DISCONNECTED` errors on clients using this node as their
+/// internet gateway.
+///
+/// Handles the following OS connectivity-check endpoints:
+/// - **Windows NCSI**: `GET /connecttest.txt` → `"Microsoft Connect Test"` (HTTP 200)
+/// - **Linux NetworkManager/GNOME**: `GET /check_network_status.txt` → `"NetworkManager is online\n"` (HTTP 200)
+/// - **Generic / Ubuntu / Apple captive-portal checks**: any other path → HTTP 204 No Content
+pub struct NcsiSpoofServer {
+    config: NcsiSpoofConfig,
+}
+
+impl NcsiSpoofServer {
+    pub fn new(config: NcsiSpoofConfig) -> Self {
+        Self { config }
+    }
+
+    /// Start the NCSI spoof server.  Returns immediately when `config.enabled` is `false`.
+    pub async fn run(self) -> Result<()> {
+        if !self.config.enabled {
+            return Ok(());
+        }
+
+        let listener = TcpListener::bind(&self.config.listen_addr)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to bind NCSI spoof server on {}",
+                    self.config.listen_addr
+                )
+            })?;
+
+        info!(listen_addr = %self.config.listen_addr, "NCSI spoof server listening");
+
+        loop {
+            let (stream, peer_addr) = listener.accept().await?;
+            tokio::spawn(async move {
+                if let Err(err) = handle_ncsi_connection(stream).await {
+                    warn!(%peer_addr, "NCSI spoof connection error: {err:#}");
+                }
+            });
+        }
+    }
+}
+
+/// Returns `(HTTP status line, response body)` for a given NCSI request path.
+///
+/// Covers the main OS connectivity-probe endpoints:
+/// - `/connecttest.txt` — Windows NCSI expects the exact string `"Microsoft Connect Test"`
+/// - `/check_network_status.txt` — Linux NetworkManager/GNOME connectivity check
+/// - all other paths — return HTTP 204 No Content (Ubuntu, Apple captive-portal, etc.)
+fn ncsi_response_for_path(path: &str) -> (&'static str, &'static str) {
+    match path {
+        "/connecttest.txt" => ("200 OK", "Microsoft Connect Test"),
+        "/check_network_status.txt" => ("200 OK", "NetworkManager is online\n"),
+        _ => ("204 No Content", ""),
+    }
+}
+
+/// Handle a single NCSI HTTP probe connection.
+///
+/// Reads the HTTP request line, drains the remaining headers, then writes a
+/// minimal HTTP response that satisfies the OS connectivity check.
+async fn handle_ncsi_connection(stream: TcpStream) -> Result<()> {
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
+    let mut request_line = String::new();
+
+    // Read the HTTP request line with a short timeout so stale connections do
+    // not hold resources indefinitely.
+    match tokio::time::timeout(
+        Duration::from_secs(5),
+        reader.read_line(&mut request_line),
+    )
+    .await
+    {
+        Err(_) => {
+            debug!("NCSI request timed out; closing connection");
+            return Ok(());
+        }
+        Ok(Err(e)) => {
+            debug!("NCSI request read error: {e}; closing connection");
+            return Ok(());
+        }
+        Ok(Ok(0)) => return Ok(()), // EOF before any data
+        Ok(Ok(_)) => {}
+    }
+
+    // Drain all remaining request headers before sending the response so the
+    // HTTP exchange is well-formed and the client reads the full response.
+    loop {
+        let mut header_line = String::new();
+        match tokio::time::timeout(
+            Duration::from_secs(5),
+            reader.read_line(&mut header_line),
+        )
+        .await
+        {
+            Ok(Ok(0)) | Err(_) => break,
+            Ok(Err(e)) => {
+                debug!("NCSI header drain error: {e}");
+                break;
+            }
+            Ok(Ok(_)) if header_line == "\r\n" || header_line == "\n" => break,
+            _ => {}
+        }
+    }
+
+    // Extract the request path from the first line, e.g. "GET /connecttest.txt HTTP/1.1"
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("/");
+
+    let (status, body) = ncsi_response_for_path(path);
+    let len = body.len();
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Length: {len}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{body}",
+    );
+
+    write_half
+        .write_all(response.as_bytes())
+        .await
+        .context("failed to write NCSI response")?;
+
+    Ok(())
 }
 
 fn validate_session(session: &GatewaySession, provided_token: &str) -> Result<()> {
@@ -407,5 +561,151 @@ mod tests {
         let mut echoed = vec![0u8; 11];
         client.read_exact(&mut echoed).await.unwrap();
         assert_eq!(&echoed, b"hello relay");
+    }
+
+    // -----------------------------------------------------------------------
+    // NCSI spoof server tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ncsi_response_windows_connecttest() {
+        let (status, body) = ncsi_response_for_path("/connecttest.txt");
+        assert_eq!(status, "200 OK");
+        assert_eq!(body, "Microsoft Connect Test");
+    }
+
+    #[test]
+    fn ncsi_response_networkmanager_check() {
+        let (status, body) = ncsi_response_for_path("/check_network_status.txt");
+        assert_eq!(status, "200 OK");
+        assert_eq!(body, "NetworkManager is online\n");
+    }
+
+    #[test]
+    fn ncsi_response_unknown_path_returns_no_content() {
+        let (status, body) = ncsi_response_for_path("/");
+        assert_eq!(status, "204 No Content");
+        assert_eq!(body, "");
+
+        let (status2, body2) = ncsi_response_for_path("/generate_204");
+        assert_eq!(status2, "204 No Content");
+        assert_eq!(body2, "");
+    }
+
+    #[tokio::test]
+    async fn ncsi_spoof_server_disabled_exits_immediately() {
+        let config = NcsiSpoofConfig {
+            listen_addr: "127.0.0.1:0".to_string(),
+            enabled: false,
+        };
+        let server = NcsiSpoofServer::new(config);
+        let result = server.run().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn ncsi_spoof_server_serves_windows_ncsi_response() {
+        use tokio::io::AsyncReadExt;
+
+        // Bind an ephemeral port to find a free address, then release it so
+        // NcsiSpoofServer can bind to it.
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let config = NcsiSpoofConfig {
+            listen_addr: addr.to_string(),
+            enabled: true,
+        };
+
+        let server = NcsiSpoofServer::new(config);
+        tokio::spawn(async move {
+            let _ = server.run().await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let request = b"GET /connecttest.txt HTTP/1.1\r\nHost: www.msftconnecttest.com\r\nConnection: close\r\n\r\n";
+        client.write_all(request).await.unwrap();
+
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        let response_str = std::str::from_utf8(&response).unwrap();
+
+        assert!(response_str.contains("200 OK"), "expected HTTP 200, got: {response_str}");
+        assert!(
+            response_str.contains("Microsoft Connect Test"),
+            "expected NCSI body, got: {response_str}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ncsi_spoof_server_serves_networkmanager_response() {
+        use tokio::io::AsyncReadExt;
+
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let config = NcsiSpoofConfig {
+            listen_addr: addr.to_string(),
+            enabled: true,
+        };
+
+        let server = NcsiSpoofServer::new(config);
+        tokio::spawn(async move {
+            let _ = server.run().await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let request = b"GET /check_network_status.txt HTTP/1.1\r\nHost: nmcheck.gnome.org\r\nConnection: close\r\n\r\n";
+        client.write_all(request).await.unwrap();
+
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        let response_str = std::str::from_utf8(&response).unwrap();
+
+        assert!(response_str.contains("200 OK"), "expected HTTP 200, got: {response_str}");
+        assert!(
+            response_str.contains("NetworkManager is online"),
+            "expected NM body, got: {response_str}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ncsi_spoof_server_serves_generic_no_content() {
+        use tokio::io::AsyncReadExt;
+
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let config = NcsiSpoofConfig {
+            listen_addr: addr.to_string(),
+            enabled: true,
+        };
+
+        let server = NcsiSpoofServer::new(config);
+        tokio::spawn(async move {
+            let _ = server.run().await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let request = b"GET / HTTP/1.1\r\nHost: connectivity-check.ubuntu.com\r\nConnection: close\r\n\r\n";
+        client.write_all(request).await.unwrap();
+
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        let response_str = std::str::from_utf8(&response).unwrap();
+
+        assert!(
+            response_str.contains("204 No Content"),
+            "expected HTTP 204, got: {response_str}"
+        );
     }
 }
