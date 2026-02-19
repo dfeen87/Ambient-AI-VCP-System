@@ -965,6 +965,19 @@
             color: #f87171;
             background: rgba(248, 113, 113, 0.1);
         }
+
+        .heartbeat-status-message p {
+            margin: 8px 0;
+        }
+
+        .heartbeat-status-message p:first-child {
+            font-weight: 600;
+            margin-top: 0;
+        }
+
+        .heartbeat-status-message p:last-child {
+            margin-bottom: 0;
+        }
     </style>
 </head>
 <body>
@@ -1406,7 +1419,7 @@
                 <li>Indicate that your node is still active and online</li>
                 <li>Help prevent your node from being marked as stale</li>
             </ul>
-            <p id="heartbeat-message" class="heartbeat-status-message"></p>
+            <div id="heartbeat-message" class="heartbeat-status-message" role="status" aria-live="polite"></div>
         </div>
 
         <div class="result-actions">
@@ -2161,6 +2174,7 @@
         const sendBtn = document.getElementById('send-heartbeat-btn');
         sendBtn.disabled = false;
         sendBtn.textContent = 'Send Heartbeat';
+        sendBtn.removeAttribute('data-mode');
         
         // Store node ID for the send button
         sendBtn.setAttribute('data-node-id', nodeId);
@@ -2197,15 +2211,15 @@
 
             if (res.ok) {
                 const data = await res.json();
-                messageEl.textContent = `✓ Heartbeat sent successfully!\n\nTimestamp: ${data.timestamp || new Date().toISOString()}\n\nYour node's heartbeat has been updated. You can close this window.`;
+                messageEl.innerHTML = `<p>✓ Heartbeat sent successfully!</p><p>Timestamp: ${data.timestamp || new Date().toISOString()}</p><p>Your node's heartbeat has been updated. You can close this window.</p>`;
                 messageEl.classList.add('success');
                 showToast(`Heartbeat sent for ${nodeId}`);
                 await fetchData();
                 
-                // Change button to "Close"
+                // Change button to "Close" by setting a flag
                 sendBtn.textContent = 'Close';
                 sendBtn.disabled = false;
-                sendBtn.onclick = closeHeartbeatModal;
+                sendBtn.setAttribute('data-mode', 'close');
             } else {
                 const err = await res.json();
                 messageEl.textContent = `✗ Failed to send heartbeat: ${err.message || 'Unknown error'}`;
@@ -2672,7 +2686,14 @@
     // Heartbeat modal event listeners
     document.getElementById('close-heartbeat-modal-btn').addEventListener('click', closeHeartbeatModal);
     document.getElementById('close-heartbeat-modal-footer-btn').addEventListener('click', closeHeartbeatModal);
-    document.getElementById('send-heartbeat-btn').addEventListener('click', sendNodeHeartbeat);
+    document.getElementById('send-heartbeat-btn').addEventListener('click', (e) => {
+        const btn = e.target;
+        if (btn.getAttribute('data-mode') === 'close') {
+            closeHeartbeatModal();
+        } else {
+            sendNodeHeartbeat();
+        }
+    });
 
     document.getElementById('heartbeat-modal-overlay').addEventListener('click', (e) => {
         if (e.target.id === 'heartbeat-modal-overlay') {
