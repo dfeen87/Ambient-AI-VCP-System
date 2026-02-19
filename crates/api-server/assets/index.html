@@ -2188,6 +2188,18 @@
     function closeHeartbeatModal() {
         document.getElementById('heartbeat-modal-overlay').classList.remove('open');
         document.getElementById('heartbeat-modal-overlay').setAttribute('aria-hidden', 'true');
+        
+        // Reset the send button to Send mode
+        const sendBtn = document.getElementById('send-heartbeat-btn');
+        sendBtn.textContent = 'Send Heartbeat';
+        sendBtn.disabled = false;
+        sendBtn.removeAttribute('data-mode');
+        
+        // Clear any messages
+        const messageEl = document.getElementById('heartbeat-message');
+        messageEl.textContent = '';
+        messageEl.hidden = true;
+        messageEl.className = 'heartbeat-status-message';
     }
 
     async function sendNodeHeartbeat() {
