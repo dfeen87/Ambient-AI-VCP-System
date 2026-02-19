@@ -2255,6 +2255,7 @@
                 showToast(err.message || 'Failed to send heartbeat', true);
                 sendBtn.textContent = originalText;
                 sendBtn.disabled = false;
+                sendBtn.removeAttribute('data-mode');
             }
         } catch (err) {
             messageEl.textContent = `✗ Network error: ${err.message}`;
@@ -2263,6 +2264,7 @@
             showToast('Network error: ' + err.message, true);
             sendBtn.textContent = originalText;
             sendBtn.disabled = false;
+            sendBtn.removeAttribute('data-mode');
         }
     }
 
