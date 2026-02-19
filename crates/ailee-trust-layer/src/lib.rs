@@ -62,6 +62,7 @@
 pub mod adapters;
 pub mod consensus;
 pub mod generation;
+pub mod metric;
 pub mod trust;
 
 // Re-export commonly used types
@@ -72,4 +73,5 @@ pub use consensus::ConsensusEngine;
 pub use generation::{
     ExecutionMetadata, ExecutionMode, GenerationRequest, GenerationResult, TaskType,
 };
+pub use metric::{AileeMetric, AileeParams, AileeSample};
 pub use trust::{compute_trust_scores, ConsistencyScore, SafetyChecker, TrustScores};

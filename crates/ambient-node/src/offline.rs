@@ -487,9 +487,169 @@ impl LocalSessionManager {
         Ok(records)
     }
 
+    /// Export this node's policy cache as a [`PeerPolicySyncMessage`].
+    ///
+    /// The resulting message can be serialised and sent to peer nodes so that
+    /// they can acquire fresh session policies even when the central API
+    /// endpoint is unreachable.
+    pub fn export_peer_sync(&self, node_id: impl Into<String>) -> PeerPolicySyncMessage {
+        PeerPolicySyncMessage::from_cache(node_id, &self.cache)
+    }
+
+    /// Import policies from a [`PeerPolicySyncMessage`] received from a peer.
+    ///
+    /// Policies are merged **non-destructively**: existing local entries are
+    /// kept unchanged; only entries absent from the local cache are added.
+    /// This ensures that a compromised or stale peer cannot overwrite policies
+    /// that were previously verified by the control plane.
+    ///
+    /// # Security
+    /// Always verify that the message originates from a trusted peer before
+    /// calling this method.  The integrity hash guards against accidental
+    /// corruption but not against intentional forgery.
+    ///
+    /// # Returns
+    /// The number of new egress policies applied, or an error if the
+    /// integrity check fails.
+    pub fn import_peer_sync(
+        &mut self,
+        msg: &PeerPolicySyncMessage,
+    ) -> Result<usize, &'static str> {
+        if !msg.verify_integrity() {
+            return Err("peer sync message failed integrity check");
+        }
+
+        let mut applied = 0;
+
+        // Merge egress policies — only add entries not already present locally.
+        for policy in &msg.egress_policies {
+            if !self.cache.egress_policies.contains_key(&policy.id) {
+                self.cache
+                    .egress_policies
+                    .insert(policy.id.clone(), policy.clone());
+                applied += 1;
+            }
+        }
+
+        // Merge verification keys — same non-destructive rule.
+        for (key_id, key) in &msg.verification_keys {
+            if !self.cache.verification_keys.contains_key(key_id) {
+                self.cache
+                    .verification_keys
+                    .insert(key_id.clone(), key.clone());
+            }
+        }
+
+        let _ = self.audit_queue.append(
+            "peer_sync_applied",
+            &msg.sender_node_id,
+            format!("{} new policies imported from peer", applied),
+            0,
+            now_epoch_secs(),
+        );
+
+        Ok(applied)
+    }
+
     pub fn active_sessions(&self) -> usize {
         self.sessions.len()
     }
+}
+
+/// A signed, serialisable snapshot of a node's policy cache that can be shared
+/// with peer nodes when the central API endpoint is unreachable.
+///
+/// When a node is in [`NodeState::OfflineControlPlane`] or
+/// [`NodeState::NoUpstream`] it can still accept policy updates from a trusted
+/// peer node by calling [`LocalSessionManager::import_peer_sync`].  This
+/// enables the mesh to stay operational and continue routing internet traffic
+/// even without a connection to the central control plane.
+///
+/// # Integrity
+/// A SHA3-256 hash of the message content is embedded and verified on receipt.
+/// Only use this with messages from nodes you trust — the hash guards against
+/// accidental corruption, not adversarial tampering.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PeerPolicySyncMessage {
+    /// Identifier of the sending node.
+    pub sender_node_id: String,
+    /// Egress policies exported from the sender's cache.
+    pub egress_policies: Vec<EgressPolicy>,
+    /// Verification keys exported from the sender's cache.
+    pub verification_keys: HashMap<String, Vec<u8>>,
+    /// Unix epoch seconds when this snapshot was taken.
+    pub snapshot_at: u64,
+    /// SHA3-256 hash of the serialised content (integrity check).
+    pub content_hash: String,
+}
+
+impl PeerPolicySyncMessage {
+    /// Build a sync message from a [`LocalPolicyCache`].
+    pub fn from_cache(sender_node_id: impl Into<String>, cache: &LocalPolicyCache) -> Self {
+        let sender_node_id = sender_node_id.into();
+        let egress_policies: Vec<EgressPolicy> =
+            cache.egress_policies.values().cloned().collect();
+        let verification_keys = cache.verification_keys.clone();
+        let snapshot_at = now_epoch_secs();
+        let content_hash = compute_sync_hash(
+            &sender_node_id,
+            &egress_policies,
+            &verification_keys,
+            snapshot_at,
+        );
+        Self {
+            sender_node_id,
+            egress_policies,
+            verification_keys,
+            snapshot_at,
+            content_hash,
+        }
+    }
+
+    /// Verify that the embedded hash matches the message content.
+    pub fn verify_integrity(&self) -> bool {
+        let expected = compute_sync_hash(
+            &self.sender_node_id,
+            &self.egress_policies,
+            &self.verification_keys,
+            self.snapshot_at,
+        );
+        self.content_hash == expected
+    }
+}
+
+fn compute_sync_hash(
+    sender_node_id: &str,
+    egress_policies: &[EgressPolicy],
+    verification_keys: &HashMap<String, Vec<u8>>,
+    snapshot_at: u64,
+) -> String {
+    let mut hasher = Sha3_256::new();
+    hasher.update(sender_node_id.as_bytes());
+
+    // Sort by ID for determinism, then hash the full policy content so that
+    // a tampered allowed_destinations list will invalidate the hash.
+    let mut policies: Vec<&EgressPolicy> = egress_policies.iter().collect();
+    policies.sort_unstable_by_key(|p| p.id.as_str());
+    for policy in &policies {
+        hasher.update(policy.id.as_bytes());
+        for dest in &policy.allowed_destinations {
+            hasher.update(dest.as_bytes());
+        }
+    }
+
+    // Sort by key ID for determinism, then hash the full key material so that
+    // substituted key bytes will invalidate the hash.
+    let mut keys: Vec<(&str, &Vec<u8>)> =
+        verification_keys.iter().map(|(k, v)| (k.as_str(), v)).collect();
+    keys.sort_unstable_by_key(|(id, _)| *id);
+    for (id, bytes) in &keys {
+        hasher.update(id.as_bytes());
+        hasher.update(bytes.as_slice());
+    }
+
+    hasher.update(snapshot_at.to_le_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn now_epoch_secs() -> u64 {
@@ -654,5 +814,180 @@ mod tests {
         let records = mgr.reconcile_on_reconnect().unwrap();
         assert!(!records.is_empty());
         assert!(mgr.audit_queue.read_all().unwrap().is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Peer policy sync tests
+    // -----------------------------------------------------------------------
+
+    fn make_manager_with_policy(
+        policy_id: &str,
+        destination: &str,
+        key_id: &str,
+        kp: &signature::Ed25519KeyPair,
+    ) -> LocalSessionManager {
+        let mut cache = LocalPolicyCache::default();
+        cache
+            .allowed_protocols
+            .extend([Protocol::Tcp, Protocol::Https]);
+        cache
+            .upsert_egress_policy(EgressPolicy {
+                id: policy_id.into(),
+                allowed_destinations: vec![destination.into()],
+            })
+            .unwrap();
+        cache
+            .upsert_verification_key(key_id, kp.public_key().as_ref().to_vec())
+            .unwrap();
+        let audit_path = env::temp_dir().join(format!("audit-{}.log", uuid::Uuid::new_v4()));
+        LocalSessionManager::new(cache, PersistentAuditQueue::new(audit_path))
+    }
+
+    #[test]
+    fn peer_sync_message_integrity_passes() {
+        let kp = key_pair();
+        let mgr = make_manager_with_policy("p-1", "https://a.example", "k1", &kp);
+        let msg = mgr.export_peer_sync("node-A");
+        assert!(msg.verify_integrity());
+        assert_eq!(msg.sender_node_id, "node-A");
+        assert_eq!(msg.egress_policies.len(), 1);
+    }
+
+    #[test]
+    fn peer_sync_message_integrity_fails_on_tampered_destinations() {
+        let kp = key_pair();
+        let mgr = make_manager_with_policy("p-1", "https://a.example", "k1", &kp);
+        let mut msg = mgr.export_peer_sync("node-A");
+        // Tamper: change the allowed destination without updating the hash.
+        msg.egress_policies[0].allowed_destinations[0] = "https://evil.example".to_string();
+        assert!(
+            !msg.verify_integrity(),
+            "tampered destination should invalidate integrity hash"
+        );
+    }
+
+    #[test]
+    fn peer_sync_message_integrity_fails_on_tamper() {
+        let kp = key_pair();
+        let mgr = make_manager_with_policy("p-1", "https://a.example", "k1", &kp);
+        let mut msg = mgr.export_peer_sync("node-A");
+        // Tamper: swap the hash.
+        msg.content_hash = "deadbeef".to_string();
+        assert!(!msg.verify_integrity());
+    }
+
+    #[test]
+    fn import_peer_sync_adds_missing_policies() {
+        let kp = key_pair();
+
+        // Peer node has policy "p-peer".
+        let peer_mgr = make_manager_with_policy("p-peer", "https://peer.example", "k-peer", &kp);
+        let msg = peer_mgr.export_peer_sync("node-peer");
+
+        // Local node has a different policy "p-local".
+        let mut local_mgr =
+            make_manager_with_policy("p-local", "https://local.example", "k-local", &kp);
+
+        let applied = local_mgr.import_peer_sync(&msg).unwrap();
+        assert_eq!(applied, 1, "one new policy should have been imported");
+
+        // Both policies should now be present.
+        assert!(local_mgr.cache.egress_policies.contains_key("p-local"));
+        assert!(local_mgr.cache.egress_policies.contains_key("p-peer"));
+    }
+
+    #[test]
+    fn import_peer_sync_does_not_overwrite_existing_policy() {
+        let kp = key_pair();
+
+        // Both nodes have the same policy ID but different destinations.
+        let peer_mgr = make_manager_with_policy("p-1", "https://peer.example", "k1", &kp);
+        let msg = peer_mgr.export_peer_sync("node-peer");
+
+        let mut local_mgr =
+            make_manager_with_policy("p-1", "https://local.example", "k1", &kp);
+
+        let applied = local_mgr.import_peer_sync(&msg).unwrap();
+        // No new policies added — policy "p-1" already existed locally.
+        assert_eq!(applied, 0);
+
+        // Local destination must be preserved.
+        let policy = local_mgr.cache.egress_policies.get("p-1").unwrap();
+        assert!(policy.allowed_destinations[0].contains("local.example"));
+    }
+
+    #[test]
+    fn import_peer_sync_rejects_tampered_message() {
+        let kp = key_pair();
+        let peer_mgr = make_manager_with_policy("p-1", "https://peer.example", "k1", &kp);
+        let mut msg = peer_mgr.export_peer_sync("node-peer");
+        msg.content_hash = "invalid".to_string();
+
+        let mut local_mgr =
+            make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
+
+        assert!(local_mgr.import_peer_sync(&msg).is_err());
+    }
+
+    #[test]
+    fn import_peer_sync_works_in_offline_control_plane_state() {
+        let kp = key_pair();
+
+        let peer_mgr = make_manager_with_policy("p-peer", "https://peer.example", "k1", &kp);
+        let msg = peer_mgr.export_peer_sync("node-peer");
+
+        let mut local_mgr =
+            make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
+
+        // Transition local node to OfflineControlPlane — the cache becomes read-only
+        // for normal API writes, but peer sync must still be able to import.
+        let monitor = StaticBackhaulMonitor {
+            paths: vec![BackhaulPath {
+                name: "lte".into(),
+                is_up: true,
+            }],
+        };
+        assert_eq!(
+            local_mgr.refresh_state(false, &monitor),
+            NodeState::OfflineControlPlane
+        );
+
+        // Normal write should be blocked.
+        assert!(local_mgr
+            .cache
+            .upsert_egress_policy(EgressPolicy {
+                id: "p-api".into(),
+                allowed_destinations: vec![],
+            })
+            .is_err());
+
+        // But peer sync should succeed.
+        let applied = local_mgr.import_peer_sync(&msg).unwrap();
+        assert_eq!(applied, 1);
+        assert!(local_mgr.cache.egress_policies.contains_key("p-peer"));
+    }
+
+    #[test]
+    fn peer_sync_audit_trail_is_recorded() {
+        let kp = key_pair();
+        let peer_mgr = make_manager_with_policy("p-peer", "https://peer.example", "k1", &kp);
+        let msg = peer_mgr.export_peer_sync("node-peer");
+
+        let audit_path = env::temp_dir().join(format!("audit-{}.log", uuid::Uuid::new_v4()));
+        let queue = PersistentAuditQueue::new(&audit_path);
+        let mut local_mgr =
+            make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
+        // Redirect audit queue so we can inspect it.
+        local_mgr.audit_queue = queue.clone();
+
+        local_mgr.import_peer_sync(&msg).unwrap();
+
+        let records = queue.read_all().unwrap();
+        assert!(
+            records
+                .iter()
+                .any(|r| r.event_type == "peer_sync_applied"),
+            "audit trail should contain a peer_sync_applied record"
+        );
     }
 }
