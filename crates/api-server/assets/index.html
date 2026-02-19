@@ -2043,8 +2043,8 @@
                     <td>
                         <div class="status-cell">
                             <span class="badge ${statusClass}">${n.status}</span>
-                            ${isOwner && n.observability_port ? `<button class="observability-btn" onclick='handleViewObservability(${JSON.stringify(n.node_id)}, ${n.observability_port})'>View</button>` : ''}
                             ${canEject ? `<button class="eject-btn" onclick='handleEjectNode(${JSON.stringify(n.node_id)}, this)'>Eject</button>` : ''}
+                            ${isOwner && n.observability_port ? `<button class="observability-btn" onclick='handleViewObservability(${JSON.stringify(n.node_id)}, ${n.observability_port})'>View</button>` : ''}
                         </div>
                     </td>
                 </tr>
