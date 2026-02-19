@@ -978,6 +978,79 @@
         .heartbeat-status-message p:last-child {
             margin-bottom: 0;
         }
+
+        .heartbeat-tasks {
+            margin-top: 14px;
+        }
+
+        .heartbeat-tasks-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        .heartbeat-task-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .heartbeat-task-id {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-dim);
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .heartbeat-task-type {
+            color: var(--text-dim);
+            font-size: 11px;
+        }
+
+        .heartbeat-ping-log {
+            margin-top: 14px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .heartbeat-ping-log-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        .heartbeat-ping-entry {
+            margin: 4px 0;
+            line-height: 1.6;
+        }
+
+        .heartbeat-ping-entry.ok {
+            color: #4ade80;
+        }
+
+        .heartbeat-ping-entry.err {
+            color: #f87171;
+        }
     </style>
 </head>
 <body>
@@ -1422,6 +1495,16 @@
             <div id="heartbeat-message" class="heartbeat-status-message" role="status" aria-live="polite" hidden></div>
         </div>
 
+        <div class="heartbeat-tasks" id="heartbeat-tasks-section" hidden>
+            <div class="heartbeat-tasks-title">Connected Tasks</div>
+            <div id="heartbeat-tasks-list"></div>
+        </div>
+
+        <div class="heartbeat-ping-log" id="heartbeat-ping-log" hidden>
+            <div class="heartbeat-ping-log-title">Activity Log</div>
+            <div id="heartbeat-ping-entries"></div>
+        </div>
+
         <div class="result-actions">
             <div class="result-actions-left">
                 <button type="button" class="btn" id="send-heartbeat-btn">Send Heartbeat</button>
@@ -1442,6 +1525,7 @@
     let isApiConnected = false;
     let lastRelayConnection = null;
     let nodes = [];
+    let tasks = [];
     const taskProgressMemory = new Map();
     const TASK_COMPLETION_LOCKS_STORAGE_KEY = 'vcp_task_completion_locks_v1';
     let taskCompletionLocks = loadTaskCompletionLocks();
@@ -2042,7 +2126,7 @@
             }
 
             if (tasksRes.ok) {
-                const tasks = await tasksRes.json();
+                tasks = await tasksRes.json();
                 refreshRelayConnectionSnapshot(tasks);
                 renderTasks(tasks);
                 document.getElementById('tasks-count').textContent = tasks.length;
@@ -2181,6 +2265,46 @@
         
         // Store node ID for the send button
         sendBtn.setAttribute('data-node-id', nodeId);
+
+        // Populate connected tasks
+        const connectedTasks = tasks.filter(t => Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId));
+        const tasksSection = document.getElementById('heartbeat-tasks-section');
+        const tasksList = document.getElementById('heartbeat-tasks-list');
+        tasksList.textContent = '';
+        if (connectedTasks.length > 0) {
+            connectedTasks.forEach(t => {
+                const row = document.createElement('div');
+                row.className = 'heartbeat-task-row';
+                const idSpan = document.createElement('span');
+                idSpan.className = 'heartbeat-task-id';
+                idSpan.textContent = t.task_id.substring(0, 12) + '···';
+                idSpan.title = t.task_id;
+                const typeSpan = document.createElement('span');
+                typeSpan.className = 'heartbeat-task-type';
+                typeSpan.textContent = t.task_type;
+                const statusCls = t.status === 'completed' ? 'badge-completed'
+                    : t.status === 'failed' ? 'badge-failed' : 'badge-pending';
+                const statusBadge = document.createElement('span');
+                statusBadge.className = `badge ${statusCls}`;
+                statusBadge.textContent = t.status;
+                row.appendChild(idSpan);
+                row.appendChild(typeSpan);
+                row.appendChild(statusBadge);
+                tasksList.appendChild(row);
+            });
+            tasksSection.hidden = false;
+        } else {
+            const empty = document.createElement('div');
+            empty.className = 'heartbeat-task-row';
+            empty.style.color = 'var(--text-muted)';
+            empty.textContent = 'No tasks currently assigned to this node.';
+            tasksList.appendChild(empty);
+            tasksSection.hidden = false;
+        }
+
+        // Reset ping log
+        document.getElementById('heartbeat-ping-log').hidden = true;
+        document.getElementById('heartbeat-ping-entries').textContent = '';
         
         document.getElementById('heartbeat-modal-overlay').classList.add('open');
         document.getElementById('heartbeat-modal-overlay').setAttribute('aria-hidden', 'false');
@@ -2201,6 +2325,12 @@
         messageEl.textContent = '';
         messageEl.hidden = true;
         messageEl.className = 'heartbeat-status-message';
+
+        // Clear tasks section and ping log
+        document.getElementById('heartbeat-tasks-section').hidden = true;
+        document.getElementById('heartbeat-tasks-list').textContent = '';
+        document.getElementById('heartbeat-ping-log').hidden = true;
+        document.getElementById('heartbeat-ping-entries').textContent = '';
     }
 
     async function sendNodeHeartbeat() {
@@ -2218,14 +2348,24 @@
         messageEl.textContent = '';
         messageEl.className = 'heartbeat-status-message';
 
+        // Show ping activity log
+        const pingLog = document.getElementById('heartbeat-ping-log');
+        const pingEntries = document.getElementById('heartbeat-ping-entries');
+        pingLog.hidden = false;
+
+        addHeartbeatPingEntry(pingEntries, `PUT ${apiBaseUrl}/api/v1/nodes/${nodeId}/heartbeat`);
+
         try {
+            const t0 = Date.now();
             const res = await fetch(`${apiBaseUrl}/api/v1/nodes/${encodeURIComponent(nodeId)}/heartbeat`, {
                 method: 'PUT',
                 headers: getAuthHeaders(),
             });
+            const elapsed = Date.now() - t0;
 
             if (res.ok) {
                 const data = await res.json();
+                addHeartbeatPingEntry(pingEntries, `HTTP ${res.status} — ${elapsed}ms`, 'ok');
                 // Create DOM elements safely to avoid XSS
                 const successMsg = document.createElement('div');
                 const p1 = document.createElement('p');
@@ -2249,6 +2389,7 @@
                 sendBtn.disabled = false;
                 sendBtn.setAttribute('data-mode', 'close');
             } else {
+                addHeartbeatPingEntry(pingEntries, `HTTP ${res.status} — ${elapsed}ms`, 'err');
                 const err = await res.json();
                 messageEl.textContent = `✗ Failed to send heartbeat: ${err.message || 'Unknown error'}`;
                 messageEl.classList.add('error');
@@ -2259,6 +2400,7 @@
                 sendBtn.removeAttribute('data-mode');
             }
         } catch (err) {
+            addHeartbeatPingEntry(pingEntries, `Error: ${err.message}`, 'err');
             messageEl.textContent = `✗ Network error: ${err.message}`;
             messageEl.classList.add('error');
             messageEl.hidden = false;
@@ -2267,6 +2409,13 @@
             sendBtn.disabled = false;
             sendBtn.removeAttribute('data-mode');
         }
+    }
+
+    function addHeartbeatPingEntry(container, text, cls) {
+        const entry = document.createElement('div');
+        entry.className = 'heartbeat-ping-entry' + (cls ? ' ' + cls : '');
+        entry.textContent = `[${new Date().toISOString()}] ${text}`;
+        container.appendChild(entry);
     }
 
     function renderNodes(nodes) {
