@@ -12,12 +12,14 @@ use tracing::{debug, info, warn};
 
 pub mod discovery;
 pub mod health;
+pub mod relay_qos;
 pub mod routing;
 pub mod scoring;
 pub mod state_machine;
 
 pub use discovery::{InterfaceDiscovery, InterfaceInfo, InterfaceRegistry, InterfaceType};
 pub use health::{HealthProber, HealthStats, ProbeConfig};
+pub use relay_qos::{RelayQosConfig, RelayQosManager};
 pub use routing::{RoutingConfig, RoutingManager};
 pub use scoring::{InterfaceScore, InterfaceScorer, ScoringConfig};
 pub use state_machine::{
@@ -57,6 +59,13 @@ pub struct BackhaulConfig {
     pub scoring_config: ScoringConfig,
     pub state_machine_config: StateMachineConfig,
     pub routing_config: RoutingConfig,
+    /// WAN-side QoS configuration for connect_only relay sessions.
+    ///
+    /// When a relay session is active (an `open_internet` or `any` node is
+    /// running a `connect_only` task), call [`BackhaulManager::activate_relay_qos`]
+    /// to apply these rules on the active WAN interface, and
+    /// [`BackhaulManager::deactivate_relay_qos`] when the session ends.
+    pub relay_qos_config: RelayQosConfig,
 }
 
 /// Per-interface state tracking
@@ -76,6 +85,7 @@ pub struct BackhaulManager {
     routing: Arc<RwLock<RoutingManager>>,
     interface_states: Arc<RwLock<HashMap<String, InterfaceState>>>,
     active_interface: Arc<RwLock<Option<String>>>,
+    relay_qos: RelayQosManager,
 }
 
 impl BackhaulManager {
@@ -87,6 +97,10 @@ impl BackhaulManager {
         let routing = Arc::new(RwLock::new(RoutingManager::new(
             config.routing_config.clone(),
         )));
+        let relay_qos = RelayQosManager::new(
+            config.relay_qos_config.clone(),
+            config.routing_config.execute_commands,
+        );
 
         Self {
             config,
@@ -96,6 +110,7 @@ impl BackhaulManager {
             routing,
             interface_states: Arc::new(RwLock::new(HashMap::new())),
             active_interface: Arc::new(RwLock::new(None)),
+            relay_qos,
         }
     }
 
@@ -273,6 +288,44 @@ impl BackhaulManager {
         Ok(())
     }
 
+    /// Activate WAN-side relay QoS on the currently active backhaul interface.
+    ///
+    /// Call this when a `connect_only` relay session starts on an
+    /// `open_internet` or `any` node.  The rules guarantee minimum bandwidth
+    /// and reduce latency for relayed traffic on the WAN backhaul interface
+    /// while preserving enough capacity for the node's own control-plane
+    /// traffic.
+    ///
+    /// Returns `Ok(())` immediately if no interface is currently active or if
+    /// relay QoS is disabled in the configuration.
+    pub async fn activate_relay_qos(&self) -> Result<()> {
+        let active = self.active_interface.read().await;
+        if let Some(iface) = active.as_deref() {
+            self.relay_qos.activate_on_interface(iface).await
+        } else {
+            debug!("No active backhaul interface; relay QoS activation deferred");
+            Ok(())
+        }
+    }
+
+    /// Deactivate WAN-side relay QoS from the currently active backhaul
+    /// interface.
+    ///
+    /// Call this when a `connect_only` relay session ends so that the WAN
+    /// interface reverts to its default queuing behaviour.
+    ///
+    /// Returns `Ok(())` immediately if no interface is currently active or if
+    /// relay QoS is disabled in the configuration.
+    pub async fn deactivate_relay_qos(&self) -> Result<()> {
+        let active = self.active_interface.read().await;
+        if let Some(iface) = active.as_deref() {
+            self.relay_qos.deactivate_from_interface(iface).await
+        } else {
+            debug!("No active backhaul interface; relay QoS deactivation skipped");
+            Ok(())
+        }
+    }
+
     /// Get current active backhaul (public API)
     pub async fn current_backhaul(&self) -> Option<ActiveBackhaul> {
         let active = self.active_interface.read().await;
@@ -324,6 +377,10 @@ impl Clone for BackhaulManager {
             routing: self.routing.clone(),
             interface_states: self.interface_states.clone(),
             active_interface: self.active_interface.clone(),
+            relay_qos: RelayQosManager::new(
+                self.config.relay_qos_config.clone(),
+                self.config.routing_config.execute_commands,
+            ),
         }
     }
 }
@@ -359,5 +416,43 @@ mod tests {
         // Should have some interfaces discovered (mock or real)
         let all_states = manager.get_all_interface_states().await;
         debug!("Discovered {} interfaces", all_states.len());
+    }
+
+    #[tokio::test]
+    async fn test_activate_relay_qos_no_active_interface() {
+        // When no interface is active, activate_relay_qos must succeed silently.
+        let mut config = BackhaulConfig::default();
+        config.routing_config.execute_commands = false;
+
+        let manager = BackhaulManager::new(config);
+
+        // No active interface yet – should return Ok without errors.
+        let result = manager.activate_relay_qos().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_deactivate_relay_qos_no_active_interface() {
+        // When no interface is active, deactivate_relay_qos must succeed silently.
+        let mut config = BackhaulConfig::default();
+        config.routing_config.execute_commands = false;
+
+        let manager = BackhaulManager::new(config);
+
+        let result = manager.deactivate_relay_qos().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_relay_qos_disabled_in_config() {
+        let mut config = BackhaulConfig::default();
+        config.routing_config.execute_commands = false;
+        config.relay_qos_config.enabled = false;
+
+        let manager = BackhaulManager::new(config);
+
+        // Disabled relay QoS should be a no-op regardless of interface state.
+        assert!(manager.activate_relay_qos().await.is_ok());
+        assert!(manager.deactivate_relay_qos().await.is_ok());
     }
 }
