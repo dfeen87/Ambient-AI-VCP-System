@@ -22,7 +22,9 @@ pub mod backhaul;
 pub mod hotspot;
 pub mod tether;
 
-pub use backhaul::{ActiveBackhaul, BackhaulManager, BackhaulState, RelayQosConfig, RelayQosManager};
+pub use backhaul::{
+    ActiveBackhaul, BackhaulManager, BackhaulState, RelayQosConfig, RelayQosManager,
+};
 
 /// Connectivity layer errors
 #[derive(Debug, Error)]
