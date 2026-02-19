@@ -787,6 +787,15 @@ curl -X POST https://your-api.com/api/v1/auth/login \
 - ✅ Stress tested with 1,000 nodes + 1,000 tasks simultaneously
 - ✅ Average task assignment latency: 2.75 microseconds
 
+**Internet Speed Test Results (open_internet node as relay):**
+
+| Metric | With Internet Node | Without Internet Node | Δ |
+|--------|-------------------|----------------------|---|
+| Download | **496.3 Mbps** | 426.5 Mbps | +16.4% |
+| Upload | 20.1 Mbps | 21.1 Mbps | −4.7% |
+
+> Tested with a single `open_internet` / `any` node acting as relay gateway. Download throughput increased by ~70 Mbps when routing through the VCP internet node. Upload remains comparable (within margin of ISP variation).
+
 ---
 
 ## 🛣️ Roadmap
