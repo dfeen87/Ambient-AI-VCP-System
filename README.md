@@ -1,12 +1,12 @@
 # Ambient AI + VCP System
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-254%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-264%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
  
 A **live online application** and implementation of a **Verifiable Computation Protocol (VCP)** for running and verifying distributed compute tasks across many machines.
 
 ## 🎯 Status: **Live in Production (Public Demo Running)**
 
-✅ **All 254 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
+✅ **All 264 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
 
 > Yes — this app is already deployed and running online.
 > You can use it as-is, and if you self-host it, you should still tune infra/security settings for your own environment.
@@ -114,6 +114,7 @@ Tip: To quickly verify the public demo is reachable, run:
 - 🎨 **Offline-First Dashboard Fonts**: Syne and JetBrains Mono fonts are self-hosted from bundled woff2 files; no Google Fonts CDN dependency, dashboard renders fully in air-gapped environments
 - 🛡️ **Safe-Default Backhaul Routing**: `monitor_only = true` is the new default — the backhaul manager observes interfaces and scores them without touching kernel routing tables until explicitly opted in; `ip rule` entries are scoped to `from <src-ip>` to avoid affecting unrelated host traffic; health probes bind to the interface's own address for accurate per-interface metrics
 - 🌐 **NCSI Spoof Server**: `NcsiSpoofServer` prevents false `ERR_INTERNET_DISCONNECTED` errors when the node acts as internet gateway for connected clients. When a client's direct internet is gone and the VCP node is the upstream provider, the client OS connectivity checks (Windows NCSI `GET /connecttest.txt`, Linux NetworkManager `GET /check_network_status.txt`, and generic captive-portal probes) are answered locally by a lightweight HTTP listener configured with `NcsiSpoofConfig`, stopping the OS from blocking traffic with a false disconnection signal.
+- 📶 **Relay Session QoS**: `RelayQosManager` installs WAN-side `tc` HTB + FQ-CoDel rules on the active backhaul interface when a `connect_only` session is active on an `open_internet` or `any` node — guaranteeing minimum bandwidth and low latency for relayed traffic while preventing node-internal traffic from crowding out the relay stream. Call `BackhaulManager::activate_relay_qos()` when a session starts and `deactivate_relay_qos()` when it ends.
 
 ### Security & Infrastructure
 - 🔐 **JWT Middleware Authentication**: Global JWT enforcement at middleware layer (not handler extractors)
@@ -447,7 +448,7 @@ When you clone this repo, you immediately get:
 - ✅ **Web Dashboard** for real-time monitoring
 - ✅ **AILEE ∆v Metric** for continuous efficiency monitoring (new)
 - ✅ **Offline-First + Peer Policy Sync** — nodes keep working and routing internet traffic even without the API endpoint (new)
-- ✅ **246 Passing Tests** + Zero compiler warnings
+- ✅ **264 Passing Tests** + Zero compiler warnings
 - ✅ **Complete Documentation** (15+ guides)
 - ✅ **MIT License** - Use commercially, modify freely
 
@@ -473,7 +474,7 @@ cd Ambient-AI-VCP-System
 # Build the project (zero warnings!)
 cargo build --release
 
-# Run all tests (246 tests)
+# Run all tests (264 tests)
 cargo test
 ```
 
@@ -846,6 +847,13 @@ curl -X POST https://your-api.com/api/v1/auth/login \
 - ✅ **Self-Hosted Dashboard Fonts** — Syne and JetBrains Mono bundled as woff2 assets; no CDN dependency, dashboard works fully offline and in air-gapped deployments
 - ✅ **Safe-Default Backhaul Routing** — `monitor_only = true` default prevents unintended kernel routing changes; `ip rule` entries scoped to source IP; health probes bound to the interface under test for accurate per-interface metrics
 
+### ⭐ Phase 2.9 - Relay QoS for connect_only Tasks (COMPLETED) 🆕
+- ✅ **WAN-side Relay QoS** — `RelayQosManager` installs Linux `tc` HTB + FQ-CoDel rules on the active WAN backhaul interface when a `connect_only` session starts on an `open_internet` or `any` node; relay traffic receives a guaranteed minimum bandwidth and a burst ceiling while node-internal traffic is protected by a separate reserved floor — eliminating congestion between relay streams and node control traffic
+- ✅ **DSCP/TOS Classification** — egress packets already marked with DSCP EF (value 46) are steered into the high-priority relay HTB class via a `u32` filter; the HTB default class is also set to the relay class so unmarked relay TCP connections benefit without requiring end-to-end DSCP support
+- ✅ **Bufferbloat Reduction** — an FQ-CoDel qdisc is attached to the relay class by default, providing active queue management and per-flow fairness that keeps relay session latency low even under sustained throughput
+- ✅ **`BackhaulManager` integration** — new `activate_relay_qos()` and `deactivate_relay_qos()` methods apply or remove the WAN QoS rules against the currently active interface; `RelayQosConfig` is part of `BackhaulConfig` with safe production defaults (10 Mbps guaranteed, 1 Gbps ceiling, 1 Mbps node floor)
+- ✅ **10 new tests** across `relay_qos` unit tests and `BackhaulManager` integration tests
+
 ### 🔄 Phase 3 - Advanced Features (IN PROGRESS)
 - [x] Authentication & authorization (JWT/API keys) ✅ **COMPLETED**
 - [x] Data persistence (PostgreSQL) ✅ **COMPLETED**
@@ -880,7 +888,7 @@ ambient-vcp/
 ├── .env.example                    # Environment variables template
 │
 ├── crates/                         # Rust workspace crates
-│   ├── ambient-node/               # Node implementation + 100 tests
+│   ├── ambient-node/               # Node implementation + 110 tests
 │   │   ├── src/offline.rs          #   LocalSessionManager + PeerPolicySyncMessage
 │   │   └── src/connectivity/       #   Multi-backhaul, hotspot, tether subsystems
 │   ├── ailee-trust-layer/          # AILEE Trust Layer + 38 tests
