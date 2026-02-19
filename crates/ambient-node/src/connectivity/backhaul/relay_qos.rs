@@ -80,9 +80,9 @@ impl Default for RelayQosConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            relay_min_bandwidth_kbps: 10_000,    // 10 Mbps guaranteed
+            relay_min_bandwidth_kbps: 10_000, // 10 Mbps guaranteed
             relay_max_bandwidth_kbps: 1_000_000, // 1 Gbps ceiling
-            node_min_bandwidth_kbps: 1_000,      // 1 Mbps reserved for node traffic
+            node_min_bandwidth_kbps: 1_000,   // 1 Mbps reserved for node traffic
             use_fq_codel: true,
             relay_dscp: 46, // EF – Expedited Forwarding
         }
@@ -155,33 +155,13 @@ impl RelayQosManager {
         // Root HTB qdisc.  Default class `10` means unclassified packets land
         // in the relay class – this handles unmarked relay TCP connections.
         self.execute(&[
-            "tc",
-            "qdisc",
-            "add",
-            "dev",
-            interface,
-            "root",
-            "handle",
-            "1:",
-            "htb",
-            "default",
-            "10",
+            "tc", "qdisc", "add", "dev", interface, "root", "handle", "1:", "htb", "default", "10",
         ])?;
 
         // Root class – total guaranteed rate (floor for both leaf classes).
         self.execute(&[
-            "tc",
-            "class",
-            "add",
-            "dev",
-            interface,
-            "parent",
-            "1:",
-            "classid",
-            "1:1",
-            "htb",
-            "rate",
-            &total_str,
+            "tc", "class", "add", "dev", interface, "parent", "1:", "classid", "1:1", "htb",
+            "rate", &total_str,
         ])?;
 
         // Relay class 1:10 – high priority, guaranteed minimum, can burst to
@@ -229,15 +209,7 @@ impl RelayQosManager {
         // and per-flow fairness, which reduces bufferbloat-induced latency.
         if self.config.use_fq_codel {
             self.execute(&[
-                "tc",
-                "qdisc",
-                "add",
-                "dev",
-                interface,
-                "parent",
-                "1:10",
-                "handle",
-                "10:",
+                "tc", "qdisc", "add", "dev", interface, "parent", "1:10", "handle", "10:",
                 "fq_codel",
             ])?;
         }
@@ -248,25 +220,8 @@ impl RelayQosManager {
         let dscp_mask = "0xfc"; // mask for upper 6 bits
 
         self.execute(&[
-            "tc",
-            "filter",
-            "add",
-            "dev",
-            interface,
-            "protocol",
-            "ip",
-            "parent",
-            "1:",
-            "prio",
-            "1",
-            "u32",
-            "match",
-            "ip",
-            "tos",
-            &dscp_tos,
-            dscp_mask,
-            "flowid",
-            "1:10",
+            "tc", "filter", "add", "dev", interface, "protocol", "ip", "parent", "1:", "prio", "1",
+            "u32", "match", "ip", "tos", &dscp_tos, dscp_mask, "flowid", "1:10",
         ])?;
 
         info!(interface = %interface, "Relay QoS activated");
@@ -312,10 +267,7 @@ impl RelayQosManager {
             .args(&args[1..])
             .output()
             .map_err(|e| {
-                ConnectivityError::RoutingError(format!(
-                    "Failed to execute tc command: {}",
-                    e
-                ))
+                ConnectivityError::RoutingError(format!("Failed to execute tc command: {}", e))
             })?;
 
         if !output.status.success() {
