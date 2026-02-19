@@ -1656,12 +1656,27 @@ impl AppState {
         Ok(true)
     }
 
-    /// Update node heartbeat timestamp
+    /// Update node heartbeat timestamp and record activity history
     pub async fn update_node_heartbeat(&self, node_id: &str, owner_id: Uuid) -> ApiResult<bool> {
-        // Verify ownership
-        if !self.check_node_ownership(node_id, owner_id).await? {
+        // Fetch current node state (also verifies ownership and existence)
+        let node_row = sqlx::query(
+            r#"
+            SELECT health_score, status
+            FROM nodes
+            WHERE node_id = $1 AND owner_id = $2 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(node_id)
+        .bind(owner_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        let Some(node_row) = node_row else {
             return Ok(false);
-        }
+        };
+
+        let health_score: f64 = node_row.get("health_score");
+        let status: String = node_row.get("status");
 
         let now = chrono::Utc::now();
         let result = sqlx::query(
@@ -1677,7 +1692,39 @@ impl AppState {
         .execute(&self.db)
         .await?;
 
-        Ok(result.rows_affected() > 0)
+        if result.rows_affected() == 0 {
+            return Ok(false);
+        }
+
+        // Count currently active task assignments for this node
+        let active_tasks: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM task_assignments
+            WHERE node_id = $1 AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(node_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        // Record heartbeat activity in history table
+        sqlx::query(
+            r#"
+            INSERT INTO node_heartbeat_history
+                (node_id, health_score, active_tasks, status, recorded_at)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(node_id)
+        .bind(health_score)
+        .bind(active_tasks as i32)
+        .bind(&status)
+        .bind(now)
+        .execute(&self.db)
+        .await?;
+
+        Ok(true)
     }
 
     /// Reject a node owned by the requesting user
