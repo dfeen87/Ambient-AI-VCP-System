@@ -13,21 +13,11 @@ A **live online application** and implementation of a **Verifiable Computation P
 
 ---
 
-## 🚀 Latest Release: AILEE Mesh & Offline AI Infrastructure Upgrade
+## 🧩 What Is This?
 
-This release ships a set of upgrades that make the AILEE mesh far more resilient, predictable, and capable of operating even when the network isn't.
+The Ambient AI + VCP System is an open-source platform for **distributed, verifiable AI computing**. It connects devices that have spare compute capacity — laptops, servers, edge boxes — into a self-organizing mesh where work can be submitted, scheduled, and cryptographically verified. A built-in control plane handles node registration, health scoring, task routing, and result validation, so you don't have to build any of that yourself.
 
-**Trust layer & ∆v metric.** The ∆v efficiency metric described in the AILEE paper is now a real, continuous integrator — it processes live telemetry and produces stable, overflow‑safe efficiency gains. Exponential resonance gates are clamped to `[-700, 700]` before evaluation to prevent `f64` overflow under extreme inputs.
-
-**Peer-to-peer policy sync & audit.** Nodes can now sync policies directly with each other, even with no internet access, using SHA3‑verified peer‑to‑peer snapshots that merge safely without overwriting local state. The SHA3 hash covers policy IDs, allowed destinations, and full verification‑key bytes, ensuring that modifications to any component invalidate the hash. Every policy import is also appended to a persistent, SHA3 hash‑chained audit log, providing a tamper‑evident record of the full policy‑sharing history.
-
-**Offline session authentication.** Session leases are signed with Ed25519 and verified fully offline, so a node can authenticate new sessions without ever contacting the control plane.
-
-**Mesh connectivity & peer routing.** Full mesh connectivity analysis gives each node the ability to classify its own reachability across three states (`Online`, `OfflineControlPlane`, `NoUpstream`) and route through Universal/Open peers when a direct internet path is unavailable — Universal nodes are preferred over Open nodes to minimise relay depth.
-
-**Real-time session revocation.** A critical gap in the gateway was closed: sessions can now be explicitly revoked in real time, ensuring nodes stop relaying traffic the moment a connect session ends.
-
-Together, these changes push the system closer to a self‑healing, offline‑capable AI network — one that keeps working even when the control plane goes dark. 🌙
+What makes the system distinctive is its combination of a **Verifiable Computation Protocol (VCP)** with a practical mesh runtime. Every task can be backed by a Zero-Knowledge proof (Groth16/BN254) that proves the computation happened correctly without revealing private inputs, and every node carries its own trust score derived from real telemetry. Beyond pure compute, the AILEE trust layer adds multi-model consensus, an energy-weighted efficiency metric (∆v), and offline-first operation — nodes can authenticate sessions, cache egress policies, and sync with peers over a direct P2P channel even when the central API is unreachable. The result is an end-to-end platform for building trustworthy, resilient AI workflows across heterogeneous hardware.
 
 ---
 
