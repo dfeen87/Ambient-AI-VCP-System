@@ -273,26 +273,18 @@ impl HealthProber {
             };
             let socket_result = TcpSocket::new_v4().and_then(|s| s.bind(local).map(|_| s));
             match socket_result {
-                Ok(socket) => {
-                    timeout(timeout_duration, socket.connect(remote))
-                        .await
-                        .unwrap_or_else(|_| {
-                            Err(std::io::Error::new(
-                                std::io::ErrorKind::TimedOut,
-                                "timeout",
-                            ))
-                        })
-                }
+                Ok(socket) => timeout(timeout_duration, socket.connect(remote))
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))
+                    }),
                 Err(e) => Err(e),
             }
         } else {
             timeout(timeout_duration, TcpStream::connect(&addr))
                 .await
                 .unwrap_or_else(|_| {
-                    Err(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "timeout",
-                    ))
+                    Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))
                 })
         };
 
@@ -459,8 +451,8 @@ mod tests {
             down_threshold: 2,
         };
 
-        let mut prober = HealthProber::new("lo".to_string(), config)
-            .with_local_addr("127.0.0.1".to_string());
+        let mut prober =
+            HealthProber::new("lo".to_string(), config).with_local_addr("127.0.0.1".to_string());
         let results = prober.probe_once().await;
 
         assert_eq!(results.len(), 1);

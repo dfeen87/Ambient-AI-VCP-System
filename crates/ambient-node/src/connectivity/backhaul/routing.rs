@@ -88,8 +88,10 @@ impl RoutingManager {
             self.next_table_id = TABLE_ID_BASE;
         }
 
-        self.table_assignments
-            .insert(interface.to_string(), (table_id, source_ip.map(str::to_string)));
+        self.table_assignments.insert(
+            interface.to_string(),
+            (table_id, source_ip.map(str::to_string)),
+        );
         table_id
     }
 
@@ -338,9 +340,7 @@ impl RoutingManager {
         let assignments: Vec<_> = self.table_assignments.drain().collect();
 
         for (interface, (table_id, source_ip)) in assignments {
-            if let Err(e) =
-                self.remove_routing_rule(&interface, table_id, source_ip.as_deref())
-            {
+            if let Err(e) = self.remove_routing_rule(&interface, table_id, source_ip.as_deref()) {
                 warn!(interface = %interface, error = %e, "Failed to remove routing rule");
             }
 
@@ -417,9 +417,7 @@ mod tests {
             ..Default::default()
         });
 
-        manager
-            .switch_active_interface("eth0", None, None)
-            .unwrap();
+        manager.switch_active_interface("eth0", None, None).unwrap();
         assert_eq!(manager.active_interface(), Some("eth0"));
 
         manager.rollback_interface("eth0").unwrap();
@@ -445,11 +443,8 @@ mod tests {
             ..Default::default()
         });
 
-        let result = manager.switch_active_interface(
-            "eth0",
-            None,
-            Some("192.168.1.100".to_string()),
-        );
+        let result =
+            manager.switch_active_interface("eth0", None, Some("192.168.1.100".to_string()));
         assert!(result.is_ok());
         assert_eq!(manager.active_interface(), Some("eth0"));
     }
