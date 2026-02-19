@@ -1,12 +1,12 @@
 # Ambient AI + VCP System
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-129%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-246%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
  
 A **live online application** and implementation of a **Verifiable Computation Protocol (VCP)** for running and verifying distributed compute tasks across many machines.
 
 ## 🎯 Status: **Live in Production (Public Demo Running)**
 
-✅ **All 129 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
+✅ **All 246 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
 
 > Yes — this app is already deployed and running online.
 > You can use it as-is, and if you self-host it, you should still tune infra/security settings for your own environment.
@@ -106,7 +106,15 @@ Tip: To quickly verify the public demo is reachable, run:
 - ✅ **Type Safety**: Full Rust type system guarantees
 - 🔍 **Local Node Observability**: Privacy-preserving, operator-only inspection interface (localhost-only, read-only, no sensitive data exposure)
 
-### Security & Infrastructure (LATEST)
+### Post-v2.3.0 Improvements (LATEST)
+- 🛣️ **Internet Path Routing**: `PeerRouter` resolves direct or one-hop relay paths through `Universal`/`Open` nodes; `MeshCoordinator` exposes `sync_connectivity()` and `find_peer_route()` for runtime reachability updates
+- 🔌 **Gateway Session Lifecycle**: `DataPlaneGateway::add_session()` / `revoke_session()` — sessions provisioned and revoked at runtime so nodes stop relaying traffic the instant a connect session ends
+- ⚡ **Non-Blocking Password Hashing**: `hash_password_async()` offloads bcrypt to a blocking thread pool; configurable cost via `BCRYPT_COST` env var (default 12, range 4–31)
+- 🔔 **Heartbeat-Triggered Task Sync**: `update_node_heartbeat` now calls `assign_pending_tasks_for_node` on every ping, so live nodes receive eligible pending tasks continuously — not only at registration
+- 🎨 **Offline-First Dashboard Fonts**: Syne and JetBrains Mono fonts are self-hosted from bundled woff2 files; no Google Fonts CDN dependency, dashboard renders fully in air-gapped environments
+- 🛡️ **Safe-Default Backhaul Routing**: `monitor_only = true` is the new default — the backhaul manager observes interfaces and scores them without touching kernel routing tables until explicitly opted in; `ip rule` entries are scoped to `from <src-ip>` to avoid affecting unrelated host traffic; health probes bind to the interface's own address for accurate per-interface metrics
+
+### Security & Infrastructure
 - 🔐 **JWT Middleware Authentication**: Global JWT enforcement at middleware layer (not handler extractors)
 - 🛡️ **Rate Limiting**: Per-endpoint tier-based rate limiting (Auth: 10rpm, Nodes: 20rpm, Tasks: 30rpm, Proofs: 15rpm)
 - 🔄 **Refresh Tokens**: JWT token rotation with 30-day refresh tokens and automatic revocation
@@ -199,6 +207,7 @@ Tip: To quickly verify the public demo is reachable, run:
   - **Round-robin**: Fair distribution
   - **Least-loaded**: Load balancing
   - **Latency-aware**: Geographic optimization
+- 🛣️ **`PeerRouter`**: Classifies each node's internet reachability (`Online`/`Offline`/`Unknown`) and resolves forwarding paths — direct for online nodes, one-hop relay via `Universal` or `Open` nodes otherwise
 - ✅ Proof verification pipeline
 - 💰 Reward distribution (future)
 
@@ -437,7 +446,7 @@ When you clone this repo, you immediately get:
 - ✅ **Web Dashboard** for real-time monitoring
 - ✅ **AILEE ∆v Metric** for continuous efficiency monitoring (new)
 - ✅ **Offline-First + Peer Policy Sync** — nodes keep working and routing internet traffic even without the API endpoint (new)
-- ✅ **129 Passing Tests** + Zero compiler warnings
+- ✅ **246 Passing Tests** + Zero compiler warnings
 - ✅ **Complete Documentation** (15+ guides)
 - ✅ **MIT License** - Use commercially, modify freely
 
@@ -463,7 +472,7 @@ cd Ambient-AI-VCP-System
 # Build the project (zero warnings!)
 cargo build --release
 
-# Run all tests (59 tests)
+# Run all tests (246 tests)
 cargo test
 ```
 
@@ -512,14 +521,14 @@ open http://localhost:3000/
 
 | Component | Unit Tests | Integration Tests | Load Tests | Total |
 |-----------|-----------|-------------------|------------|-------|
-| ambient-node | 32 | - | - | 32 |
+| ambient-node | 83 | 17 | - | 100 |
 | ailee-trust-layer | 38 | - | - | 38 |
-| api-server | 1 | 13 | 4 | 18 |
-| federated-learning | 5 | - | - | 5 |
-| mesh-coordinator | 3 | - | - | 3 |
-| wasm-engine | 4 | - | - | 4 |
-| zk-prover | 6 | - | - | 6 |
-| **TOTAL** | **89** | **13** | **4** | **106** |
+| api-server | 36 | 24 | 2 | 62 |
+| federated-learning | 8 | - | - | 8 |
+| mesh-coordinator | 21 | - | - | 21 |
+| wasm-engine | 6 | - | - | 6 |
+| zk-prover | 8 | - | - | 8 |
+| **TOTAL** | **200** | **41** | **2** | **246** |
 
 ### Running Tests
 
@@ -827,6 +836,15 @@ curl -X POST https://your-api.com/api/v1/auth/login \
 - ✅ **Real-time session revocation** — `DataPlaneGateway::revoke_session()` removes a session from the live store instantly, stopping traffic relay the moment a connect session ends
 - ✅ **70 new tests** across `ailee-trust-layer` and `ambient-node` crates
 
+### ⭐ Phase 2.8 - Routing, Auth Hardening & Operational Reliability (COMPLETED) 🆕
+- ✅ **Internet Path Routing** — `PeerRouter` added to `mesh-coordinator`; classifies node reachability and resolves direct or relay forwarding paths through `Universal`/`Open` nodes
+- ✅ **Gateway Session Lifecycle** — `DataPlaneGateway` gains `add_session()` and `revoke_session()` for runtime session management; relaying stops the moment a session is revoked
+- ✅ **Non-Blocking Password Hashing** — `hash_password_async()` offloads bcrypt to `spawn_blocking`; cost configurable via `BCRYPT_COST` env var (default 12)
+- ✅ **Pepper Config Polish** — all pepper env vars pre-configured in `docker-compose.yml` and `.env.example`; missing-pepper warnings downgraded to `debug` in development
+- ✅ **Heartbeat-Triggered Task Assignment** — `update_node_heartbeat` now calls `assign_pending_tasks_for_node`, closing the gap where live nodes only received tasks at registration time
+- ✅ **Self-Hosted Dashboard Fonts** — Syne and JetBrains Mono bundled as woff2 assets; no CDN dependency, dashboard works fully offline and in air-gapped deployments
+- ✅ **Safe-Default Backhaul Routing** — `monitor_only = true` default prevents unintended kernel routing changes; `ip rule` entries scoped to source IP; health probes bound to the interface under test for accurate per-interface metrics
+
 ### 🔄 Phase 3 - Advanced Features (IN PROGRESS)
 - [x] Authentication & authorization (JWT/API keys) ✅ **COMPLETED**
 - [x] Data persistence (PostgreSQL) ✅ **COMPLETED**
@@ -861,15 +879,16 @@ ambient-vcp/
 ├── .env.example                    # Environment variables template
 │
 ├── crates/                         # Rust workspace crates
-│   ├── ambient-node/               # Node implementation + 32 tests
-│   │   └── src/offline.rs          #   LocalSessionManager + PeerPolicySyncMessage
+│   ├── ambient-node/               # Node implementation + 100 tests
+│   │   ├── src/offline.rs          #   LocalSessionManager + PeerPolicySyncMessage
+│   │   └── src/connectivity/       #   Multi-backhaul, hotspot, tether subsystems
 │   ├── ailee-trust-layer/          # AILEE Trust Layer + 38 tests
 │   │   └── src/metric.rs           #   AileeMetric (∆v), AileeSample, AileeParams
-│   ├── wasm-engine/                # WASM execution runtime + 4 tests
-│   ├── zk-prover/                  # ZK proof generation (Groth16) + 6 tests
-│   ├── mesh-coordinator/           # Task orchestration + 3 tests
-│   ├── federated-learning/         # FL protocol + 5 tests
-│   ├── api-server/                 # REST API server + 18 tests (1 unit + 13 integration + 4 load)
+│   ├── wasm-engine/                # WASM execution runtime + 6 tests
+│   ├── zk-prover/                  # ZK proof generation (Groth16) + 8 tests
+│   ├── mesh-coordinator/           # Task orchestration + peer routing + 21 tests
+│   ├── federated-learning/         # FL protocol + 8 tests
+│   ├── api-server/                 # REST API server + 62 tests (36 unit + 24 integration + 2 load/smoke)
 │   └── cli/                        # Command-line interface
 │
 ├── docs/                           # Documentation
@@ -915,7 +934,7 @@ ambient-vcp/
 ```
 
 **Key Directories:**
-- `crates/` - Core Rust implementation with 48 passing tests
+- `crates/` - Core Rust implementation with 246 passing tests
 - `docs/` - Comprehensive documentation and whitepapers
 - `.github/workflows/` - Automated CI/CD with tests, linting, and builds
 - `crates/api-server/assets/` - Embedded dashboard + custom Swagger UI assets
@@ -989,6 +1008,6 @@ MIT License - see [LICENSE](LICENSE) file for details
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=WebAssembly&logoColor=white)](https://webassembly.org/)
 
-**Status**: Production-Ready for Development | **Version**: 2.1.0 | **Tests**: 59 Passing ✅
+**Status**: Production-Ready for Development | **Version**: 2.3.0 | **Tests**: 246 Passing ✅
 
 </div>
