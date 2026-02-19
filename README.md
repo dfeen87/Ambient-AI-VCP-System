@@ -11,6 +11,26 @@ A **live online application** and implementation of a **Verifiable Computation P
 > Yes — this app is already deployed and running online.
 > You can use it as-is, and if you self-host it, you should still tune infra/security settings for your own environment.
 
+---
+
+## 🚀 Latest Release: AILEE Mesh & Offline AI Infrastructure Upgrade
+
+This release ships a set of upgrades that make the AILEE mesh far more resilient, predictable, and capable of operating even when the network isn't.
+
+**Trust layer & ∆v metric.** The ∆v efficiency metric described in the AILEE paper is now a real, continuous integrator — it processes live telemetry and produces stable, overflow‑safe efficiency gains. Exponential resonance gates are clamped to `[-700, 700]` before evaluation to prevent `f64` overflow under extreme inputs.
+
+**Peer-to-peer policy sync & audit.** Nodes can now sync policies directly with each other, even with no internet access, using SHA3‑verified peer‑to‑peer snapshots that merge safely without overwriting local state. The SHA3 hash covers policy IDs, allowed destinations, and full verification‑key bytes, ensuring that modifications to any component invalidate the hash. Every policy import is also appended to a persistent, SHA3 hash‑chained audit log, providing a tamper‑evident record of the full policy‑sharing history.
+
+**Offline session authentication.** Session leases are signed with Ed25519 and verified fully offline, so a node can authenticate new sessions without ever contacting the control plane.
+
+**Mesh connectivity & peer routing.** Full mesh connectivity analysis gives each node the ability to classify its own reachability across three states (`Online`, `OfflineControlPlane`, `NoUpstream`) and route through Universal/Open peers when a direct internet path is unavailable — Universal nodes are preferred over Open nodes to minimise relay depth.
+
+**Real-time session revocation.** A critical gap in the gateway was closed: sessions can now be explicitly revoked in real time, ensuring nodes stop relaying traffic the moment a connect session ends.
+
+Together, these changes push the system closer to a self‑healing, offline‑capable AI network — one that keeps working even when the control plane goes dark. 🌙
+
+---
+
 ## 🧾 In Plain English: What this app does
 
 Think of this app as a **service for compute power**:
@@ -807,9 +827,14 @@ curl -X POST https://your-api.com/api/v1/auth/login \
 
 ### ⭐ Phase 2.7 - Offline-First Node Connectivity & AILEE Metric (COMPLETED) 🆕
 - ✅ **AILEE ∆v Metric** — energy-weighted optimization gain functional from the AILEE paper; accumulates telemetry samples and produces a dimensionless efficiency score for comparative diagnostics
+- ✅ **Overflow-safe resonance gates** — exponential terms in ∆v are clamped to `[-700, 700]` before evaluation to prevent `f64` overflow under extreme telemetry values
 - ✅ **Peer-to-Peer Policy Sync** — nodes share cryptographically-verified policy snapshots directly without the control plane, keeping the mesh operational and internet-capable in `OfflineControlPlane` and `NoUpstream` states
-- ✅ **Full-content integrity hashing** — `PeerPolicySyncMessage` hashes both policy IDs *and* allowed destinations, plus full verification-key bytes, preventing hash-bypass attacks
-- ✅ **Overflow-safe resonance gates** — exponential terms in ∆v are clamped before evaluation to prevent `f64` overflow under extreme telemetry values
+- ✅ **Full-content integrity hashing** — `PeerPolicySyncMessage` hashes policy IDs *and* allowed destinations *and* full verification-key bytes, ensuring that modifications to any component (policy IDs, destinations, or keys) invalidate the hash
+- ✅ **Persistent chained audit log** — every `import_peer_sync` call appends a `peer_sync_applied` record to a SHA3 hash-chained audit queue, providing a tamper-evident history of all policy imports
+- ✅ **Ed25519 session lease signing** — `SessionLease` payloads are signed with Ed25519 and verified fully offline, enabling a node to authenticate new sessions without ever contacting the control plane
+- ✅ **Three-state node model** — `LocalSessionManager` tracks `OnlineControlPlane`, `OfflineControlPlane`, and `NoUpstream` states, enforcing appropriate policy restrictions at each tier
+- ✅ **Mesh connectivity analysis & peer routing** — `PeerRouter` classifies each node's reachability and resolves forwarding paths; Universal nodes are preferred over Open nodes to minimise relay depth
+- ✅ **Real-time session revocation** — `DataPlaneGateway::revoke_session()` removes a session from the live store instantly, stopping traffic relay the moment a connect session ends
 - ✅ **70 new tests** across `ailee-trust-layer` and `ambient-node` crates
 
 ### 🔄 Phase 3 - Advanced Features (IN PROGRESS)
