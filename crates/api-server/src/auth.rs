@@ -22,6 +22,7 @@ const DEV_CONNECT_SESSION_TOKEN_PEPPER: &str = "dev-connect-session-pepper-chang
 const MIN_PEPPER_LENGTH: usize = 32;
 static REFRESH_TOKEN_PEPPER_WARNING: Once = Once::new();
 static API_KEY_PEPPER_WARNING: Once = Once::new();
+static CONNECT_SESSION_TOKEN_PEPPER_WARNING: Once = Once::new();
 
 fn warn_missing_pepper_once(label: &str, primary_var: &str) {
     let warning = || {
@@ -35,6 +36,7 @@ fn warn_missing_pepper_once(label: &str, primary_var: &str) {
     match label {
         "REFRESH_TOKEN_PEPPER" => REFRESH_TOKEN_PEPPER_WARNING.call_once(warning),
         "API_KEY_PEPPER" => API_KEY_PEPPER_WARNING.call_once(warning),
+        "CONNECT_SESSION_TOKEN_PEPPER" => CONNECT_SESSION_TOKEN_PEPPER_WARNING.call_once(warning),
         _ => warning(),
     }
 }
@@ -108,6 +110,18 @@ pub fn validate_hash_pepper_configuration() -> ApiResult<()> {
     if pepper_is_weak(&api_key_pepper) {
         return Err(ApiError::internal_error(
             "PRODUCTION ERROR: API_KEY_PEPPER (or AUTH_HASH_PEPPER) is weak. Use a random secret with at least 32 characters.",
+        ));
+    }
+
+    let connect_session_pepper = read_pepper("CONNECT_SESSION_TOKEN_PEPPER").ok_or_else(|| {
+        ApiError::internal_error(
+            "PRODUCTION ERROR: CONNECT_SESSION_TOKEN_PEPPER (or AUTH_HASH_PEPPER) must be configured.",
+        )
+    })?;
+
+    if pepper_is_weak(&connect_session_pepper) {
+        return Err(ApiError::internal_error(
+            "PRODUCTION ERROR: CONNECT_SESSION_TOKEN_PEPPER (or AUTH_HASH_PEPPER) is weak. Use a random secret with at least 32 characters.",
         ));
     }
 
