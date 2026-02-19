@@ -214,6 +214,15 @@ impl Default for RateLimiter {
     }
 }
 
+static GLOBAL_RATE_LIMITER: tokio::sync::OnceCell<Arc<RateLimiter>> =
+    tokio::sync::OnceCell::const_new();
+
+async fn global_rate_limiter() -> &'static Arc<RateLimiter> {
+    GLOBAL_RATE_LIMITER
+        .get_or_init(|| async { Arc::new(RateLimiter::new()) })
+        .await
+}
+
 pub async fn rate_limit_middleware(
     request: Request<Body>,
     next: Next,
@@ -232,11 +241,7 @@ pub async fn rate_limit_middleware(
         return Ok(next.run(request).await);
     }
 
-    static GLOBAL_LIMITER: tokio::sync::OnceCell<Arc<RateLimiter>> =
-        tokio::sync::OnceCell::const_new();
-    let rate_limiter = GLOBAL_LIMITER
-        .get_or_init(|| async { Arc::new(RateLimiter::new()) })
-        .await;
+    let rate_limiter = global_rate_limiter().await;
 
     match rate_limiter.check_rate_limit(ip, tier).await {
         Ok(()) => Ok(next.run(request).await),
@@ -298,12 +303,7 @@ fn extract_client_ip(request: &Request<Body>) -> Result<IpAddr, ApiError> {
 }
 
 pub async fn start_cleanup_task() {
-    static GLOBAL_LIMITER: tokio::sync::OnceCell<Arc<RateLimiter>> =
-        tokio::sync::OnceCell::const_new();
-    let rate_limiter = GLOBAL_LIMITER
-        .get_or_init(|| async { Arc::new(RateLimiter::new()) })
-        .await
-        .clone();
+    let rate_limiter = global_rate_limiter().await.clone();
 
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(300));
@@ -335,5 +335,17 @@ mod tests {
         std::env::set_var("TRUSTED_PROXY_CIDRS", "10.0.0.0/8,192.168.0.0/16");
         assert!(proxy_is_trusted(IpAddr::from([10, 1, 2, 3])));
         assert!(!proxy_is_trusted(IpAddr::from([8, 8, 8, 8])));
+    }
+
+    /// Verify that the middleware and cleanup task share the same global limiter
+    /// instance, so cleanup actually reclaims memory from active rate-limiting state.
+    #[tokio::test]
+    async fn test_middleware_and_cleanup_share_same_limiter() {
+        let limiter_a = global_rate_limiter().await;
+        let limiter_b = global_rate_limiter().await;
+        assert!(
+            Arc::ptr_eq(limiter_a, limiter_b),
+            "middleware and cleanup task must share the same RateLimiter instance"
+        );
     }
 }

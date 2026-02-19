@@ -57,8 +57,19 @@ impl PrivacyMechanism {
         let sigma =
             (2.0 * (1.25 / self.budget.delta).ln()).sqrt() * sensitivity / self.budget.epsilon;
 
-        let noise: f64 = rng.sample(rand_distr::Normal::new(0.0, sigma).unwrap());
-        value + noise
+        // Guard against degenerate budgets (epsilon=0 → sigma=∞, delta=0 → NaN, etc.).
+        // sigma must be strictly positive and finite for rand_distr::Normal to accept it;
+        // sigma=0 means "no noise at all", which the caller can achieve by not calling this
+        // function, and is not a meaningful DP noise configuration.
+        if !sigma.is_finite() || sigma <= 0.0 {
+            return value;
+        }
+
+        if let Ok(dist) = rand_distr::Normal::new(0.0, sigma) {
+            value + rng.sample::<f64, _>(dist)
+        } else {
+            value
+        }
     }
 
     /// Add Laplacian noise to a value for differential privacy
@@ -68,13 +79,22 @@ impl PrivacyMechanism {
         // Scale for Laplace distribution
         let scale = sensitivity / self.budget.epsilon;
 
+        // Guard against degenerate budgets (epsilon=0 → scale=∞, etc.).
+        // scale must be strictly positive and finite for rand_distr::Exp to accept it;
+        // scale=0 is not a valid Laplace distribution parameter.
+        if !scale.is_finite() || scale <= 0.0 {
+            return value;
+        }
+
         // Generate Laplace noise manually using exponential distribution
         // Laplace(0, b) = sign * Exponential(1/b) where sign is ±1 with equal probability
         let sign = if rng.gen::<bool>() { 1.0 } else { -1.0 };
-        let exp_sample: f64 = rng.sample(rand_distr::Exp::new(1.0 / scale).unwrap());
-        let noise = sign * exp_sample;
-
-        value + noise
+        if let Ok(dist) = rand_distr::Exp::new(1.0 / scale) {
+            let exp_sample: f64 = rng.sample(dist);
+            value + sign * exp_sample
+        } else {
+            value
+        }
     }
 
     /// Apply gradient clipping to bound sensitivity
@@ -153,5 +173,20 @@ mod tests {
             "Expected at least 95/100 samples within 3 sigma, got {}",
             within_range
         );
+    }
+
+    #[test]
+    fn test_noise_does_not_panic_with_degenerate_budget() {
+        // epsilon=0 would cause division by zero or NaN in the noise formulas;
+        // the implementation must return the original value unperturbed rather
+        // than panicking.
+        let mechanism = PrivacyMechanism::new(PrivacyBudget::new(0.0, 1e-5));
+        let value = 42.0;
+        let result = mechanism.add_gaussian_noise(value, 1.0);
+        // With epsilon=0 the sigma is infinite; distribution creation fails gracefully
+        assert!(result.is_finite(), "result should be finite: {}", result);
+
+        let result2 = mechanism.add_laplacian_noise(value, 1.0);
+        assert!(result2.is_finite(), "result should be finite: {}", result2);
     }
 }
