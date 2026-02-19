@@ -95,11 +95,7 @@ impl MeshCoordinator {
     /// Call this whenever the node's backhaul state changes so that
     /// [`MeshCoordinator::find_peer_route`] always reflects current
     /// network conditions.
-    pub fn sync_connectivity(
-        &mut self,
-        node_id: &str,
-        status: NodeConnectivityStatus,
-    ) {
+    pub fn sync_connectivity(&mut self, node_id: &str, status: NodeConnectivityStatus) {
         if let Some(node) = self.nodes.get(node_id) {
             let node_type = node.id.node_type.clone();
             self.peer_router.update_node(node_id, &node_type, status);
@@ -351,7 +347,9 @@ mod tests {
         // Mark node as online → direct route with no hops.
         coordinator.sync_connectivity("node-gw", NodeConnectivityStatus::Online);
 
-        let route = coordinator.find_peer_route("node-gw").expect("route expected");
+        let route = coordinator
+            .find_peer_route("node-gw")
+            .expect("route expected");
         assert!(route.is_direct());
         assert_eq!(route.source_node_id, "node-gw");
     }
