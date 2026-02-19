@@ -59,6 +59,25 @@ impl FederatedAggregator {
         model: ModelWeights,
         num_samples: usize,
     ) -> Result<()> {
+        if model.layers.len() != self.global_model.layers.len() {
+            anyhow::bail!(
+                "Client model has {} layers but global model has {} layers",
+                model.layers.len(),
+                self.global_model.layers.len()
+            );
+        }
+        for (layer_idx, (client_layer, global_layer)) in
+            model.layers.iter().zip(self.global_model.layers.iter()).enumerate()
+        {
+            if client_layer.weights.len() != global_layer.weights.len() {
+                anyhow::bail!(
+                    "Client model layer {} has {} weights but global model has {}",
+                    layer_idx,
+                    client_layer.weights.len(),
+                    global_layer.weights.len()
+                );
+            }
+        }
         self.client_contributions
             .insert(client_id, (model, num_samples));
         Ok(())
@@ -205,5 +224,54 @@ mod tests {
 
         // Weighted average: (2.0 * 100 + 4.0 * 200) / 300 = (200 + 800) / 300 = 3.333...
         assert!((aggregated.layers[0].weights[0] - 3.333333).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_add_client_update_rejects_mismatched_layer_count() {
+        let initial_model = create_test_model(1.0);
+        let mut aggregator = FederatedAggregator::new(initial_model);
+
+        // Build a model with a different number of layers than the global model
+        let wrong_model = ModelWeights {
+            layers: vec![LayerWeights {
+                name: "only_layer".to_string(),
+                weights: vec![1.0, 2.0, 3.0],
+                shape: vec![3],
+            }],
+            version: 0,
+        };
+
+        let result = aggregator.add_client_update("client1".to_string(), wrong_model, 100);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("layers"), "error should mention layers: {}", msg);
+    }
+
+    #[test]
+    fn test_add_client_update_rejects_mismatched_weight_count() {
+        let initial_model = create_test_model(1.0);
+        let mut aggregator = FederatedAggregator::new(initial_model);
+
+        // Same layer count but wrong weight count in layer 0
+        let wrong_model = ModelWeights {
+            layers: vec![
+                LayerWeights {
+                    name: "layer1".to_string(),
+                    weights: vec![1.0, 2.0], // should be 3 weights
+                    shape: vec![2],
+                },
+                LayerWeights {
+                    name: "layer2".to_string(),
+                    weights: vec![4.0, 5.0],
+                    shape: vec![2],
+                },
+            ],
+            version: 0,
+        };
+
+        let result = aggregator.add_client_update("client1".to_string(), wrong_model, 100);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("weights"), "error should mention weights: {}", msg);
     }
 }

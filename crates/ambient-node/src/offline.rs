@@ -173,7 +173,8 @@ impl PersistentAuditQueue {
         writeln!(
             file,
             "{}",
-            serde_json::to_string(&record).expect("audit serialization")
+            serde_json::to_string(&record)
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?
         )?;
         Ok(record)
     }

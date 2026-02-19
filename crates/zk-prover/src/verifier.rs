@@ -11,15 +11,16 @@ pub struct ZKVerifier {
 }
 
 impl ZKVerifier {
-    pub fn new(verification_key: VerificationKey) -> Self {
-        // Deserialize the verification key
+    pub fn new(verification_key: VerificationKey) -> Result<Self, String> {
+        // Deserialize the verification key; surface an error instead of panicking
+        // so callers can handle invalid or corrupted key material gracefully.
         let ark_vk =
             ArkVerifyingKey::<Bn254>::deserialize_compressed(&verification_key.key_data[..])
-                .expect("Failed to deserialize verification key: ensure the key_data is valid and not corrupted");
+                .map_err(|e| format!("Failed to deserialize verification key: {}", e))?;
 
-        Self {
+        Ok(Self {
             verification_key: ark_vk,
-        }
+        })
     }
 
     /// Verify a ZK proof
@@ -72,6 +73,7 @@ impl Default for ZKVerifier {
         let vk_data = prover.verification_key().key_data.clone();
 
         Self::new(VerificationKey { key_data: vk_data })
+            .expect("Default ZKProver produces a valid verification key")
     }
 }
 
@@ -158,5 +160,14 @@ mod tests {
             "Proof size should be reasonable: {} bytes",
             size
         );
+    }
+
+    #[test]
+    fn test_new_returns_error_on_invalid_key_data() {
+        let bad_vk = crate::VerificationKey {
+            key_data: vec![0xFF; 32],
+        };
+        let result = ZKVerifier::new(bad_vk);
+        assert!(result.is_err(), "ZKVerifier::new should fail on invalid key data");
     }
 }

@@ -67,27 +67,23 @@ pub struct ZKProver {
 }
 
 impl ZKProver {
-    pub fn new(proving_key: ProvingKey, verification_key: VerificationKey) -> Self {
-        // Deserialize the proving key
-        let ark_pk = ArkProvingKey::<Bn254>::deserialize_compressed(&proving_key.key_data[..])
-            .unwrap_or_else(|_| {
-                // If deserialization fails, generate new keys
-                let rng = &mut ark_std::rand::rngs::StdRng::seed_from_u64(0);
-                let circuit = ExecutionTraceCircuit {
-                    module_hash: Some(Fr::from(1u64)),
-                    input_hash: Some(Fr::from(1u64)),
-                    output_hash: Some(Fr::from(1u64)),
-                    execution_time: Some(Fr::from(100u64)),
-                    gas_used: Some(Fr::from(1000u64)),
-                };
-                let (pk, _vk) = Groth16::<Bn254>::circuit_specific_setup(circuit, rng).unwrap();
-                pk
-            });
+    /// Create a new `ZKProver` from serialised key material.
+    ///
+    /// Returns `Err(anyhow::Error)` if `proving_key.key_data` cannot be
+    /// deserialised as a Groth16 proving key for the BN254 curve.  Callers
+    /// must not rely on a silent fallback to any default key — invalid key
+    /// material is always surfaced as an error.
+    pub fn new(proving_key: ProvingKey, verification_key: VerificationKey) -> Result<Self> {
+        // Deserialize the proving key; return an error if the key data is invalid
+        // rather than silently falling back to a predictable seed-0 key.
+        let ark_pk =
+            ArkProvingKey::<Bn254>::deserialize_compressed(&proving_key.key_data[..])
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize proving key: {}", e))?;
 
-        Self {
+        Ok(Self {
             proving_key: ark_pk,
             verification_key,
-        }
+        })
     }
 
     /// Generate a ZK proof from execution trace
@@ -221,5 +217,17 @@ mod tests {
             "Proof generation took {:?}, should be < 10s",
             elapsed
         );
+    }
+
+    #[test]
+    fn test_new_returns_error_on_invalid_key_data() {
+        let bad_pk = crate::ProvingKey {
+            key_data: vec![0xFF; 32],
+        };
+        let bad_vk = crate::VerificationKey {
+            key_data: vec![0xFF; 32],
+        };
+        let result = ZKProver::new(bad_pk, bad_vk);
+        assert!(result.is_err(), "ZKProver::new should fail on invalid key data");
     }
 }
