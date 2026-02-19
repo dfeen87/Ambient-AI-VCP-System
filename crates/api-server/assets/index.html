@@ -2104,7 +2104,7 @@
                         <div class="status-cell">
                             <span class="badge ${statusClass}">${n.status}</span>
                             ${canEject ? `<button class="eject-btn" onclick='handleEjectNode(${JSON.stringify(n.node_id)}, this)'>Eject</button>` : ''}
-                            ${isOwner ? `<button class="heartbeat-btn" onclick='handleHeartbeat(${JSON.stringify(n.node_id)}, this)'>Heartbeat</button>` : ''}
+                            ${isOwner ? `<button class="heartbeat-btn" onclick='handleHeartbeat(${JSON.stringify(n.node_id)}, this)' aria-label="Send heartbeat for ${n.node_id}">Heartbeat</button>` : ''}
                             ${isOwner && n.observability_port ? `<button class="observability-btn" onclick='handleViewObservability(${JSON.stringify(n.node_id)}, ${n.observability_port})'>View</button>` : ''}
                         </div>
                     </td>
