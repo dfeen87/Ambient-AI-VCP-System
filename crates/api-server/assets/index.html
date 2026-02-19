@@ -1496,7 +1496,7 @@
         </div>
 
         <div class="heartbeat-tasks" id="heartbeat-tasks-section" hidden>
-            <div class="heartbeat-tasks-title">Connected Tasks</div>
+            <div class="heartbeat-tasks-title">Active Tasks</div>
             <div id="heartbeat-tasks-list"></div>
         </div>
 
@@ -2266,8 +2266,8 @@
         // Store node ID for the send button
         sendBtn.setAttribute('data-node-id', nodeId);
 
-        // Populate connected tasks
-        const connectedTasks = tasks.filter(t => Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId));
+        // Populate connected tasks (active only — completed/failed appear in Activity Log)
+        const connectedTasks = tasks.filter(t => Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId) && t.status !== 'completed' && t.status !== 'failed');
         const tasksSection = document.getElementById('heartbeat-tasks-section');
         const tasksList = document.getElementById('heartbeat-tasks-list');
         tasksList.textContent = '';
@@ -2297,14 +2297,39 @@
             const empty = document.createElement('div');
             empty.className = 'heartbeat-task-row';
             empty.style.color = 'var(--text-muted)';
-            empty.textContent = 'No tasks currently assigned to this node.';
+            empty.textContent = 'No active tasks currently assigned to this node.';
             tasksList.appendChild(empty);
             tasksSection.hidden = false;
         }
 
-        // Reset ping log
-        document.getElementById('heartbeat-ping-log').hidden = true;
-        document.getElementById('heartbeat-ping-entries').textContent = '';
+        // Pre-populate activity log with finished and disconnected task details
+        const pingLog = document.getElementById('heartbeat-ping-log');
+        const pingEntries = document.getElementById('heartbeat-ping-entries');
+        pingEntries.textContent = '';
+
+        // Finished tasks: assigned to this node and reached a terminal status
+        const finishedNodeTasks = tasks.filter(t =>
+            Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId) &&
+            (t.status === 'completed' || t.status === 'failed'));
+        // Disconnected tasks: connect_only sessions no longer including this node
+        const disconnectedNodeTasks = tasks.filter(t =>
+            t.task_type === 'connect_only' &&
+            Array.isArray(t.assigned_nodes) && !t.assigned_nodes.includes(nodeId) &&
+            t.status !== 'completed' && t.status !== 'failed');
+
+        if (finishedNodeTasks.length > 0 || disconnectedNodeTasks.length > 0) {
+            finishedNodeTasks.forEach(t => {
+                const cls = t.status === 'completed' ? 'ok' : 'err';
+                const symbol = t.status === 'completed' ? '✓' : '✗';
+                addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — finished (${t.status}) ${symbol}`, cls);
+            });
+            disconnectedNodeTasks.forEach(t => {
+                addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — disconnected from node`, 'err');
+            });
+            pingLog.hidden = false;
+        } else {
+            pingLog.hidden = true;
+        }
         
         document.getElementById('heartbeat-modal-overlay').classList.add('open');
         document.getElementById('heartbeat-modal-overlay').setAttribute('aria-hidden', 'false');
@@ -2352,6 +2377,11 @@
         const pingLog = document.getElementById('heartbeat-ping-log');
         const pingEntries = document.getElementById('heartbeat-ping-entries');
         pingLog.hidden = false;
+
+        // Add a separator if the log already has pre-populated task entries
+        if (pingEntries.children.length > 0) {
+            addHeartbeatPingEntry(pingEntries, '— — — — — — — — — — — — — — —');
+        }
 
         addHeartbeatPingEntry(pingEntries, `PUT ${apiBaseUrl}/api/v1/nodes/${nodeId}/heartbeat`);
 
