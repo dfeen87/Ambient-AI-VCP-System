@@ -38,6 +38,7 @@ services:
       - JWT_SECRET=docker-dev-secret-change-in-production
       - JWT_EXPIRATION_HOURS=24
       - AUTH_HASH_PEPPER=docker-dev-auth-pepper-change-in-production
+      - CONNECT_SESSION_TOKEN_PEPPER=docker-dev-connect-session-pepper-change-in-production
       - RATE_LIMIT_REQUESTS_PER_MINUTE=60
       - RATE_LIMIT_BURST=10
     networks:
