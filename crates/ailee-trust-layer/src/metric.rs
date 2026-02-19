@@ -300,7 +300,10 @@ mod tests {
         // Without the clamp, 2·α·v₀·v = 2·0.1·1.0·1e6 = 2e5, which overflows f64::exp.
         let mut m = AileeMetric::default();
         m.integrate(&AileeSample::new(100.0, 0.0, 1e6, 1.0, 1.0));
-        assert!(m.delta_v().is_finite(), "delta_v should be finite even for very large velocity");
+        assert!(
+            m.delta_v().is_finite(),
+            "delta_v should be finite even for very large velocity"
+        );
     }
 
     #[test]

@@ -511,10 +511,7 @@ impl LocalSessionManager {
     /// # Returns
     /// The number of new egress policies applied, or an error if the
     /// integrity check fails.
-    pub fn import_peer_sync(
-        &mut self,
-        msg: &PeerPolicySyncMessage,
-    ) -> Result<usize, &'static str> {
+    pub fn import_peer_sync(&mut self, msg: &PeerPolicySyncMessage) -> Result<usize, &'static str> {
         if !msg.verify_integrity() {
             return Err("peer sync message failed integrity check");
         }
@@ -587,8 +584,7 @@ impl PeerPolicySyncMessage {
     /// Build a sync message from a [`LocalPolicyCache`].
     pub fn from_cache(sender_node_id: impl Into<String>, cache: &LocalPolicyCache) -> Self {
         let sender_node_id = sender_node_id.into();
-        let egress_policies: Vec<EgressPolicy> =
-            cache.egress_policies.values().cloned().collect();
+        let egress_policies: Vec<EgressPolicy> = cache.egress_policies.values().cloned().collect();
         let verification_keys = cache.verification_keys.clone();
         let snapshot_at = now_epoch_secs();
         let content_hash = compute_sync_hash(
@@ -640,8 +636,10 @@ fn compute_sync_hash(
 
     // Sort by key ID for determinism, then hash the full key material so that
     // substituted key bytes will invalidate the hash.
-    let mut keys: Vec<(&str, &Vec<u8>)> =
-        verification_keys.iter().map(|(k, v)| (k.as_str(), v)).collect();
+    let mut keys: Vec<(&str, &Vec<u8>)> = verification_keys
+        .iter()
+        .map(|(k, v)| (k.as_str(), v))
+        .collect();
     keys.sort_unstable_by_key(|(id, _)| *id);
     for (id, bytes) in &keys {
         hasher.update(id.as_bytes());
@@ -904,8 +902,7 @@ mod tests {
         let peer_mgr = make_manager_with_policy("p-1", "https://peer.example", "k1", &kp);
         let msg = peer_mgr.export_peer_sync("node-peer");
 
-        let mut local_mgr =
-            make_manager_with_policy("p-1", "https://local.example", "k1", &kp);
+        let mut local_mgr = make_manager_with_policy("p-1", "https://local.example", "k1", &kp);
 
         let applied = local_mgr.import_peer_sync(&msg).unwrap();
         // No new policies added — policy "p-1" already existed locally.
@@ -923,8 +920,7 @@ mod tests {
         let mut msg = peer_mgr.export_peer_sync("node-peer");
         msg.content_hash = "invalid".to_string();
 
-        let mut local_mgr =
-            make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
+        let mut local_mgr = make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
 
         assert!(local_mgr.import_peer_sync(&msg).is_err());
     }
@@ -936,8 +932,7 @@ mod tests {
         let peer_mgr = make_manager_with_policy("p-peer", "https://peer.example", "k1", &kp);
         let msg = peer_mgr.export_peer_sync("node-peer");
 
-        let mut local_mgr =
-            make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
+        let mut local_mgr = make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
 
         // Transition local node to OfflineControlPlane — the cache becomes read-only
         // for normal API writes, but peer sync must still be able to import.
@@ -975,8 +970,7 @@ mod tests {
 
         let audit_path = env::temp_dir().join(format!("audit-{}.log", uuid::Uuid::new_v4()));
         let queue = PersistentAuditQueue::new(&audit_path);
-        let mut local_mgr =
-            make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
+        let mut local_mgr = make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
         // Redirect audit queue so we can inspect it.
         local_mgr.audit_queue = queue.clone();
 
@@ -984,9 +978,7 @@ mod tests {
 
         let records = queue.read_all().unwrap();
         assert!(
-            records
-                .iter()
-                .any(|r| r.event_type == "peer_sync_applied"),
+            records.iter().any(|r| r.event_type == "peer_sync_applied"),
             "audit trail should contain a peer_sync_applied record"
         );
     }
