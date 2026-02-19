@@ -2198,7 +2198,7 @@
         const nodeStatus = node ? node.status : 'unknown';
 
         // Open the modal
-        openHeartbeatModal(nodeId, nodeStatus);
+        await openHeartbeatModal(nodeId, nodeStatus);
     }
 
     async function handleViewObservability(nodeId, port) {
@@ -2249,7 +2249,7 @@
         }
     }
 
-    function openHeartbeatModal(nodeId, nodeStatus) {
+    async function openHeartbeatModal(nodeId, nodeStatus) {
         document.getElementById('heartbeat-node-id').textContent = nodeId;
         document.getElementById('heartbeat-node-status').textContent = nodeStatus;
         const messageEl = document.getElementById('heartbeat-message');
@@ -2322,7 +2322,19 @@
             !(Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId)) &&
             t.status !== 'completed' && t.status !== 'failed');
 
-        const hasAnyActivity = activeNodeTasks.length > 0 || finishedNodeTasks.length > 0 || clearedNodeTasks.length > 0;
+        // Cleared tasks recorded in heartbeat history (tasks deleted after being assigned to this node)
+        let deletedClearedEvents = [];
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/v1/nodes/${encodeURIComponent(nodeId)}/heartbeat/activity`, {
+                headers: getAuthHeaders(),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                deletedClearedEvents = data.events || [];
+            }
+        } catch (_) {}
+
+        const hasAnyActivity = activeNodeTasks.length > 0 || finishedNodeTasks.length > 0 || clearedNodeTasks.length > 0 || deletedClearedEvents.length > 0;
         if (hasAnyActivity) {
             activeNodeTasks.forEach(t => {
                 addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — ${t.status} (active)`, 'ok');
@@ -2338,6 +2350,10 @@
             });
             clearedNodeTasks.forEach(t => {
                 addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — cleared from node`, 'err');
+            });
+            deletedClearedEvents.forEach(ev => {
+                const shortId = (ev.task_id || '').substring(0, 12);
+                addHeartbeatPingEntry(pingEntries, `Task ${shortId}··· [${ev.task_type}] — cleared`, 'err');
             });
             pingLog.hidden = false;
         } else {
