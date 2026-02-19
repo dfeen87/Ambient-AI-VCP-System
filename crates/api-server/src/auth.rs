@@ -26,7 +26,7 @@ static CONNECT_SESSION_TOKEN_PEPPER_WARNING: Once = Once::new();
 
 fn warn_missing_pepper_once(label: &str, primary_var: &str) {
     let warning = || {
-        tracing::warn!(
+        tracing::debug!(
             "{} is not configured; using development-only fallback pepper. Set {} (or AUTH_HASH_PEPPER) to silence this warning.",
             label,
             primary_var
