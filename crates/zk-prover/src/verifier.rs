@@ -168,6 +168,9 @@ mod tests {
             key_data: vec![0xFF; 32],
         };
         let result = ZKVerifier::new(bad_vk);
-        assert!(result.is_err(), "ZKVerifier::new should fail on invalid key data");
+        assert!(
+            result.is_err(),
+            "ZKVerifier::new should fail on invalid key data"
+        );
     }
 }
