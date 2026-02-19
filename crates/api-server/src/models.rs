@@ -467,6 +467,7 @@ pub struct TaskInfo {
     pub task_type: String,
     pub status: TaskStatus,
     pub assigned_nodes: Vec<String>,
+    pub former_assigned_nodes: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
     pub result: Option<serde_json::Value>,

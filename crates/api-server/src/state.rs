@@ -284,6 +284,7 @@ impl AppState {
             task_type,
             status,
             assigned_nodes,
+            former_assigned_nodes: vec![], // empty: no disconnections have occurred at creation time
             created_at: now.to_rfc3339(),
             updated_at: now.to_rfc3339(),
             result: None,
@@ -1154,7 +1155,16 @@ impl AppState {
                           AND ta.disconnected_at IS NULL
                     ),
                     ARRAY[]::VARCHAR[]
-                ) as assigned_nodes
+                ) as assigned_nodes,
+                COALESCE(
+                    (
+                        SELECT ARRAY_AGG(ta.node_id)
+                        FROM task_assignments ta
+                        WHERE ta.task_id = t.task_id
+                          AND ta.disconnected_at IS NOT NULL
+                    ),
+                    ARRAY[]::VARCHAR[]
+                ) as former_assigned_nodes
             FROM tasks t
             WHERE t.task_id = $1
               AND t.creator_id = $2
@@ -1181,6 +1191,7 @@ impl AppState {
                     task_type: row.get("task_type"),
                     status: parse_task_status(&status_text),
                     assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
+                    former_assigned_nodes: row.get::<Vec<String>, _>("former_assigned_nodes"),
                     created_at: row
                         .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
                         .to_rfc3339(),
@@ -1214,7 +1225,16 @@ impl AppState {
                           AND ta.disconnected_at IS NULL
                     ),
                     ARRAY[]::VARCHAR[]
-                ) as assigned_nodes
+                ) as assigned_nodes,
+                COALESCE(
+                    (
+                        SELECT ARRAY_AGG(ta.node_id)
+                        FROM task_assignments ta
+                        WHERE ta.task_id = t.task_id
+                          AND ta.disconnected_at IS NOT NULL
+                    ),
+                    ARRAY[]::VARCHAR[]
+                ) as former_assigned_nodes
             FROM tasks t
             WHERE t.creator_id = $1
             ORDER BY t.created_at DESC
@@ -1232,6 +1252,7 @@ impl AppState {
                     task_type: row.get("task_type"),
                     status: parse_task_status(&row.get::<String, _>("status")),
                     assigned_nodes: row.get::<Vec<String>, _>("assigned_nodes"),
+                    former_assigned_nodes: row.get::<Vec<String>, _>("former_assigned_nodes"),
                     created_at: row
                         .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
                         .to_rfc3339(),
