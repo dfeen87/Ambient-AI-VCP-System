@@ -18,8 +18,14 @@ const TABLE_ID_MAX: u32 = 200;
 /// Routing configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingConfig {
-    /// Whether to actually execute routing commands (false for testing)
+    /// Whether to actually execute routing commands (false for dry-run testing)
     pub execute_commands: bool,
+
+    /// When true (the default), per-interface routing tables are prepared but
+    /// no `ip rule` is added to the policy database.  The host's existing
+    /// routing is left entirely intact and routing changes are only applied
+    /// when the operator explicitly sets this to `false`.
+    pub monitor_only: bool,
 
     /// Main routing table priority
     pub main_table_priority: u32,
@@ -32,6 +38,8 @@ impl Default for RoutingConfig {
     fn default() -> Self {
         Self {
             execute_commands: true,
+            // Safe default: observe interfaces without touching the host's routing.
+            monitor_only: true,
             main_table_priority: 32766,
             interface_table_priority: 1000,
         }
@@ -51,7 +59,8 @@ pub struct RouteEntry {
 pub struct RoutingManager {
     config: RoutingConfig,
     active_interface: Option<String>,
-    table_assignments: std::collections::HashMap<String, u32>,
+    /// Maps interface name → (table_id, optional source IP used in the policy rule)
+    table_assignments: std::collections::HashMap<String, (u32, Option<String>)>,
     next_table_id: u32,
 }
 
@@ -66,8 +75,8 @@ impl RoutingManager {
     }
 
     /// Assign a routing table ID to an interface
-    fn assign_table_id(&mut self, interface: &str) -> u32 {
-        if let Some(&table_id) = self.table_assignments.get(interface) {
+    fn assign_table_id(&mut self, interface: &str, source_ip: Option<&str>) -> u32 {
+        if let Some(&(table_id, _)) = self.table_assignments.get(interface) {
             return table_id;
         }
 
@@ -80,7 +89,7 @@ impl RoutingManager {
         }
 
         self.table_assignments
-            .insert(interface.to_string(), table_id);
+            .insert(interface.to_string(), (table_id, source_ip.map(str::to_string)));
         table_id
     }
 
@@ -88,13 +97,19 @@ impl RoutingManager {
     ///
     /// This performs atomic routing updates to avoid blackholes:
     /// 1. Set up new interface routing table
-    /// 2. Add new policy routing rule
-    /// 3. Remove old policy routing rule
+    /// 2. Add new policy routing rule  (skipped when `monitor_only` is true)
+    /// 3. Remove old policy routing rule (skipped when `monitor_only` is true)
     /// 4. Clean up old interface routing table (if needed)
+    ///
+    /// `source_ip` should be the interface's IPv4 address.  When provided the
+    /// policy rule is scoped to `from <source_ip>` instead of `from all`,
+    /// which limits the impact to traffic that originates from that address and
+    /// avoids overriding the host's default route for unrelated traffic.
     pub fn switch_active_interface(
         &mut self,
         new_interface: &str,
         gateway: Option<String>,
+        source_ip: Option<String>,
     ) -> Result<()> {
         info!(
             old_interface = ?self.active_interface,
@@ -102,19 +117,20 @@ impl RoutingManager {
             "Switching active interface"
         );
 
-        let table_id = self.assign_table_id(new_interface);
+        let table_id = self.assign_table_id(new_interface, source_ip.as_deref());
 
         // Step 1: Set up new interface routing table
         self.setup_interface_table(new_interface, table_id, gateway.as_deref())?;
 
-        // Step 2: Add new policy routing rule
-        self.add_routing_rule(new_interface, table_id)?;
+        // Step 2: Add new policy routing rule (skipped in monitor_only mode)
+        self.add_routing_rule(new_interface, table_id, source_ip.as_deref())?;
 
-        // Step 3: Remove old policy routing rule (if exists)
+        // Step 3: Remove old policy routing rule (if exists, skipped in monitor_only mode)
         if let Some(old_interface) = &self.active_interface {
             if old_interface != new_interface {
-                if let Some(&old_table_id) = self.table_assignments.get(old_interface) {
-                    self.remove_routing_rule(old_interface, old_table_id)?;
+                if let Some(&(old_table_id, ref old_ip)) = self.table_assignments.get(old_interface)
+                {
+                    self.remove_routing_rule(old_interface, old_table_id, old_ip.as_deref())?;
                 }
             }
         }
@@ -174,23 +190,46 @@ impl RoutingManager {
     }
 
     /// Add policy routing rule
-    fn add_routing_rule(&self, interface: &str, table_id: u32) -> Result<()> {
+    ///
+    /// When `monitor_only` is set on the config this is a no-op: per-interface
+    /// routing tables are prepared (see `setup_interface_table`) but no `ip
+    /// rule` entry is inserted, so the host's existing routing is preserved.
+    ///
+    /// When routing is active the rule is scoped to `from <source_ip>` if an
+    /// IP is provided, which prevents the rule from hijacking traffic that does
+    /// not originate from that interface.
+    fn add_routing_rule(
+        &self,
+        interface: &str,
+        table_id: u32,
+        source_ip: Option<&str>,
+    ) -> Result<()> {
+        if self.config.monitor_only {
+            debug!(
+                interface = %interface,
+                "monitor_only: skipping ip rule add (host routing unchanged)"
+            );
+            return Ok(());
+        }
+
         debug!(
             interface = %interface,
             table_id = table_id,
+            source_ip = ?source_ip,
             "Adding policy routing rule"
         );
 
         let table_id_str = table_id.to_string();
         let priority_str = self.config.interface_table_priority.to_string();
+        let from_selector = source_ip.unwrap_or("all");
 
-        // ip rule add from all lookup <table_id> pref <priority>
+        // ip rule add from <from_selector> lookup <table_id> pref <priority>
         self.execute_command(&[
             "ip",
             "rule",
             "add",
             "from",
-            "all",
+            from_selector,
             "lookup",
             &table_id_str,
             "pref",
@@ -201,7 +240,16 @@ impl RoutingManager {
     }
 
     /// Remove policy routing rule
-    fn remove_routing_rule(&self, interface: &str, table_id: u32) -> Result<()> {
+    fn remove_routing_rule(
+        &self,
+        interface: &str,
+        table_id: u32,
+        source_ip: Option<&str>,
+    ) -> Result<()> {
+        if self.config.monitor_only {
+            return Ok(());
+        }
+
         debug!(
             interface = %interface,
             table_id = table_id,
@@ -209,9 +257,18 @@ impl RoutingManager {
         );
 
         let table_id_str = table_id.to_string();
+        let from_selector = source_ip.unwrap_or("all");
 
-        // ip rule del lookup <table_id>
-        let result = self.execute_command(&["ip", "rule", "del", "lookup", &table_id_str]);
+        // ip rule del from <from_selector> lookup <table_id>
+        let result = self.execute_command(&[
+            "ip",
+            "rule",
+            "del",
+            "from",
+            from_selector,
+            "lookup",
+            &table_id_str,
+        ]);
 
         // Don't fail if rule doesn't exist
         if let Err(e) = result {
@@ -256,11 +313,11 @@ impl RoutingManager {
     pub fn rollback_interface(&mut self, interface: &str) -> Result<()> {
         info!(interface = %interface, "Rolling back routing changes");
 
-        if let Some(&table_id) = self.table_assignments.get(interface) {
+        if let Some(&(table_id, ref source_ip)) = self.table_assignments.get(interface) {
             let table_id_str = table_id.to_string();
 
             // Remove routing rule
-            self.remove_routing_rule(interface, table_id)?;
+            self.remove_routing_rule(interface, table_id, source_ip.as_deref())?;
 
             // Flush routing table
             self.execute_command(&["ip", "route", "flush", "table", &table_id_str])?;
@@ -280,8 +337,10 @@ impl RoutingManager {
         // Collect table assignments to avoid borrow issues
         let assignments: Vec<_> = self.table_assignments.drain().collect();
 
-        for (interface, table_id) in assignments {
-            if let Err(e) = self.remove_routing_rule(&interface, table_id) {
+        for (interface, (table_id, source_ip)) in assignments {
+            if let Err(e) =
+                self.remove_routing_rule(&interface, table_id, source_ip.as_deref())
+            {
                 warn!(interface = %interface, error = %e, "Failed to remove routing rule");
             }
 
@@ -322,9 +381,9 @@ mod tests {
             ..Default::default()
         });
 
-        let table1 = manager.assign_table_id("eth0");
-        let table2 = manager.assign_table_id("wlan0");
-        let table3 = manager.assign_table_id("eth0"); // Should reuse
+        let table1 = manager.assign_table_id("eth0", Some("192.168.1.100"));
+        let table2 = manager.assign_table_id("wlan0", Some("10.0.0.5"));
+        let table3 = manager.assign_table_id("eth0", Some("192.168.1.100")); // Should reuse
 
         assert_eq!(table1, TABLE_ID_BASE);
         assert_eq!(table2, TABLE_ID_BASE + 1);
@@ -338,11 +397,15 @@ mod tests {
             ..Default::default()
         });
 
-        let result = manager.switch_active_interface("eth0", Some("192.168.1.1".to_string()));
+        let result = manager.switch_active_interface(
+            "eth0",
+            Some("192.168.1.1".to_string()),
+            Some("192.168.1.100".to_string()),
+        );
         assert!(result.is_ok());
         assert_eq!(manager.active_interface(), Some("eth0"));
 
-        let result = manager.switch_active_interface("wlan0", None);
+        let result = manager.switch_active_interface("wlan0", None, None);
         assert!(result.is_ok());
         assert_eq!(manager.active_interface(), Some("wlan0"));
     }
@@ -354,10 +417,40 @@ mod tests {
             ..Default::default()
         });
 
-        manager.switch_active_interface("eth0", None).unwrap();
+        manager
+            .switch_active_interface("eth0", None, None)
+            .unwrap();
         assert_eq!(manager.active_interface(), Some("eth0"));
 
         manager.rollback_interface("eth0").unwrap();
         assert_eq!(manager.active_interface(), None);
+    }
+
+    #[test]
+    fn test_monitor_only_default() {
+        let config = RoutingConfig::default();
+        assert!(
+            config.monitor_only,
+            "monitor_only must default to true to protect the host's existing routing"
+        );
+    }
+
+    #[test]
+    fn test_monitor_only_skips_ip_rule() {
+        // With monitor_only=true and execute_commands=true the manager must
+        // still succeed (no real commands are run) and leave active_interface set.
+        let mut manager = RoutingManager::new(RoutingConfig {
+            execute_commands: false,
+            monitor_only: true,
+            ..Default::default()
+        });
+
+        let result = manager.switch_active_interface(
+            "eth0",
+            None,
+            Some("192.168.1.100".to_string()),
+        );
+        assert!(result.is_ok());
+        assert_eq!(manager.active_interface(), Some("eth0"));
     }
 }

@@ -11,7 +11,9 @@
 //! - Basic packet loss estimate
 
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::time::{Duration, Instant};
+use tokio::net::TcpSocket;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tracing::debug;
@@ -174,6 +176,10 @@ pub struct HealthProber {
     interface: String,
     config: ProbeConfig,
     stats: HealthStats,
+    /// Local IPv4 address of the interface, used to bind outgoing probes so
+    /// that each probe travels through the correct interface rather than
+    /// following the OS default route.
+    local_addr: Option<String>,
 }
 
 impl HealthProber {
@@ -182,7 +188,18 @@ impl HealthProber {
             stats: HealthStats::new(interface.clone()),
             interface,
             config,
+            local_addr: None,
         }
+    }
+
+    /// Bind outgoing probes to `addr` (the interface's IPv4 address).
+    ///
+    /// This ensures each probe is routed through the correct interface instead
+    /// of following the OS default route, which would give false-healthy
+    /// readings when another interface is currently preferred.
+    pub fn with_local_addr(mut self, addr: String) -> Self {
+        self.local_addr = Some(addr);
+        self
     }
 
     /// Perform a single probe cycle
@@ -218,16 +235,71 @@ impl HealthProber {
     }
 
     /// Perform TCP connection probe
+    ///
+    /// When a `local_addr` is configured the socket is bound to that address
+    /// before connecting.  This forces the probe to travel through the
+    /// interface that owns that address, giving an accurate health signal even
+    /// when policy routing rules are active.
     async fn tcp_probe(&self, target: &ProbeTarget, start: Instant, timestamp: u64) -> ProbeResult {
         let timeout_duration = Duration::from_secs(self.config.timeout_secs);
         let addr = format!("{}:{}", target.address, target.port);
 
-        let result = timeout(timeout_duration, TcpStream::connect(&addr)).await;
+        let connect_result: std::io::Result<TcpStream> = if let Some(local_ip) = &self.local_addr {
+            // Bind to the interface's local IP so the probe is routed through
+            // that interface regardless of the current policy routing state.
+            let local: SocketAddr = match format!("{}:0", local_ip).parse() {
+                Ok(a) => a,
+                Err(e) => {
+                    return ProbeResult {
+                        target_name: target.name.clone(),
+                        success: false,
+                        rtt_ms: None,
+                        error: Some(format!("invalid local address {}: {}", local_ip, e)),
+                        timestamp,
+                    };
+                }
+            };
+            let remote: SocketAddr = match addr.parse() {
+                Ok(a) => a,
+                Err(e) => {
+                    return ProbeResult {
+                        target_name: target.name.clone(),
+                        success: false,
+                        rtt_ms: None,
+                        error: Some(format!("invalid remote address {}: {}", addr, e)),
+                        timestamp,
+                    };
+                }
+            };
+            let socket_result = TcpSocket::new_v4().and_then(|s| s.bind(local).map(|_| s));
+            match socket_result {
+                Ok(socket) => {
+                    timeout(timeout_duration, socket.connect(remote))
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                "timeout",
+                            ))
+                        })
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            timeout(timeout_duration, TcpStream::connect(&addr))
+                .await
+                .unwrap_or_else(|_| {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "timeout",
+                    ))
+                })
+        };
 
         let elapsed = start.elapsed();
 
-        match result {
-            Ok(Ok(_stream)) => {
+        match connect_result {
+            Ok(_stream) => {
                 debug!(
                     interface = %self.interface,
                     target = %target.name,
@@ -242,7 +314,7 @@ impl HealthProber {
                     timestamp,
                 }
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 debug!(
                     interface = %self.interface,
                     target = %target.name,
@@ -254,20 +326,6 @@ impl HealthProber {
                     success: false,
                     rtt_ms: None,
                     error: Some(e.to_string()),
-                    timestamp,
-                }
-            }
-            Err(_) => {
-                debug!(
-                    interface = %self.interface,
-                    target = %target.name,
-                    "Probe timed out"
-                );
-                ProbeResult {
-                    target_name: target.name.clone(),
-                    success: false,
-                    rtt_ms: None,
-                    error: Some("timeout".to_string()),
                     timestamp,
                 }
             }
@@ -373,6 +431,39 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].target_name, "localhost");
         // Result may be success or failure depending on system state
+        assert_eq!(prober.stats().total_probes, 1);
+    }
+
+    #[test]
+    fn test_with_local_addr_builder() {
+        let config = ProbeConfig::default();
+        let prober = HealthProber::new("eth0".to_string(), config)
+            .with_local_addr("192.168.1.100".to_string());
+        assert_eq!(prober.local_addr.as_deref(), Some("192.168.1.100"));
+    }
+
+    #[tokio::test]
+    async fn test_health_prober_with_local_addr_unreachable() {
+        // Bind to loopback and attempt an unreachable port — the probe must
+        // complete (with a failure result) rather than panic or hang.
+        let config = ProbeConfig {
+            interval_secs: 5,
+            timeout_secs: 1,
+            targets: vec![ProbeTarget {
+                name: "local-unreachable".to_string(),
+                address: "127.0.0.1".to_string(),
+                port: 1,
+                probe_type: ProbeType::TcpConnect,
+            }],
+            degraded_threshold: 1,
+            down_threshold: 2,
+        };
+
+        let mut prober = HealthProber::new("lo".to_string(), config)
+            .with_local_addr("127.0.0.1".to_string());
+        let results = prober.probe_once().await;
+
+        assert_eq!(results.len(), 1);
         assert_eq!(prober.stats().total_probes, 1);
     }
 }

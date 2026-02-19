@@ -153,9 +153,18 @@ impl BackhaulManager {
         // Update or create state for each candidate
         for candidate in &candidates {
             if !states.contains_key(&candidate.name) {
-                // New interface - create state
-                let prober =
-                    HealthProber::new(candidate.name.clone(), self.config.probe_config.clone());
+                // New interface - create state; bind probes to the interface's
+                // own IPv4 address so each probe travels through that interface.
+                let local_ip = candidate.ipv4_addresses.first().cloned();
+                let prober = {
+                    let p =
+                        HealthProber::new(candidate.name.clone(), self.config.probe_config.clone());
+                    if let Some(ip) = local_ip {
+                        p.with_local_addr(ip)
+                    } else {
+                        p
+                    }
+                };
                 let state_machine = InterfaceStateMachine::new(
                     candidate.name.clone(),
                     self.config.state_machine_config.clone(),
@@ -247,7 +256,12 @@ impl BackhaulManager {
 
                 // Update routing
                 let mut routing = self.routing.write().await;
-                routing.switch_active_interface(best_interface, None)?;
+                let source_ip = if let Some(state) = states.get(best_interface) {
+                    state.info.ipv4_addresses.first().cloned()
+                } else {
+                    None
+                };
+                routing.switch_active_interface(best_interface, None, source_ip)?;
                 drop(routing);
 
                 // Update active interface
