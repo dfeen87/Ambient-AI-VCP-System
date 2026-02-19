@@ -76,9 +76,8 @@ impl ZKProver {
     pub fn new(proving_key: ProvingKey, verification_key: VerificationKey) -> Result<Self> {
         // Deserialize the proving key; return an error if the key data is invalid
         // rather than silently falling back to a predictable seed-0 key.
-        let ark_pk =
-            ArkProvingKey::<Bn254>::deserialize_compressed(&proving_key.key_data[..])
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize proving key: {}", e))?;
+        let ark_pk = ArkProvingKey::<Bn254>::deserialize_compressed(&proving_key.key_data[..])
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize proving key: {}", e))?;
 
         Ok(Self {
             proving_key: ark_pk,
@@ -228,6 +227,9 @@ mod tests {
             key_data: vec![0xFF; 32],
         };
         let result = ZKProver::new(bad_pk, bad_vk);
-        assert!(result.is_err(), "ZKProver::new should fail on invalid key data");
+        assert!(
+            result.is_err(),
+            "ZKProver::new should fail on invalid key data"
+        );
     }
 }

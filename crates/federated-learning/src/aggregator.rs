@@ -66,8 +66,11 @@ impl FederatedAggregator {
                 self.global_model.layers.len()
             );
         }
-        for (layer_idx, (client_layer, global_layer)) in
-            model.layers.iter().zip(self.global_model.layers.iter()).enumerate()
+        for (layer_idx, (client_layer, global_layer)) in model
+            .layers
+            .iter()
+            .zip(self.global_model.layers.iter())
+            .enumerate()
         {
             if client_layer.weights.len() != global_layer.weights.len() {
                 anyhow::bail!(
@@ -244,7 +247,11 @@ mod tests {
         let result = aggregator.add_client_update("client1".to_string(), wrong_model, 100);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("layers"), "error should mention layers: {}", msg);
+        assert!(
+            msg.contains("layers"),
+            "error should mention layers: {}",
+            msg
+        );
     }
 
     #[test]
@@ -272,6 +279,10 @@ mod tests {
         let result = aggregator.add_client_update("client1".to_string(), wrong_model, 100);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("weights"), "error should mention weights: {}", msg);
+        assert!(
+            msg.contains("weights"),
+            "error should mention weights: {}",
+            msg
+        );
     }
 }
