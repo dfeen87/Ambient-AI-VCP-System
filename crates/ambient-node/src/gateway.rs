@@ -278,12 +278,7 @@ async fn handle_ncsi_connection(stream: TcpStream) -> Result<()> {
 
     // Read the HTTP request line with a short timeout so stale connections do
     // not hold resources indefinitely.
-    match tokio::time::timeout(
-        Duration::from_secs(5),
-        reader.read_line(&mut request_line),
-    )
-    .await
-    {
+    match tokio::time::timeout(Duration::from_secs(5), reader.read_line(&mut request_line)).await {
         Err(_) => {
             debug!("NCSI request timed out; closing connection");
             return Ok(());
@@ -300,11 +295,7 @@ async fn handle_ncsi_connection(stream: TcpStream) -> Result<()> {
     // HTTP exchange is well-formed and the client reads the full response.
     loop {
         let mut header_line = String::new();
-        match tokio::time::timeout(
-            Duration::from_secs(5),
-            reader.read_line(&mut header_line),
-        )
-        .await
+        match tokio::time::timeout(Duration::from_secs(5), reader.read_line(&mut header_line)).await
         {
             Ok(Ok(0)) | Err(_) => break,
             Ok(Err(e)) => {
@@ -317,10 +308,7 @@ async fn handle_ncsi_connection(stream: TcpStream) -> Result<()> {
     }
 
     // Extract the request path from the first line, e.g. "GET /connecttest.txt HTTP/1.1"
-    let path = request_line
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/");
+    let path = request_line.split_whitespace().nth(1).unwrap_or("/");
 
     let (status, body) = ncsi_response_for_path(path);
     let len = body.len();
@@ -633,7 +621,10 @@ mod tests {
         client.read_to_end(&mut response).await.unwrap();
         let response_str = std::str::from_utf8(&response).unwrap();
 
-        assert!(response_str.contains("200 OK"), "expected HTTP 200, got: {response_str}");
+        assert!(
+            response_str.contains("200 OK"),
+            "expected HTTP 200, got: {response_str}"
+        );
         assert!(
             response_str.contains("Microsoft Connect Test"),
             "expected NCSI body, got: {response_str}"
@@ -668,7 +659,10 @@ mod tests {
         client.read_to_end(&mut response).await.unwrap();
         let response_str = std::str::from_utf8(&response).unwrap();
 
-        assert!(response_str.contains("200 OK"), "expected HTTP 200, got: {response_str}");
+        assert!(
+            response_str.contains("200 OK"),
+            "expected HTTP 200, got: {response_str}"
+        );
         assert!(
             response_str.contains("NetworkManager is online"),
             "expected NM body, got: {response_str}"
@@ -696,7 +690,8 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let mut client = TcpStream::connect(addr).await.unwrap();
-        let request = b"GET / HTTP/1.1\r\nHost: connectivity-check.ubuntu.com\r\nConnection: close\r\n\r\n";
+        let request =
+            b"GET / HTTP/1.1\r\nHost: connectivity-check.ubuntu.com\r\nConnection: close\r\n\r\n";
         client.write_all(request).await.unwrap();
 
         let mut response = Vec::new();
