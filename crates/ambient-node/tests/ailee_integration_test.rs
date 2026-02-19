@@ -451,3 +451,81 @@ async fn test_vcp_adapter_lineage_tracking() {
         assert!(!model_id.is_empty());
     }
 }
+
+#[tokio::test]
+async fn test_vcp_adapter_open_internet_node() {
+    let adapter = AileeEngineAdapter::new(2);
+
+    let context = VcpExecutionContext::new(
+        true, // Open internet nodes are online
+        "us-west-1",
+        "open_internet",
+        5000,
+        true,
+    );
+
+    let result = adapter
+        .execute_with_context("Test open internet node", TaskType::Chat, 0.5, &context)
+        .await
+        .unwrap();
+
+    assert!(!result.final_output.is_empty());
+    assert!(result.trust_score >= 0.0 && result.trust_score <= 1.0);
+    assert!(result.verify_hash());
+}
+
+#[tokio::test]
+async fn test_vcp_adapter_any_node_type() {
+    let adapter = AileeEngineAdapter::new(2);
+
+    let context = VcpExecutionContext::new(
+        true, // Universal nodes are online
+        "eu-central-1",
+        "any",
+        5000,
+        true,
+    );
+
+    let result = adapter
+        .execute_with_context("Test universal any node", TaskType::Chat, 0.5, &context)
+        .await
+        .unwrap();
+
+    assert!(!result.final_output.is_empty());
+    assert!(result.trust_score >= 0.0 && result.trust_score <= 1.0);
+    assert!(result.verify_hash());
+}
+
+#[tokio::test]
+async fn test_vcp_adapter_all_node_types() {
+    // Verify AILEE is connected to every supported node type
+    let node_types = [
+        "compute",
+        "gateway",
+        "storage",
+        "validator",
+        "open_internet",
+        "any",
+    ];
+
+    for node_type in node_types {
+        let adapter = AileeEngineAdapter::new(1);
+        let context =
+            VcpExecutionContext::new(false, "us-east-1", node_type, 3000, true);
+
+        let result = adapter
+            .execute_with_context(
+                "Test for node type",
+                TaskType::Chat,
+                0.5,
+                &context,
+            )
+            .await
+            .unwrap_or_else(|e| panic!("AILEE execution failed for node_type='{node_type}': {e}"));
+
+        assert!(
+            !result.final_output.is_empty(),
+            "Empty output for node_type='{node_type}'"
+        );
+    }
+}

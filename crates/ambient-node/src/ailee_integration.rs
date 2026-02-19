@@ -250,4 +250,48 @@ mod tests {
 
         assert!(result.is_ok());
     }
+
+    #[tokio::test]
+    async fn test_open_internet_node_execution() {
+        let adapter = AileeEngineAdapter::new(2);
+
+        let context = VcpExecutionContext::new(
+            true, // Open internet nodes are online
+            "us-west",
+            "open_internet",
+            5000,
+            true,
+        );
+
+        let result = adapter
+            .execute_with_context("Test open_internet node", TaskType::Chat, 0.5, &context)
+            .await;
+
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert!(!result.final_output.is_empty());
+        assert!(result.trust_score >= 0.0 && result.trust_score <= 1.0);
+    }
+
+    #[tokio::test]
+    async fn test_any_node_type_execution() {
+        let adapter = AileeEngineAdapter::new(2);
+
+        let context = VcpExecutionContext::new(
+            true, // Universal nodes are online
+            "eu-central",
+            "any",
+            5000,
+            true,
+        );
+
+        let result = adapter
+            .execute_with_context("Test any node type", TaskType::Chat, 0.5, &context)
+            .await;
+
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert!(!result.final_output.is_empty());
+        assert!(result.trust_score >= 0.0 && result.trust_score <= 1.0);
+    }
 }
