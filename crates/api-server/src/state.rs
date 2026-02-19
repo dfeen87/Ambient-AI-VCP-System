@@ -1101,17 +1101,30 @@ impl AppState {
             Err(_) => return Ok(false),
         };
 
-        let assigned_nodes = sqlx::query_scalar::<_, String>(
+        // Fetch task type and currently-active assigned nodes in one query so we can
+        // record cleared-task events in heartbeat history after the row is deleted.
+        let pre_delete_rows = sqlx::query(
             r#"
-            SELECT node_id
-            FROM task_assignments
-            WHERE task_id = $1
-              AND disconnected_at IS NULL
+            SELECT t.task_type, ta.node_id
+            FROM tasks t
+            LEFT JOIN task_assignments ta
+                   ON ta.task_id = t.task_id AND ta.disconnected_at IS NULL
+            WHERE t.task_id = $1
+              AND t.creator_id = $2
             "#,
         )
         .bind(task_uuid)
+        .bind(requester_id)
         .fetch_all(&self.db)
         .await?;
+
+        let task_type: Option<String> = pre_delete_rows
+            .first()
+            .and_then(|r| r.try_get::<String, _>("task_type").ok());
+        let assigned_nodes: Vec<String> = pre_delete_rows
+            .iter()
+            .filter_map(|r| r.try_get::<String, _>("node_id").ok())
+            .collect();
 
         let result = sqlx::query(
             r#"
@@ -1126,6 +1139,37 @@ impl AppState {
         .await?;
 
         if result.rows_affected() > 0 {
+            // Record a cleared-task event in heartbeat history for each assigned node.
+            // health_score and active_tasks are 0 because this is an event marker, not
+            // a true health snapshot.
+            if let Some(ref ttype) = task_type {
+                let metadata = serde_json::json!({
+                    "task_id": task_id,
+                    "task_type": ttype,
+                    "event": "task_cleared"
+                });
+                for node_id in &assigned_nodes {
+                    if let Err(e) = sqlx::query(
+                        r#"
+                        INSERT INTO node_heartbeat_history
+                            (node_id, health_score, active_tasks, status, metadata, recorded_at)
+                        VALUES ($1, 0, 0, 'task_cleared', $2, NOW())
+                        "#,
+                    )
+                    .bind(node_id)
+                    .bind(&metadata)
+                    .execute(&self.db)
+                    .await
+                    {
+                        tracing::warn!(
+                            "Failed to record cleared task in heartbeat history for node {}: {:?}",
+                            node_id,
+                            e
+                        );
+                    }
+                }
+            }
+
             for node_id in assigned_nodes {
                 self.assign_pending_tasks_for_node(&node_id).await?;
             }
@@ -1133,6 +1177,58 @@ impl AppState {
         }
 
         Ok(false)
+    }
+
+    /// Get recent task-cleared events from heartbeat history for a node
+    pub async fn get_node_cleared_task_events(
+        &self,
+        node_id: &str,
+        owner_id: Uuid,
+    ) -> ApiResult<Vec<serde_json::Value>> {
+        // Verify node ownership
+        let exists: bool = sqlx::query_scalar(
+            r#"SELECT EXISTS(SELECT 1 FROM nodes WHERE node_id = $1 AND owner_id = $2 AND deleted_at IS NULL)"#,
+        )
+        .bind(node_id)
+        .bind(owner_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        if !exists {
+            return Err(ApiError::not_found_or_forbidden(format!(
+                "Node {} not found or you don't have permission to view it",
+                node_id
+            )));
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT metadata, recorded_at
+            FROM node_heartbeat_history
+            WHERE node_id = $1
+              AND status = 'task_cleared'
+            ORDER BY recorded_at DESC
+            LIMIT 50
+            "#,
+        )
+        .bind(node_id)
+        .fetch_all(&self.db)
+        .await?;
+
+        let events: Vec<serde_json::Value> = rows
+            .into_iter()
+            .filter_map(|row| {
+                let metadata: Option<serde_json::Value> = row.try_get("metadata").ok();
+                let recorded_at: chrono::DateTime<chrono::Utc> =
+                    row.try_get("recorded_at").ok()?;
+                metadata.map(|mut m| {
+                    m["cleared_at"] = serde_json::Value::String(recorded_at.to_rfc3339());
+                    m
+                })
+            })
+            .collect();
+
+        Ok(events)
     }
 
     /// Get a specific task from the database

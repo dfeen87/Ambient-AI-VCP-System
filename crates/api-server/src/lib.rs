@@ -34,6 +34,7 @@ use state::AppState;
         delete_node,
         reject_node,
         update_heartbeat,
+        get_node_heartbeat_activity,
         submit_task,
         get_task,
         list_tasks,
@@ -572,6 +573,36 @@ async fn delete_task(
     })))
 }
 
+/// Get cleared-task events from a node's heartbeat history
+#[utoipa::path(
+    get,
+    path = "/api/v1/nodes/{node_id}/heartbeat/activity",
+    params(
+        ("node_id" = String, Path, description = "Node ID")
+    ),
+    responses(
+        (status = 200, description = "Cleared task events returned successfully"),
+        (status = 404, description = "Node not found or you don't have permission", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn get_node_heartbeat_activity(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Path(node_id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let owner_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+
+    let events = state
+        .get_node_cleared_task_events(&node_id, owner_id)
+        .await?;
+
+    Ok(Json(serde_json::json!({ "events": events })))
+}
+
 /// Verify a ZK proof
 #[utoipa::path(
     post,
@@ -910,6 +941,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/nodes/:node_id", get(get_node).delete(delete_node))
         .route("/nodes/:node_id/reject", post(reject_node))
         .route("/nodes/:node_id/heartbeat", put(update_heartbeat))
+        .route(
+            "/nodes/:node_id/heartbeat/activity",
+            get(get_node_heartbeat_activity),
+        )
         .route("/tasks", post(submit_task).get(list_tasks))
         .route("/tasks/:task_id", get(get_task).delete(delete_task))
         .route("/connect-sessions/start", post(start_connect_session))
