@@ -7,6 +7,7 @@ use axum::{
 };
 use sqlx::Row;
 use std::{sync::Arc, time::Duration};
+use tower_http::services::ServeDir;
 use tracing::{error, info};
 use utoipa::OpenApi;
 use uuid::Uuid;
@@ -1005,9 +1006,18 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             middleware::auth::jwt_auth_middleware,
         ));
 
+    // Resolve the fonts directory.  In Docker the working directory is /app and
+    // fonts are copied to /app/crates/api-server/assets/fonts.  For local
+    // development (running `cargo run` from the project root) the same relative
+    // path resolves correctly.  The FONTS_DIR environment variable overrides
+    // this default so callers can point at any absolute path if needed.
+    let fonts_dir = std::env::var("FONTS_DIR")
+        .unwrap_or_else(|_| "crates/api-server/assets/fonts".to_string());
+
     Router::new()
         .route("/", get(dashboard))
         .route("/swagger-ui", get(swagger_ui))
+        .nest_service("/assets/fonts", ServeDir::new(fonts_dir))
         .nest("/api/v1", api_routes)
         .merge(docs_router)
         .merge(metrics_routes)
