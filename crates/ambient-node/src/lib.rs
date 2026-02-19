@@ -18,8 +18,9 @@ pub mod ailee_integration;
 
 // Re-export AILEE types from external crate (not re-implemented)
 pub use ailee_trust_layer::{
-    ConsensusEngine, ExecutionMode, GenerationRequest, GenerationResult, LocalModelAdapter,
-    ModelAdapter, ModelLocality, ModelOutput, RemoteModelAdapter, TaskType, TrustScores,
+    AileeMetric, AileeParams, AileeSample, ConsensusEngine, ExecutionMode, GenerationRequest,
+    GenerationResult, LocalModelAdapter, ModelAdapter, ModelLocality, ModelOutput,
+    RemoteModelAdapter, TaskType, TrustScores,
 };
 
 // Re-export VCP integration adapter

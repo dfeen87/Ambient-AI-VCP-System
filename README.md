@@ -1,12 +1,12 @@
 # Ambient AI + VCP System
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-59%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-129%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
  
 A **live online application** and implementation of a **Verifiable Computation Protocol (VCP)** for running and verifying distributed compute tasks across many machines.
 
 ## 🎯 Status: **Live in Production (Public Demo Running)**
 
-✅ **All 59 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
+✅ **All 129 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
 
 > Yes — this app is already deployed and running online.
 > You can use it as-is, and if you self-host it, you should still tune infra/security settings for your own environment.
@@ -79,6 +79,9 @@ Tip: To quickly verify the public demo is reachable, run:
 - 🌐 **Ambient Node Mesh**: Self-organizing network of heterogeneous edge devices
 - 🧠 **Intelligent Orchestration**: Health-based task assignment with reputation scoring
 - 🤖 **AILEE Trust Layer**: External generative intelligence with multi-model consensus and trust scoring
+- 📐 **AILEE ∆v Metric**: Energy-weighted optimization gain functional for continuous efficiency monitoring (see [AILEE paper](https://github.com/dfeen87/AILEE-Trust-Layer))
+- 🔌 **Offline-First / API-Disconnected Operation**: Nodes remain fully operational without a central API endpoint — local session management, policy caching, and internet egress continue via the [`LocalSessionManager`](crates/ambient-node/src/offline.rs)
+- 🔗 **Peer-to-Peer Policy Sync**: Nodes in `OfflineControlPlane` or `NoUpstream` state can exchange cryptographically-verified policy snapshots with peer nodes, letting the mesh distribute fresh session policies without ever touching the control plane
 - 🔒 **WASM Execution Engine**: Secure sandboxed computation with strict resource limits
 - 🔐 **Zero-Knowledge Proofs**: Cryptographic verification with Groth16 implementation
 - 🤝 **Federated Learning**: Privacy-preserving multi-node model training with FedAvg and differential privacy
@@ -325,7 +328,60 @@ curl http://127.0.0.1:9090/node/status | jq
 - Exposes only high-level, non-sensitive metrics (uptime, resource usage, trust scores)
 - Trust decision metadata (scores, thresholds, hashes) - no payloads or model inputs
 
-### 9. **Web Dashboard** (`api-server/assets`)
+### 9. **AILEE ∆v Metric** (`ailee-trust-layer/metric`) 🆕
+**Purpose**: Time-integrated efficiency monitoring based on the [AILEE paper](https://github.com/dfeen87/AILEE-Trust-Layer)
+
+The AILEE framework introduces an *energy-weighted optimization gain functional* ∆v that accumulates performance gain over time while penalising inertia and off-resonant operation:
+
+```
+∆v = Isp · η · e^(−α·v₀²) · ∫ P_input(t) · e^(−α·w(t)²) · e^(2α·v₀·v(t)) / M(t) dt
+```
+
+- 📐 **`AileeMetric`**: Accumulates successive telemetry samples via `integrate()` and exposes `delta_v()` at any point in time
+- 📋 **`AileeSample`**: Per-interval telemetry snapshot — compute/power input `P_input`, workload `w`, adaptation velocity `v`, and model inertia `M`
+- 🎛️ **`AileeParams`**: Configurable resonance sensitivity `α`, efficiency coefficient `η`, specific factor `Isp`, and reference state `v₀`
+- 🔒 Overflow-safe: both exponential resonance gates are clamped to prevent `f64` overflow for large telemetry values
+
+**Usage:**
+```rust
+use ailee_trust_layer::metric::{AileeMetric, AileeSample};
+
+let mut metric = AileeMetric::default();
+metric.integrate(&AileeSample::new(100.0, 0.5, 1.2, 10.0, 1.0)); // P, w, v, M, dt
+let gain = metric.delta_v(); // dimensionless efficiency gain
+```
+
+### 10. **Peer-to-Peer Policy Sync** (`ambient-node/offline`) 🆕
+**Purpose**: Keep nodes operational and internet-capable even when disconnected from the API endpoint
+
+> **Answer to "Can we connect nodes and power internet while disconnected from the API?"**  
+> **Yes.** The `LocalSessionManager` runs in `OfflineControlPlane` mode when the WAN is up but the API is unreachable. Nodes can now *share verified policy snapshots directly with each other* — no central server needed.
+
+- 🔗 **`PeerPolicySyncMessage`**: A serialisable, SHA3-256-integrity-protected snapshot of a node's egress policies and verification keys — covers full policy content (IDs *and* destinations) so tampering with allowed destinations also invalidates the hash
+- 📤 **`LocalSessionManager::export_peer_sync()`**: Snapshot the current policy cache for distribution to peers
+- 📥 **`LocalSessionManager::import_peer_sync()`**: Non-destructively merge policies from a peer — existing local entries are *never* overwritten, preventing a compromised peer from downgrading local policies
+- 📋 Every import is appended to the local audit queue with event type `peer_sync_applied`
+- ✅ Works in `OfflineControlPlane`, `NoUpstream`, and `OnlineControlPlane` states
+
+**Node states:**
+
+| State | API reachable | WAN up | Internet egress | Peer sync |
+|-------|:---:|:---:|:---:|:---:|
+| `OnlineControlPlane` | ✅ | ✅ | ✅ | ✅ |
+| `OfflineControlPlane` | ❌ | ✅ | ✅ (cached policies) | ✅ |
+| `NoUpstream` | ❌ | ❌ | ❌ | ✅ (receive only) |
+
+**Usage:**
+```rust
+// Node A (has fresh policies) → exports a snapshot
+let msg = node_a_mgr.export_peer_sync("node-A");
+
+// Node B (API offline, stale cache) → imports non-destructively
+let added = node_b_mgr.import_peer_sync(&msg)?;
+// node-B can now activate sessions and route traffic using the synced policies
+```
+
+### 11. **Web Dashboard** (`api-server/assets`)
 **Purpose**: Real-time monitoring interface
 
 - 📊 Real-time cluster metrics visualization
@@ -369,7 +425,9 @@ When you clone this repo, you immediately get:
 - ✅ **Zero-Knowledge Proofs** (Groth16, sub-second verification)
 - ✅ **WASM Execution Engine** with sandboxing
 - ✅ **Web Dashboard** for real-time monitoring
-- ✅ **59 Passing Tests** + Zero compiler warnings
+- ✅ **AILEE ∆v Metric** for continuous efficiency monitoring (new)
+- ✅ **Offline-First + Peer Policy Sync** — nodes keep working and routing internet traffic even without the API endpoint (new)
+- ✅ **129 Passing Tests** + Zero compiler warnings
 - ✅ **Complete Documentation** (15+ guides)
 - ✅ **MIT License** - Use commercially, modify freely
 
@@ -444,13 +502,14 @@ open http://localhost:3000/
 
 | Component | Unit Tests | Integration Tests | Load Tests | Total |
 |-----------|-----------|-------------------|------------|-------|
-| ambient-node | 12 | - | - | 12 |
+| ambient-node | 32 | - | - | 32 |
+| ailee-trust-layer | 38 | - | - | 38 |
 | api-server | 1 | 13 | 4 | 18 |
 | federated-learning | 5 | - | - | 5 |
 | mesh-coordinator | 3 | - | - | 3 |
 | wasm-engine | 4 | - | - | 4 |
 | zk-prover | 6 | - | - | 6 |
-| **TOTAL** | **31** | **13** | **4** | **48** |
+| **TOTAL** | **89** | **13** | **4** | **106** |
 
 ### Running Tests
 
@@ -746,6 +805,13 @@ curl -X POST https://your-api.com/api/v1/auth/login \
 - ✅ **Security Documentation** - Comprehensive guides and best practices
 - ✅ **Data Persistence** - PostgreSQL with migrations
 
+### ⭐ Phase 2.7 - Offline-First Node Connectivity & AILEE Metric (COMPLETED) 🆕
+- ✅ **AILEE ∆v Metric** — energy-weighted optimization gain functional from the AILEE paper; accumulates telemetry samples and produces a dimensionless efficiency score for comparative diagnostics
+- ✅ **Peer-to-Peer Policy Sync** — nodes share cryptographically-verified policy snapshots directly without the control plane, keeping the mesh operational and internet-capable in `OfflineControlPlane` and `NoUpstream` states
+- ✅ **Full-content integrity hashing** — `PeerPolicySyncMessage` hashes both policy IDs *and* allowed destinations, plus full verification-key bytes, preventing hash-bypass attacks
+- ✅ **Overflow-safe resonance gates** — exponential terms in ∆v are clamped before evaluation to prevent `f64` overflow under extreme telemetry values
+- ✅ **70 new tests** across `ailee-trust-layer` and `ambient-node` crates
+
 ### 🔄 Phase 3 - Advanced Features (IN PROGRESS)
 - [x] Authentication & authorization (JWT/API keys) ✅ **COMPLETED**
 - [x] Data persistence (PostgreSQL) ✅ **COMPLETED**
@@ -780,7 +846,10 @@ ambient-vcp/
 ├── .env.example                    # Environment variables template
 │
 ├── crates/                         # Rust workspace crates
-│   ├── ambient-node/               # Node implementation + 12 tests
+│   ├── ambient-node/               # Node implementation + 32 tests
+│   │   └── src/offline.rs          #   LocalSessionManager + PeerPolicySyncMessage
+│   ├── ailee-trust-layer/          # AILEE Trust Layer + 38 tests
+│   │   └── src/metric.rs           #   AileeMetric (∆v), AileeSample, AileeParams
 │   ├── wasm-engine/                # WASM execution runtime + 4 tests
 │   ├── zk-prover/                  # ZK proof generation (Groth16) + 6 tests
 │   ├── mesh-coordinator/           # Task orchestration + 3 tests
