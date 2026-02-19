@@ -1011,8 +1011,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     // development (running `cargo run` from the project root) the same relative
     // path resolves correctly.  The FONTS_DIR environment variable overrides
     // this default so callers can point at any absolute path if needed.
-    let fonts_dir = std::env::var("FONTS_DIR")
-        .unwrap_or_else(|_| "crates/api-server/assets/fonts".to_string());
+    let fonts_dir =
+        std::env::var("FONTS_DIR").unwrap_or_else(|_| "crates/api-server/assets/fonts".to_string());
 
     Router::new()
         .route("/", get(dashboard))
