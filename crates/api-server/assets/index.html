@@ -916,6 +916,55 @@
             flex-wrap: wrap;
             gap: 10px;
         }
+
+        .heartbeat-info {
+            margin-top: 14px;
+            padding: 16px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text-dim);
+        }
+
+        .heartbeat-info p {
+            margin: 0 0 12px 0;
+            line-height: 1.5;
+        }
+
+        .heartbeat-info ul {
+            margin: 0 0 12px 0;
+            padding-left: 24px;
+        }
+
+        .heartbeat-info li {
+            margin: 6px 0;
+            line-height: 1.5;
+        }
+
+        .heartbeat-info code {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+
+        .heartbeat-status-message {
+            font-weight: 500;
+            padding: 10px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .heartbeat-status-message.success {
+            color: #4ade80;
+            background: rgba(74, 222, 128, 0.1);
+        }
+
+        .heartbeat-status-message.error {
+            color: #f87171;
+            background: rgba(248, 113, 113, 0.1);
+        }
     </style>
 </head>
 <body>
@@ -1323,6 +1372,49 @@
             </div>
             <div class="result-actions-right">
                 <button type="button" class="btn btn-ghost" id="close-observability-modal-footer-btn">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Heartbeat Modal -->
+<div class="modal-overlay" id="heartbeat-modal-overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="heartbeat-modal-title">
+        <div class="modal-header">
+            <div>
+                <div class="modal-title" id="heartbeat-modal-title">Send Node Heartbeat</div>
+                <div class="modal-subtitle">Update the heartbeat timestamp for your node.</div>
+            </div>
+            <button type="button" class="modal-close" id="close-heartbeat-modal-btn" aria-label="Close heartbeat modal">×</button>
+        </div>
+
+        <div class="result-grid">
+            <div class="result-meta">
+                <div class="result-meta-label">Node ID</div>
+                <div class="result-meta-value mono-dim" id="heartbeat-node-id">—</div>
+            </div>
+            <div class="result-meta">
+                <div class="result-meta-label">Current Status</div>
+                <div class="result-meta-value" id="heartbeat-node-status">—</div>
+            </div>
+        </div>
+
+        <div class="heartbeat-info">
+            <p>Sending a heartbeat will:</p>
+            <ul>
+                <li>Update the <code>last_heartbeat</code> timestamp to the current time</li>
+                <li>Indicate that your node is still active and online</li>
+                <li>Help prevent your node from being marked as stale</li>
+            </ul>
+            <p id="heartbeat-message" class="heartbeat-status-message"></p>
+        </div>
+
+        <div class="result-actions">
+            <div class="result-actions-left">
+                <button type="button" class="btn" id="send-heartbeat-btn">Send Heartbeat</button>
+            </div>
+            <div class="result-actions-right">
+                <button type="button" class="btn btn-ghost" id="close-heartbeat-modal-footer-btn">Cancel</button>
             </div>
         </div>
     </div>
@@ -2003,33 +2095,12 @@
             return;
         }
 
-        if (!confirm(`Send heartbeat for node ${nodeId}?\n\nThis will update the node's last heartbeat timestamp to indicate it is still active.`)) {
-            return;
-        }
+        // Find the node data to get status
+        const node = nodes.find(n => n.node_id === nodeId);
+        const nodeStatus = node ? node.status : 'unknown';
 
-        const originalText = buttonEl.textContent;
-        buttonEl.textContent = 'Sending...';
-        buttonEl.disabled = true;
-
-        try {
-            const res = await fetch(`${apiBaseUrl}/api/v1/nodes/${encodeURIComponent(nodeId)}/heartbeat`, {
-                method: 'PUT',
-                headers: getAuthHeaders(),
-            });
-
-            if (res.ok) {
-                showToast(`Heartbeat sent for ${nodeId}`);
-                await fetchData();
-            } else {
-                const err = await res.json();
-                showToast(err.message || 'Failed to send heartbeat', true);
-            }
-        } catch (err) {
-            showToast('Network error: ' + err.message, true);
-        } finally {
-            buttonEl.textContent = originalText;
-            buttonEl.disabled = false;
-        }
+        // Open the modal
+        openHeartbeatModal(nodeId, nodeStatus);
     }
 
     async function handleViewObservability(nodeId, port) {
@@ -2077,6 +2148,78 @@
             payloadEl.textContent = JSON.stringify(data, null, 2);
         } catch (err) {
             payloadEl.textContent = `Error fetching observability data:\n\n${err.message}\n\nNote: The observability endpoint is ONLY accessible from the local machine (127.0.0.1) where the node is running.\n\nCommon issues:\n1. This UI must be accessed from the SAME machine as the node (not remotely)\n2. The node must be running with observability enabled on port ${port}\n3. CORS policies prevent cross-origin requests to localhost from remote origins\n4. Some browsers block localhost requests when the page is served over HTTPS\n\nIf you're running the node on this machine, ensure:\n- The node is running: check with 'curl http://127.0.0.1:${port}/node/status'\n- The observability port ${port} is correct`;
+        }
+    }
+
+    function openHeartbeatModal(nodeId, nodeStatus) {
+        document.getElementById('heartbeat-node-id').textContent = nodeId;
+        document.getElementById('heartbeat-node-status').textContent = nodeStatus;
+        document.getElementById('heartbeat-message').textContent = '';
+        document.getElementById('heartbeat-message').className = 'heartbeat-status-message';
+        
+        // Enable the send button
+        const sendBtn = document.getElementById('send-heartbeat-btn');
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send Heartbeat';
+        
+        // Store node ID for the send button
+        sendBtn.setAttribute('data-node-id', nodeId);
+        
+        document.getElementById('heartbeat-modal-overlay').classList.add('open');
+        document.getElementById('heartbeat-modal-overlay').setAttribute('aria-hidden', 'false');
+    }
+
+    function closeHeartbeatModal() {
+        document.getElementById('heartbeat-modal-overlay').classList.remove('open');
+        document.getElementById('heartbeat-modal-overlay').setAttribute('aria-hidden', 'true');
+    }
+
+    async function sendNodeHeartbeat() {
+        const sendBtn = document.getElementById('send-heartbeat-btn');
+        const nodeId = sendBtn.getAttribute('data-node-id');
+        const messageEl = document.getElementById('heartbeat-message');
+        
+        if (!nodeId) {
+            return;
+        }
+
+        const originalText = sendBtn.textContent;
+        sendBtn.textContent = 'Sending...';
+        sendBtn.disabled = true;
+        messageEl.textContent = '';
+        messageEl.className = 'heartbeat-status-message';
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/v1/nodes/${encodeURIComponent(nodeId)}/heartbeat`, {
+                method: 'PUT',
+                headers: getAuthHeaders(),
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                messageEl.textContent = `✓ Heartbeat sent successfully!\n\nTimestamp: ${data.timestamp || new Date().toISOString()}\n\nYour node's heartbeat has been updated. You can close this window.`;
+                messageEl.classList.add('success');
+                showToast(`Heartbeat sent for ${nodeId}`);
+                await fetchData();
+                
+                // Change button to "Close"
+                sendBtn.textContent = 'Close';
+                sendBtn.disabled = false;
+                sendBtn.onclick = closeHeartbeatModal;
+            } else {
+                const err = await res.json();
+                messageEl.textContent = `✗ Failed to send heartbeat: ${err.message || 'Unknown error'}`;
+                messageEl.classList.add('error');
+                showToast(err.message || 'Failed to send heartbeat', true);
+                sendBtn.textContent = originalText;
+                sendBtn.disabled = false;
+            }
+        } catch (err) {
+            messageEl.textContent = `✗ Network error: ${err.message}`;
+            messageEl.classList.add('error');
+            showToast('Network error: ' + err.message, true);
+            sendBtn.textContent = originalText;
+            sendBtn.disabled = false;
         }
     }
 
@@ -2523,6 +2666,17 @@
     document.getElementById('observability-modal-overlay').addEventListener('click', (e) => {
         if (e.target.id === 'observability-modal-overlay') {
             closeObservabilityModal();
+        }
+    });
+
+    // Heartbeat modal event listeners
+    document.getElementById('close-heartbeat-modal-btn').addEventListener('click', closeHeartbeatModal);
+    document.getElementById('close-heartbeat-modal-footer-btn').addEventListener('click', closeHeartbeatModal);
+    document.getElementById('send-heartbeat-btn').addEventListener('click', sendNodeHeartbeat);
+
+    document.getElementById('heartbeat-modal-overlay').addEventListener('click', (e) => {
+        if (e.target.id === 'heartbeat-modal-overlay') {
+            closeHeartbeatModal();
         }
     });
 
