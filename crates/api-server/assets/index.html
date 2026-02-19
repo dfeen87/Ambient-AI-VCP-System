@@ -2307,21 +2307,26 @@
         const pingEntries = document.getElementById('heartbeat-ping-entries');
         pingEntries.textContent = '';
 
-        // Finished tasks: assigned to this node and reached a terminal status
+        // Finished tasks: currently or formerly assigned to this node and reached a terminal status
         const finishedNodeTasks = tasks.filter(t =>
-            Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId) &&
+            (Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId) ||
+             Array.isArray(t.former_assigned_nodes) && t.former_assigned_nodes.includes(nodeId)) &&
             (t.status === 'completed' || t.status === 'failed'));
-        // Disconnected tasks: connect_only sessions no longer including this node
+        // Disconnected tasks: formerly assigned to this node but no longer active on it
         const disconnectedNodeTasks = tasks.filter(t =>
-            t.task_type === 'connect_only' &&
-            Array.isArray(t.assigned_nodes) && !t.assigned_nodes.includes(nodeId) &&
+            Array.isArray(t.former_assigned_nodes) && t.former_assigned_nodes.includes(nodeId) &&
+            !(Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId)) &&
             t.status !== 'completed' && t.status !== 'failed');
 
         if (finishedNodeTasks.length > 0 || disconnectedNodeTasks.length > 0) {
             finishedNodeTasks.forEach(t => {
-                const cls = t.status === 'completed' ? 'ok' : 'err';
-                const symbol = t.status === 'completed' ? '✓' : '✗';
-                addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — finished (${t.status}) ${symbol}`, cls);
+                if (t.task_type === 'connect_only' && t.status === 'completed') {
+                    addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [connect_only] — session ended (disconnected)`, 'err');
+                } else {
+                    const cls = t.status === 'completed' ? 'ok' : 'err';
+                    const symbol = t.status === 'completed' ? '✓' : '✗';
+                    addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — finished (${t.status}) ${symbol}`, cls);
+                }
             });
             disconnectedNodeTasks.forEach(t => {
                 addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — disconnected from node`, 'err');
