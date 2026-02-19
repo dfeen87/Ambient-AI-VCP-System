@@ -1,0 +1,14 @@
+{
+  "name": "ambient-ai-vcp-dashboard",
+  "version": "1.0.0",
+  "description": "Dashboard assets for Ambient AI VCP System – self-hosted fonts via @fontsource",
+  "private": true,
+  "scripts": {
+    "setup-fonts": "node scripts/setup-fonts.js",
+    "postinstall": "node scripts/setup-fonts.js"
+  },
+  "dependencies": {
+    "@fontsource/syne": "5.2.7",
+    "@fontsource/jetbrains-mono": "5.2.8"
+  }
+}

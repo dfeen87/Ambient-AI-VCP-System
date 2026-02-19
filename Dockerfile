@@ -2,15 +2,21 @@
 # Use slim image to reduce mirrored layer downloads on Render build workers.
 FROM rust:1.88-slim-bookworm AS builder
 WORKDIR /app
-# Install WasmEdge native libraries
+# Install WasmEdge native libraries and Node.js 20 LTS (for self-hosted font setup)
 RUN apt-get update && \
     apt-get install -y curl libssl-dev pkg-config git python3 && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/* && \
     curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | \
     bash -s -- -p /usr/local
 # Copy workspace files
 COPY Cargo.toml ./
 COPY crates ./crates
+# Install npm font packages and generate self-hosted font assets.
+# This must run before `cargo build` so that the fonts directory is available
+# when the server runs in the container.
+RUN cd crates/api-server && npm install
 # Build the API server
 RUN cargo build --release --bin api-server
 # Runtime stage
@@ -27,6 +33,8 @@ COPY --from=builder /usr/local/lib/libwasmedge.so* /usr/local/lib/
 RUN ldconfig
 # Copy migrations directory
 COPY crates/api-server/migrations /app/migrations
+# Copy self-hosted font assets (generated during the build stage by npm)
+COPY --from=builder /app/crates/api-server/assets/fonts /app/crates/api-server/assets/fonts
 # Create non-root user
 RUN useradd -m -u 1000 ambient && \
     chown -R ambient:ambient /app
