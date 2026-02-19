@@ -486,12 +486,33 @@ impl RegisterRequest {
     }
 }
 
-/// Hash a password using bcrypt
+/// Read the bcrypt cost factor from the `BCRYPT_COST` environment variable.
+///
+/// Defaults to `12` if unset.  Accepted range: 4–31 (bcrypt limits).
+pub fn bcrypt_cost() -> u32 {
+    std::env::var("BCRYPT_COST")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .map(|c| c.clamp(4, 31))
+        .unwrap_or(12)
+}
+
+/// Hash a password using bcrypt with the configured cost factor.
 pub fn hash_password(password: &str) -> ApiResult<String> {
-    bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|e| {
+    bcrypt::hash(password, bcrypt_cost()).map_err(|e| {
         tracing::error!("Failed to hash password: {:?}", e);
         ApiError::internal_error("Failed to process password")
     })
+}
+
+/// Hash a password on a blocking thread pool so the async runtime is not stalled.
+pub async fn hash_password_async(password: String) -> ApiResult<String> {
+    tokio::task::spawn_blocking(move || hash_password(&password))
+        .await
+        .map_err(|e| {
+            tracing::error!("Password hashing blocking task failed: {:?}", e);
+            ApiError::internal_error("Password hashing task failed")
+        })?
 }
 
 /// Verify a password against a hash

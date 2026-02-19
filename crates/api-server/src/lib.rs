@@ -675,7 +675,7 @@ async fn register_user(
 
     info!("Registering user: {}", request.username);
 
-    let password_hash = auth::hash_password(&request.password)?;
+    let password_hash = auth::hash_password_async(request.password.clone()).await?;
     let api_key = auth::generate_api_key();
     let api_key_hash = auth::hash_api_key(&api_key);
 
