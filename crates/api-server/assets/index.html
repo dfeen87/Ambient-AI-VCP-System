@@ -2149,10 +2149,6 @@
     }
 
     async function fetchData() {
-        if (!isApiConnected) {
-            return;
-        }
-
         const errorEl = document.getElementById('error-banner');
         try {
             const authHeaders = authToken ? {
@@ -2205,7 +2201,6 @@
         } catch (err) {
             console.error(err);
             errorEl.style.display = 'block';
-            setConnectionStatus(false);
         }
     }
 
@@ -3232,7 +3227,7 @@
     validateTaskForm();
     checkAuth();
     setInterval(() => {
-        if (authToken && isApiConnected) fetchData();
+        if (authToken) fetchData();
     }, 5000);
 </script>
 </body>
