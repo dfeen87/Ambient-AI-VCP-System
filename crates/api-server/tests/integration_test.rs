@@ -977,3 +977,120 @@ async fn test_node_deletion_reverts_task_to_pending_without_fallback() {
         .await
         .expect("cleanup tables after integration test");
 }
+
+/// Rejecting (ejecting) a node must disconnect its task assignments so that the
+/// task reverts to pending and no longer shows the rejected node as connected.
+#[tokio::test]
+async fn test_node_rejection_disconnects_task_assignments() {
+    let db_url = match std::env::var("TEST_DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("Skipping test_node_rejection_disconnects_task_assignments — no TEST_DATABASE_URL set");
+            return;
+        }
+    };
+
+    let pool = PgPool::connect(&db_url)
+        .await
+        .expect("connect to postgres for integration test");
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations should apply successfully for integration test");
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables before integration test");
+
+    let state = AppState::new(pool.clone());
+    let owner_id = Uuid::new_v4();
+
+    let node_id = format!("node-reject-only-{}", Uuid::new_v4());
+    state
+        .register_node(
+            NodeRegistration {
+                node_id: node_id.clone(),
+                region: "us-west".to_string(),
+                node_type: "compute".to_string(),
+                capabilities: NodeCapabilities {
+                    bandwidth_mbps: 500.0,
+                    cpu_cores: 8,
+                    memory_gb: 16.0,
+                    gpu_available: false,
+                },
+                observability_port: None,
+            },
+            owner_id,
+        )
+        .await
+        .expect("node registration should succeed");
+
+    let creator_id = Uuid::new_v4();
+    let submitted_task = state
+        .submit_task(
+            TaskSubmission {
+                task_type: "computation".to_string(),
+                wasm_module: None,
+                inputs: serde_json::json!({"test": "reject_disconnects"}),
+                requirements: TaskRequirements {
+                    min_nodes: 1,
+                    max_execution_time_sec: 300,
+                    require_gpu: false,
+                    require_proof: false,
+                },
+            },
+            creator_id,
+        )
+        .await
+        .expect("task submission should succeed");
+
+    assert_eq!(submitted_task.status, TaskStatus::Running);
+    assert_eq!(submitted_task.assigned_nodes.len(), 1);
+    assert_eq!(submitted_task.assigned_nodes[0], node_id);
+
+    // Reject (eject) the node — previously this left assignments intact, keeping the
+    // task in 'running' with the now-gone node still listed in assigned_nodes.
+    let rejected = state
+        .reject_node(&node_id, owner_id)
+        .await
+        .expect("node rejection should succeed");
+    assert!(rejected, "node should be rejected");
+
+    let task_after_rejection = state
+        .get_task(&submitted_task.task_id, creator_id)
+        .await
+        .expect("task should still exist after node rejection");
+
+    // Task must revert to pending since no fallback nodes are available.
+    assert_eq!(task_after_rejection.status, TaskStatus::Pending);
+    // The rejected node must not appear in the live assigned_nodes list.
+    assert!(
+        !task_after_rejection.assigned_nodes.contains(&node_id),
+        "rejected node should not remain in assigned_nodes"
+    );
+
+    // Confirm the assignment row was marked disconnected at the DB level.
+    let disconnected_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM task_assignments
+        WHERE task_id = $1
+          AND node_id = $2
+          AND disconnected_at IS NOT NULL
+        "#,
+    )
+    .bind(Uuid::parse_str(&submitted_task.task_id).expect("task id should be UUID"))
+    .bind(&node_id)
+    .fetch_one(&pool)
+    .await
+    .expect("disconnected assignment count query should succeed");
+
+    assert_eq!(disconnected_count, 1, "assignment should be marked disconnected");
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables after integration test");
+}
