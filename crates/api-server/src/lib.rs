@@ -574,7 +574,7 @@ async fn delete_task(
     })))
 }
 
-/// Get cleared-task events from a node's heartbeat history
+/// Get task activity events (task_connected and task_cleared) from a node's heartbeat history
 #[utoipa::path(
     get,
     path = "/api/v1/nodes/{node_id}/heartbeat/activity",
@@ -582,7 +582,7 @@ async fn delete_task(
         ("node_id" = String, Path, description = "Node ID")
     ),
     responses(
-        (status = 200, description = "Cleared task events returned successfully"),
+        (status = 200, description = "Task activity events returned successfully"),
         (status = 404, description = "Node not found or you don't have permission", body = ApiError)
     ),
     security(
