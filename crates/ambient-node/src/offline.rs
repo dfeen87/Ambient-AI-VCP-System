@@ -1,4 +1,4 @@
-use ring::signature::{self};
+use ring::signature::{self, KeyPair};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::collections::{HashMap, HashSet};
@@ -492,8 +492,12 @@ impl LocalSessionManager {
     /// The resulting message can be serialised and sent to peer nodes so that
     /// they can acquire fresh session policies even when the central API
     /// endpoint is unreachable.
-    pub fn export_peer_sync(&self, node_id: impl Into<String>) -> PeerPolicySyncMessage {
-        PeerPolicySyncMessage::from_cache(node_id, &self.cache)
+    pub fn export_peer_sync(
+        &self,
+        node_id: impl Into<String>,
+        key_pair: &signature::Ed25519KeyPair,
+    ) -> PeerPolicySyncMessage {
+        PeerPolicySyncMessage::from_cache(node_id, &self.cache, key_pair)
     }
 
     /// Import policies from a [`PeerPolicySyncMessage`] received from a peer.
@@ -514,6 +518,10 @@ impl LocalSessionManager {
     pub fn import_peer_sync(&mut self, msg: &PeerPolicySyncMessage) -> Result<usize, &'static str> {
         if !msg.verify_integrity() {
             return Err("peer sync message failed integrity check");
+        }
+
+        if !msg.verify_signature() {
+            return Err("peer sync message has invalid signature");
         }
 
         let mut applied = 0;
@@ -578,11 +586,19 @@ pub struct PeerPolicySyncMessage {
     pub snapshot_at: u64,
     /// SHA3-256 hash of the serialised content (integrity check).
     pub content_hash: String,
+    /// Ed25519 signature of the content hash.
+    pub signature: Vec<u8>,
+    /// Public key of the signer.
+    pub signer_public_key: Vec<u8>,
 }
 
 impl PeerPolicySyncMessage {
     /// Build a sync message from a [`LocalPolicyCache`].
-    pub fn from_cache(sender_node_id: impl Into<String>, cache: &LocalPolicyCache) -> Self {
+    pub fn from_cache(
+        sender_node_id: impl Into<String>,
+        cache: &LocalPolicyCache,
+        key_pair: &signature::Ed25519KeyPair,
+    ) -> Self {
         let sender_node_id = sender_node_id.into();
         let egress_policies: Vec<EgressPolicy> = cache.egress_policies.values().cloned().collect();
         let verification_keys = cache.verification_keys.clone();
@@ -593,12 +609,18 @@ impl PeerPolicySyncMessage {
             &verification_keys,
             snapshot_at,
         );
+
+        let signature = key_pair.sign(content_hash.as_bytes()).as_ref().to_vec();
+        let signer_public_key = key_pair.public_key().as_ref().to_vec();
+
         Self {
             sender_node_id,
             egress_policies,
             verification_keys,
             snapshot_at,
             content_hash,
+            signature,
+            signer_public_key,
         }
     }
 
@@ -611,6 +633,13 @@ impl PeerPolicySyncMessage {
             self.snapshot_at,
         );
         self.content_hash == expected
+    }
+
+    /// Verify that the signature matches the content hash and public key.
+    pub fn verify_signature(&self) -> bool {
+        signature::UnparsedPublicKey::new(&signature::ED25519, &self.signer_public_key)
+            .verify(self.content_hash.as_bytes(), &self.signature)
+            .is_ok()
     }
 }
 
@@ -845,8 +874,9 @@ mod tests {
     fn peer_sync_message_integrity_passes() {
         let kp = key_pair();
         let mgr = make_manager_with_policy("p-1", "https://a.example", "k1", &kp);
-        let msg = mgr.export_peer_sync("node-A");
+        let msg = mgr.export_peer_sync("node-A", &kp);
         assert!(msg.verify_integrity());
+        assert!(msg.verify_signature());
         assert_eq!(msg.sender_node_id, "node-A");
         assert_eq!(msg.egress_policies.len(), 1);
     }
@@ -855,7 +885,7 @@ mod tests {
     fn peer_sync_message_integrity_fails_on_tampered_destinations() {
         let kp = key_pair();
         let mgr = make_manager_with_policy("p-1", "https://a.example", "k1", &kp);
-        let mut msg = mgr.export_peer_sync("node-A");
+        let mut msg = mgr.export_peer_sync("node-A", &kp);
         // Tamper: change the allowed destination without updating the hash.
         msg.egress_policies[0].allowed_destinations[0] = "https://evil.example".to_string();
         assert!(
@@ -868,7 +898,7 @@ mod tests {
     fn peer_sync_message_integrity_fails_on_tamper() {
         let kp = key_pair();
         let mgr = make_manager_with_policy("p-1", "https://a.example", "k1", &kp);
-        let mut msg = mgr.export_peer_sync("node-A");
+        let mut msg = mgr.export_peer_sync("node-A", &kp);
         // Tamper: swap the hash.
         msg.content_hash = "deadbeef".to_string();
         assert!(!msg.verify_integrity());
@@ -880,7 +910,7 @@ mod tests {
 
         // Peer node has policy "p-peer".
         let peer_mgr = make_manager_with_policy("p-peer", "https://peer.example", "k-peer", &kp);
-        let msg = peer_mgr.export_peer_sync("node-peer");
+        let msg = peer_mgr.export_peer_sync("node-peer", &kp);
 
         // Local node has a different policy "p-local".
         let mut local_mgr =
@@ -900,7 +930,7 @@ mod tests {
 
         // Both nodes have the same policy ID but different destinations.
         let peer_mgr = make_manager_with_policy("p-1", "https://peer.example", "k1", &kp);
-        let msg = peer_mgr.export_peer_sync("node-peer");
+        let msg = peer_mgr.export_peer_sync("node-peer", &kp);
 
         let mut local_mgr = make_manager_with_policy("p-1", "https://local.example", "k1", &kp);
 
@@ -917,7 +947,7 @@ mod tests {
     fn import_peer_sync_rejects_tampered_message() {
         let kp = key_pair();
         let peer_mgr = make_manager_with_policy("p-1", "https://peer.example", "k1", &kp);
-        let mut msg = peer_mgr.export_peer_sync("node-peer");
+        let mut msg = peer_mgr.export_peer_sync("node-peer", &kp);
         msg.content_hash = "invalid".to_string();
 
         let mut local_mgr = make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
@@ -930,7 +960,7 @@ mod tests {
         let kp = key_pair();
 
         let peer_mgr = make_manager_with_policy("p-peer", "https://peer.example", "k1", &kp);
-        let msg = peer_mgr.export_peer_sync("node-peer");
+        let msg = peer_mgr.export_peer_sync("node-peer", &kp);
 
         let mut local_mgr = make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
 
@@ -966,7 +996,7 @@ mod tests {
     fn peer_sync_audit_trail_is_recorded() {
         let kp = key_pair();
         let peer_mgr = make_manager_with_policy("p-peer", "https://peer.example", "k1", &kp);
-        let msg = peer_mgr.export_peer_sync("node-peer");
+        let msg = peer_mgr.export_peer_sync("node-peer", &kp);
 
         let audit_path = env::temp_dir().join(format!("audit-{}.log", uuid::Uuid::new_v4()));
         let queue = PersistentAuditQueue::new(&audit_path);
