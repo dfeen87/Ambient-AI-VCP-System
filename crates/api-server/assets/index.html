@@ -2128,6 +2128,17 @@
                 refreshRelayConnectionSnapshot(tasks);
                 renderTasks(tasks);
                 document.getElementById('tasks-count').textContent = tasks.length;
+
+                // If the heartbeat modal is open, refresh its active-tasks section so
+                // newly-assigned tasks appear without requiring the user to reopen the modal.
+                // The node ID is stored as data-node-id on the send button when the modal opens.
+                const heartbeatOverlay = document.getElementById('heartbeat-modal-overlay');
+                if (heartbeatOverlay && heartbeatOverlay.classList.contains('open')) {
+                    const currentNodeId = document.getElementById('send-heartbeat-btn').getAttribute('data-node-id');
+                    if (currentNodeId) {
+                        renderHeartbeatTasks(currentNodeId);
+                    }
+                }
             }
 
             errorEl.style.display = 'none';
