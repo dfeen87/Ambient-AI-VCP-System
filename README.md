@@ -106,7 +106,7 @@ Tip: To quickly verify the public demo is reachable, run:
 - ✅ **Type Safety**: Full Rust type system guarantees
 - 🔍 **Local Node Observability**: Privacy-preserving, operator-only inspection interface (localhost-only, read-only, no sensitive data exposure)
 
-### Post-v2.3.0 Improvements (LATEST)
+### Post-v2.3.0 Improvements
 - 🛣️ **Internet Path Routing**: `PeerRouter` resolves direct or one-hop relay paths through `Universal`/`Open` nodes; `MeshCoordinator` exposes `sync_connectivity()` and `find_peer_route()` for runtime reachability updates
 - 🔌 **Gateway Session Lifecycle**: `DataPlaneGateway::add_session()` / `revoke_session()` — sessions provisioned and revoked at runtime so nodes stop relaying traffic the instant a connect session ends
 - ⚡ **Non-Blocking Password Hashing**: `hash_password_async()` offloads bcrypt to a blocking thread pool; configurable cost via `BCRYPT_COST` env var (default 12, range 4–31)
@@ -226,7 +226,7 @@ Tip: To quickly verify the public demo is reachable, run:
 ### 6. **REST API Server** (`api-server`) ⭐ **ENHANCED**
 **Purpose**: Public-facing HTTP API with comprehensive validation and security
 
-**Security Features (NEW):**
+**Security Features:**
 - ✅ **Node Ownership**: Nodes linked to user accounts with ownership verification
 - ✅ **JWT Authentication**: Protected endpoints require authentication
 - ✅ **Authorization**: Users can only manage their own nodes
@@ -788,6 +788,30 @@ curl -X POST https://your-api.com/api/v1/auth/login \
 - ✅ Successfully registered 10,000 nodes in 29ms  
 - ✅ Stress tested with 1,000 nodes + 1,000 tasks simultaneously
 - ✅ Average task assignment latency: 2.75 microseconds
+
+---
+
+## 🧪 Executable Specification (Living Contract)
+
+The test files included in this repository are not just unit tests — they serve as a **living, runnable specification** of the Ambient AI VCP System.
+
+Each test encodes the exact return contract for:
+
+- **AILEE Trust Layer** (`GenerationResult`)
+- **AmbientNode health, safety, and reputation**
+- **MeshCoordinator routing, selection, and reward flow**
+- **FederatedAggregator FedAvg rounds and versioning**
+
+These tests ensure that:
+
+- the system’s behavior is deterministic  
+- return structures remain stable across versions  
+- contributors can understand the architecture by *running* it  
+- regressions are caught immediately  
+- the repo doubles as documentation and verification  
+
+If you are extending or modifying the system, update the tests to reflect the new contract.  
+If you are integrating the system, use these tests as the authoritative reference for expected behavior.
 
 ---
 
