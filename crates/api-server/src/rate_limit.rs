@@ -10,7 +10,7 @@ use axum::{
 use ipnet::IpNet;
 use std::{
     collections::HashMap,
-    net::IpAddr,
+    net::{IpAddr, SocketAddr},
     str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
@@ -279,8 +279,8 @@ fn proxy_is_trusted(remote: IpAddr) -> bool {
 fn extract_client_ip(request: &Request<Body>) -> Result<IpAddr, ApiError> {
     let remote_ip = request
         .extensions()
-        .get::<std::net::SocketAddr>()
-        .map(|s| s.ip())
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip())
         .unwrap_or(IpAddr::from([127, 0, 0, 1]));
 
     if proxy_is_trusted(remote_ip) {
@@ -303,13 +303,7 @@ fn extract_client_ip(request: &Request<Body>) -> Result<IpAddr, ApiError> {
         }
     }
 
-    if remote_ip.is_loopback() || cfg!(debug_assertions) {
-        return Ok(remote_ip);
-    }
-
-    Err(ApiError::bad_request(
-        "Unable to determine trusted client IP address",
-    ))
+    Ok(remote_ip)
 }
 
 pub async fn start_cleanup_task() {
@@ -345,6 +339,18 @@ mod tests {
         std::env::set_var("TRUSTED_PROXY_CIDRS", "10.0.0.0/8,192.168.0.0/16");
         assert!(proxy_is_trusted(IpAddr::from([10, 1, 2, 3])));
         assert!(!proxy_is_trusted(IpAddr::from([8, 8, 8, 8])));
+    }
+
+    #[test]
+    fn test_extract_client_ip_direct_connection() {
+        // Direct connections (no ConnectInfo extension, no trusted proxy) should
+        // succeed and return the fallback loopback address.
+        let request = axum::extract::Request::builder()
+            .uri("/")
+            .body(Body::empty())
+            .unwrap();
+        let ip = extract_client_ip(&request).unwrap();
+        assert_eq!(ip, IpAddr::from([127, 0, 0, 1]));
     }
 
     /// Verify that the middleware and cleanup task share the same global limiter
