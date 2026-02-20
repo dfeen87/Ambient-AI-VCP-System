@@ -117,6 +117,17 @@ Tip: To quickly verify the public demo is reachable, run:
 - 🌍 **HTTP CONNECT Proxy**: `HttpConnectProxy` lets a browser on an offline node route all HTTPS traffic through a connected relay node, permanently bypassing `ERR_INTERNET_DISCONNECTED`. Point the browser's proxy settings at `<relay-ip>:3128`; it issues `CONNECT host:443 HTTP/1.1` with a `Proxy-Authorization: Bearer <token>` header, the proxy validates the token and opens a bidirectional TCP tunnel to the real destination. Non-CONNECT requests are rejected (405), bad or missing tokens return 407, and upstream failures surface as 502/504. Configured via `HttpConnectProxyConfig` (listen address, bearer token, connect/idle timeouts, enabled flag).
 - 📶 **Relay Session QoS**: `RelayQosManager` installs WAN-side `tc` HTB + FQ-CoDel rules on the active backhaul interface when a `connect_only` session is active on an `open_internet` or `any` node — guaranteeing minimum bandwidth and low latency for relayed traffic while preventing node-internal traffic from crowding out the relay stream. Call `BackhaulManager::activate_relay_qos()` when a session starts and `deactivate_relay_qos()` when it ends.
 
+### Node-to-Task Connectivity (v2.4.0)
+- 🏥 **Heartbeat Modal Response**: `PUT /nodes/{id}/heartbeat` now returns `health_score`, `node_status`, `active_tasks`, `assigned_task_ids`, and a rich `assigned_tasks` array — each entry carries `task_id`, `task_type`, and `execution_status` so node processes can react immediately (e.g. activate gateway mode for `connect_only` tasks).
+- 📋 **Execution Status Lifecycle**: `task_assignments` now tracks `execution_status` (`assigned` → `in_progress` → `completed`/`failed`), `execution_started_at`, and `execution_completed_at` across all paths: node result submission, synthetic fallback, connect_only session end, and forced disconnection (delete / reject / offline sweep).
+- 🔄 **Activity Registration**: The first heartbeat a node sends after being assigned to a task advances `execution_status` from `assigned` → `in_progress`, recording the exact moment the node confirmed it is actively working.
+- 📤 **Task Result Submission** (`POST /api/v1/tasks/{id}/result`): Nodes can now submit real execution outputs to the API instead of relying solely on synthetic fallback. When `require_proof = true`, a ZK proof must accompany the result and is verified before the task is marked completed.
+- ⏱️ **Honest Fallback Timeout**: For non-`connect_only` tasks the synthetic fallback now waits the full `max_execution_time_sec` before firing — giving nodes time to submit real results. Previously it fired immediately, preempting any real output.
+- 🛡️ **Completed Task Protection**: `update_task_status_from_assignments` now carries an `AND status NOT IN ('completed','failed')` guard, preventing a node going offline from silently reverting an already-completed task to `pending`.
+- 🌐 **Gateway Session Polling** (`GET /api/v1/nodes/{id}/gateway-sessions`): `open_internet` / relay nodes can poll this endpoint each heartbeat cycle to receive the current set of active `connect_only` sessions they should relay, including the cleartext `session_token` the `DataPlaneGateway` needs to validate incoming relay connections. The session token is stored server-side on session creation and returned only to the authenticated node owner.
+- 💤 **Node Offline Sweep**: A background task runs every `NODE_OFFLINE_SWEEP_INTERVAL_SECONDS` (default 60 s). Any node whose `last_heartbeat` is older than `NODE_HEARTBEAT_TIMEOUT_MINUTES` (default 5 min) is marked `offline`, its active assignments are disconnected (in-progress ones marked `failed`), and affected tasks are immediately reassigned to other eligible nodes.
+- 🏆 **Health-Score Node Selection**: Task assignment now orders candidates by `health_score DESC` (then `registered_at ASC` as tiebreaker) so healthiest nodes are always preferred; the redundant `registered_at` and `health_score` columns were also removed from the `GROUP BY` clause since they are functionally dependent on the `node_id` primary key.
+
 ### Security & Infrastructure
 - 🔐 **JWT Middleware Authentication**: Global JWT enforcement at middleware layer (not handler extractors)
 - 🛡️ **Rate Limiting**: Per-endpoint tier-based rate limiting (Auth: 10rpm, Nodes: 20rpm, Tasks: 30rpm, Proofs: 15rpm)
@@ -244,11 +255,14 @@ Tip: To quickly verify the public demo is reachable, run:
 - `POST /api/v1/nodes` - Register node (requires auth) ✅
 - `GET /api/v1/nodes` - List all nodes ✅
 - `GET /api/v1/nodes/{id}` - Get specific node ✅
-- `DELETE /api/v1/nodes/{id}` - Delete node (requires ownership) ✅ **NEW**
-- `PUT /api/v1/nodes/{id}/heartbeat` - Update node heartbeat (requires ownership) ✅ **NEW**
+- `DELETE /api/v1/nodes/{id}` - Delete node (requires ownership) ✅
+- `PUT /api/v1/nodes/{id}/heartbeat` - Update heartbeat; returns `health_score`, `node_status`, `assigned_tasks` with `task_type`+`execution_status` ✅
+- `GET /api/v1/nodes/{id}/heartbeat/activity` - Task connect/disconnect events for a node ✅
+- `GET /api/v1/nodes/{id}/gateway-sessions` - Active relay sessions for gateway nodes (cleartext token included) ✅ **NEW**
 - `POST /api/v1/tasks` - Submit task (requires auth) ✅
 - `GET /api/v1/tasks` - List all tasks ✅
 - `GET /api/v1/tasks/{id}` - Get specific task ✅
+- `POST /api/v1/tasks/{id}/result` - Submit node execution result with optional ZK proof ✅ **NEW**
 - `POST /api/v1/proofs/verify` - Verify ZK proof (requires auth) ✅
 - `GET /api/v1/cluster/stats` - Cluster statistics ✅
 
@@ -585,18 +599,21 @@ cargo test --test integration_test
 
 **Protected Endpoints:**
 ```
-POST   /api/v1/nodes              - Register node (requires JWT)
-POST   /api/v1/nodes/{id}/reject   - Reject node (requires ownership)
-DELETE /api/v1/nodes/{id}         - Delete node (requires ownership)
-PUT    /api/v1/nodes/{id}/heartbeat - Update heartbeat (requires ownership)
-POST   /api/v1/tasks              - Submit task (requires JWT)
-DELETE /api/v1/tasks/{id}         - Delete task (requires owner/admin)
-POST   /api/v1/proofs/verify      - Verify proof (requires JWT)
-GET    /metrics                   - Prometheus metrics (admin JWT required)
-GET    /api/v1/admin/users        - Admin users endpoint (admin JWT required)
-POST   /api/v1/admin/throttle-overrides - Admin throttle override endpoint
-GET    /api/v1/admin/audit-log    - Admin audit endpoint (admin JWT required)
-GET    /api/v1/auth/api-key/validate - API-key validation endpoint (API key required)
+POST   /api/v1/nodes                           - Register node (requires JWT)
+POST   /api/v1/nodes/{id}/reject               - Reject node (requires ownership)
+DELETE /api/v1/nodes/{id}                      - Delete node (requires ownership)
+PUT    /api/v1/nodes/{id}/heartbeat            - Update heartbeat (requires ownership)
+GET    /api/v1/nodes/{id}/heartbeat/activity   - Task activity events (requires ownership)
+GET    /api/v1/nodes/{id}/gateway-sessions     - Active relay sessions (requires ownership)
+POST   /api/v1/tasks                           - Submit task (requires JWT)
+POST   /api/v1/tasks/{id}/result               - Submit node result + optional ZK proof (requires node ownership)
+DELETE /api/v1/tasks/{id}                      - Delete task (requires owner/admin)
+POST   /api/v1/proofs/verify                   - Verify proof (requires JWT)
+GET    /metrics                                - Prometheus metrics (admin JWT required)
+GET    /api/v1/admin/users                     - Admin users endpoint (admin JWT required)
+POST   /api/v1/admin/throttle-overrides        - Admin throttle override endpoint
+GET    /api/v1/admin/audit-log                 - Admin audit endpoint (admin JWT required)
+GET    /api/v1/auth/api-key/validate           - API-key validation endpoint (API key required)
 ```
 
 **Public Endpoints:**
