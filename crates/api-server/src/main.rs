@@ -42,7 +42,8 @@ async fn main() -> Result<()> {
     let addr = format!("0.0.0.0:{}", port);
 
     // Create application state
-    let state = Arc::new(AppState::new(pool));
+    let auth_config = api_server::auth::AuthConfig::from_env()?;
+    let state = Arc::new(AppState::new(pool).with_auth_config(auth_config));
 
     let monitor_interval_seconds = AppState::connect_session_monitor_interval_seconds();
     let monitor_state = Arc::clone(&state);

@@ -81,6 +81,11 @@ impl ApiError {
         Self::new("internal_error", message, StatusCode::INTERNAL_SERVER_ERROR)
     }
 
+    /// 501 Not Implemented - Endpoint is recognised but not yet implemented
+    pub fn not_implemented(message: impl Into<String>) -> Self {
+        Self::new("not_implemented", message, StatusCode::NOT_IMPLEMENTED)
+    }
+
     /// 503 Service Unavailable - Service temporarily unavailable
     pub fn service_unavailable(message: impl Into<String>) -> Self {
         Self::new(

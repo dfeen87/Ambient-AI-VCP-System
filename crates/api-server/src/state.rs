@@ -28,6 +28,8 @@ pub struct NodeHeartbeatResult {
 pub struct AppState {
     /// PostgreSQL connection pool
     pub db: PgPool,
+    /// Cached authentication configuration (set once at startup)
+    auth_config: Option<crate::auth::AuthConfig>,
 }
 
 impl AppState {
@@ -89,7 +91,26 @@ impl AppState {
 
     /// Create new application state with database pool
     pub fn new(db: PgPool) -> Self {
-        Self { db }
+        Self {
+            db,
+            auth_config: None,
+        }
+    }
+
+    /// Store a pre-built [`AuthConfig`] so the server pays the env-var read
+    /// cost once at startup rather than on every authenticated request.
+    pub fn with_auth_config(mut self, config: crate::auth::AuthConfig) -> Self {
+        self.auth_config = Some(config);
+        self
+    }
+
+    /// Return the cached [`AuthConfig`], falling back to reading from the
+    /// environment when no config has been pre-loaded (e.g. in tests).
+    pub fn auth_config(&self) -> crate::error::ApiResult<crate::auth::AuthConfig> {
+        match &self.auth_config {
+            Some(cfg) => Ok(cfg.clone()),
+            None => crate::auth::AuthConfig::from_env(),
+        }
     }
 
     /// Register a new node in the database with owner tracking
@@ -2498,11 +2519,9 @@ impl AppState {
 
         // Verify ZK proof when provided.
         let proof_verified = if let Some(ref proof_data_b64) = submission.proof_data {
-            let proof_bytes = base64::Engine::decode(
-                &base64::engine::general_purpose::STANDARD,
-                proof_data_b64,
-            )
-            .map_err(|_| ApiError::bad_request("proof_data is not valid base64"))?;
+            let proof_bytes =
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, proof_data_b64)
+                    .map_err(|_| ApiError::bad_request("proof_data is not valid base64"))?;
 
             let public_inputs_bytes = submission
                 .public_inputs
@@ -2586,13 +2605,12 @@ impl AppState {
         tx.commit().await?;
 
         // Let freed nodes pick up pending tasks.
-        let freed_nodes: Vec<String> = sqlx::query_scalar(
-            r#"SELECT node_id FROM task_assignments WHERE task_id = $1"#,
-        )
-        .bind(task_id)
-        .fetch_all(&self.db)
-        .await
-        .unwrap_or_default();
+        let freed_nodes: Vec<String> =
+            sqlx::query_scalar(r#"SELECT node_id FROM task_assignments WHERE task_id = $1"#)
+                .bind(task_id)
+                .fetch_all(&self.db)
+                .await
+                .unwrap_or_default();
 
         for node_id in freed_nodes {
             let _ = self.assign_pending_tasks_for_node(&node_id).await;
@@ -2668,8 +2686,7 @@ impl AppState {
                 let session_id: String = row.try_get("session_id").ok()?;
                 let session_token: String = row.try_get("session_token_cleartext").ok()?;
                 let egress_profile: String = row.try_get("egress_profile").ok()?;
-                let destination_policy_id: String =
-                    row.try_get("destination_policy_id").ok()?;
+                let destination_policy_id: String = row.try_get("destination_policy_id").ok()?;
                 let expires_at_epoch: i64 = row.try_get("expires_at_epoch").ok()?;
 
                 Some(ambient_node::GatewaySession {

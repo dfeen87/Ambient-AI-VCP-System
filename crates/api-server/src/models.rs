@@ -668,11 +668,8 @@ impl NodeTaskResult {
                     "proof_data exceeds maximum size of 100KB (base64 encoded)",
                 ));
             }
-            if base64::Engine::decode(
-                &base64::engine::general_purpose::STANDARD,
-                proof_data,
-            )
-            .is_err()
+            if base64::Engine::decode(&base64::engine::general_purpose::STANDARD, proof_data)
+                .is_err()
             {
                 return Err(ApiError::bad_request("proof_data is not valid base64"));
             }
@@ -684,11 +681,8 @@ impl NodeTaskResult {
                     "public_inputs exceeds maximum size of 10KB (base64 encoded)",
                 ));
             }
-            if base64::Engine::decode(
-                &base64::engine::general_purpose::STANDARD,
-                public_inputs,
-            )
-            .is_err()
+            if base64::Engine::decode(&base64::engine::general_purpose::STANDARD, public_inputs)
+                .is_err()
             {
                 return Err(ApiError::bad_request("public_inputs is not valid base64"));
             }

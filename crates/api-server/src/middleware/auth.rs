@@ -1,5 +1,5 @@
 /// Authentication and authorization middleware
-use crate::auth::{hash_api_key, AuthConfig, Claims};
+use crate::auth::{hash_api_key, Claims};
 use crate::error::ApiError;
 use axum::{
     body::Body,
@@ -26,8 +26,14 @@ pub async fn jwt_auth_middleware(
         .strip_prefix("Bearer ")
         .ok_or_else(|| ApiError::unauthorized("Invalid authorization header format"))?;
 
-    let auth_config = AuthConfig::from_env()?;
-    let claims = auth_config
+    let state = request
+        .extensions()
+        .get::<std::sync::Arc<crate::state::AppState>>()
+        .cloned()
+        .ok_or_else(|| ApiError::internal_error("Application state missing from request"))?;
+
+    let claims = state
+        .auth_config()?
         .validate_token(token)
         .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
 
@@ -103,16 +109,6 @@ pub async fn api_key_auth_middleware(
 /// Scoped permission set extracted from JWT/API key.
 #[derive(Debug, Clone)]
 pub struct ApiScopes(pub Vec<String>);
-
-/// Inject AuthConfig into request extensions (for public routes)
-pub async fn auth_config_middleware(
-    mut request: Request<Body>,
-    next: Next,
-) -> Result<Response, ApiError> {
-    let auth_config = AuthConfig::from_env()?;
-    request.extensions_mut().insert(auth_config);
-    Ok(next.run(request).await)
-}
 
 /// Require one of the configured roles for a route.
 pub async fn require_admin_middleware(
