@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn test_bandwidth_score_uses_bottleneck_direction() {
         let sample = TelemetrySample {
-            upload_bandwidth_mbps: 20.0,   // slow upload
+            upload_bandwidth_mbps: 20.0,    // slow upload
             download_bandwidth_mbps: 500.0, // fast download
             ..Default::default()
         };
