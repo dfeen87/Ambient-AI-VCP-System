@@ -496,6 +496,8 @@ impl AppState {
                     AND existing.disconnected_at IS NULL
               )
             GROUP BY n.node_id
+            -- n.health_score and n.registered_at are omitted from GROUP BY because
+            -- they are functionally dependent on n.node_id (the primary key).
             HAVING COUNT(ta.task_id) < $7
             ORDER BY n.health_score DESC, n.registered_at ASC
             LIMIT $8
@@ -1152,7 +1154,83 @@ impl AppState {
         .fetch_optional(&self.db)
         .await?;
 
+        // When a session is explicitly stopped, complete its connect_only task so the
+        // node is freed immediately rather than waiting for the duration timer to fire.
+        if let Some(ref r) = row {
+            let task_id: Uuid = r.get("task_id");
+            let _ = self.complete_connect_only_task(task_id).await;
+        }
+
         Ok(row.map(map_connect_session_row))
+    }
+
+    /// Mark a `connect_only` task as completed and clean up its assignments.
+    ///
+    /// Called when a connect session ends (explicitly via `stop_connect_session`
+    /// or via `sweep_connect_sessions`).  Safe to call after the session's
+    /// node assignment has already been disconnected — all updates are idempotent.
+    async fn complete_connect_only_task(&self, task_id: Uuid) -> ApiResult<()> {
+        // Build a result summary from the most recent session for this task.
+        let session_row = sqlx::query(
+            r#"
+            SELECT session_id, egress_profile, destination_policy_id
+            FROM connect_sessions
+            WHERE task_id = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(task_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        let result = match session_row {
+            Some(s) => serde_json::json!({
+                "task_type": "connect_only",
+                "status": "session_ended",
+                "session_id": s.try_get::<String, _>("session_id").unwrap_or_default(),
+                "egress_profile": s.try_get::<String, _>("egress_profile").unwrap_or_default(),
+                "destination_policy_id": s.try_get::<String, _>("destination_policy_id").unwrap_or_default(),
+            }),
+            None => serde_json::json!({"task_type": "connect_only", "status": "session_ended"}),
+        };
+
+        let mut tx = self.db.begin().await?;
+
+        // Only update if still running — idempotent against concurrent calls.
+        sqlx::query(
+            r#"
+            UPDATE tasks
+            SET status = 'completed', result = $1, updated_at = NOW()
+            WHERE task_id = $2
+              AND status = 'running'
+            "#,
+        )
+        .bind(&result)
+        .bind(task_id)
+        .execute(&mut *tx)
+        .await?;
+
+        // Mark all assignments as completed regardless of disconnected_at state —
+        // the sweep CTE may have already disconnected them.
+        sqlx::query(
+            r#"
+            UPDATE task_assignments
+            SET execution_status = 'completed',
+                execution_completed_at = COALESCE(execution_completed_at, NOW())
+            WHERE task_id = $1
+              AND execution_status NOT IN ('completed', 'failed')
+            "#,
+        )
+        .bind(task_id)
+        .execute(&mut *tx)
+        .await?;
+
+        // Disconnect any remaining active assignments.
+        self.disconnect_task_assignments(task_id, &mut tx).await?;
+
+        tx.commit().await?;
+        Ok(())
     }
 
     /// Sweep active connect sessions and terminate sessions bound to expired/deleted nodes.
