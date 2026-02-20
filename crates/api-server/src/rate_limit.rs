@@ -1,6 +1,12 @@
 /// Rate limiting middleware
 use crate::error::ApiError;
-use axum::{body::Body, extract::Request, http::StatusCode, middleware::Next, response::Response};
+use axum::{
+    body::Body,
+    extract::Request,
+    http::{HeaderValue, StatusCode},
+    middleware::Next,
+    response::{IntoResponse, Response},
+};
 use ipnet::IpNet;
 use std::{
     collections::HashMap,
@@ -247,7 +253,11 @@ pub async fn rate_limit_middleware(
         Ok(()) => Ok(next.run(request).await),
         Err((status, message)) => {
             warn!("Rate limit exceeded for IP: {} on tier: {:?}", ip, tier);
-            Err(ApiError::new("rate_limited", message, status))
+            let mut response = ApiError::new("rate_limited", message, status).into_response();
+            response
+                .headers_mut()
+                .insert("Retry-After", HeaderValue::from_static("60"));
+            Ok(response)
         }
     }
 }

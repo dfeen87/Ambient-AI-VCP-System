@@ -884,7 +884,7 @@ async fn login(
         .execute(&state.db)
         .await?;
 
-    let auth_config = auth::AuthConfig::from_env()?;
+    let auth_config = state.auth_config()?;
     let token = auth_config.generate_token(user_id.to_string(), username.clone(), role)?;
 
     // Generate refresh token
@@ -974,7 +974,7 @@ async fn refresh_token(
     .await?;
 
     // Generate new JWT access token
-    let auth_config = auth::AuthConfig::from_env()?;
+    let auth_config = state.auth_config()?;
     let access_token = auth_config.generate_token(user_id.to_string(), username, role)?;
 
     // Generate new refresh token
@@ -1015,19 +1015,15 @@ async fn validate_api_key(auth_user: auth::AuthUser) -> ApiResult<Json<serde_jso
 }
 
 async fn admin_users() -> ApiResult<Json<serde_json::Value>> {
-    Ok(Json(
-        serde_json::json!({"message": "admin user management"}),
-    ))
+    Err(ApiError::not_implemented("admin user management"))
 }
 
 async fn admin_throttle_overrides() -> ApiResult<Json<serde_json::Value>> {
-    Ok(Json(
-        serde_json::json!({"message": "admin global throttle overrides"}),
-    ))
+    Err(ApiError::not_implemented("admin throttle overrides"))
 }
 
 async fn admin_audit_log() -> ApiResult<Json<serde_json::Value>> {
-    Ok(Json(serde_json::json!({"message": "admin audit logs"})))
+    Err(ApiError::not_implemented("admin audit log"))
 }
 
 /// Build the API router
@@ -1036,10 +1032,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/health", get(health_check))
         .route("/auth/register", post(register_user))
         .route("/auth/login", post(login))
-        .route("/auth/refresh", post(refresh_token))
-        .layer(axum_middleware::from_fn(
-            middleware::auth::auth_config_middleware,
-        ));
+        .route("/auth/refresh", post(refresh_token));
 
     let protected_routes = Router::new()
         .route("/nodes", post(register_node).get(list_nodes))

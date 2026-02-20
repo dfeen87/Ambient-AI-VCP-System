@@ -28,6 +28,8 @@ pub struct NodeHeartbeatResult {
 pub struct AppState {
     /// PostgreSQL connection pool
     pub db: PgPool,
+    /// Cached authentication configuration (set once at startup)
+    auth_config: Option<crate::auth::AuthConfig>,
 }
 
 impl AppState {
@@ -89,7 +91,26 @@ impl AppState {
 
     /// Create new application state with database pool
     pub fn new(db: PgPool) -> Self {
-        Self { db }
+        Self {
+            db,
+            auth_config: None,
+        }
+    }
+
+    /// Store a pre-built [`AuthConfig`] so the server pays the env-var read
+    /// cost once at startup rather than on every authenticated request.
+    pub fn with_auth_config(mut self, config: crate::auth::AuthConfig) -> Self {
+        self.auth_config = Some(config);
+        self
+    }
+
+    /// Return the cached [`AuthConfig`], falling back to reading from the
+    /// environment when no config has been pre-loaded (e.g. in tests).
+    pub fn auth_config(&self) -> crate::error::ApiResult<crate::auth::AuthConfig> {
+        match &self.auth_config {
+            Some(cfg) => Ok(cfg.clone()),
+            None => crate::auth::AuthConfig::from_env(),
+        }
     }
 
     /// Register a new node in the database with owner tracking
