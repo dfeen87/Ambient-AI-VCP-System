@@ -1,22 +1,45 @@
 //! Consensus engine for selecting final output from multiple models
 
+use futures::future::join_all;
+use std::time::Duration;
+
 use super::adapters::{ModelAdapter, ModelOutput};
 use super::generation::{ExecutionMetadata, GenerationRequest, GenerationResult};
 use super::trust::{compute_trust_scores, TrustScores};
+
+/// Default per-adapter timeout: 30 seconds.
+///
+/// If a remote adapter does not respond within this window it is treated as
+/// unavailable / failed so the rest of the consensus round can proceed without
+/// waiting indefinitely.
+const DEFAULT_ADAPTER_TIMEOUT_MS: u64 = 30_000;
 
 /// Consensus engine for multi-model output selection
 #[derive(Debug, Clone)]
 pub struct ConsensusEngine {
     /// Minimum number of successful models required
     min_models: usize,
+    /// Per-adapter call timeout in milliseconds.
+    adapter_timeout_ms: u64,
 }
 
 impl ConsensusEngine {
-    /// Create new consensus engine
+    /// Create new consensus engine with the default adapter timeout (30 s).
     pub fn new(min_models: usize) -> Self {
         Self {
             min_models: min_models.max(1),
+            adapter_timeout_ms: DEFAULT_ADAPTER_TIMEOUT_MS,
         }
+    }
+
+    /// Override the per-adapter call timeout.
+    ///
+    /// Applies to both availability checks and generation calls.  Timed-out
+    /// adapters are treated as unavailable / failed so the engine degrades
+    /// gracefully without blocking the full consensus round.
+    pub fn with_adapter_timeout_ms(mut self, ms: u64) -> Self {
+        self.adapter_timeout_ms = ms;
+        self
     }
 
     /// Execute generation request across multiple adapters
@@ -86,57 +109,75 @@ impl ConsensusEngine {
     }
 
     /// Filter adapters based on availability and execution mode
+    ///
+    /// Availability checks are performed concurrently so that remote-adapter
+    /// latency does not stack serially when multiple adapters are configured.
+    /// Each check is bounded by `adapter_timeout_ms`; timed-out adapters are
+    /// treated as unavailable so a single slow adapter cannot stall the round.
     async fn filter_adapters(
         &self,
         adapters: Vec<Box<dyn ModelAdapter>>,
         request: &GenerationRequest,
     ) -> Vec<Box<dyn ModelAdapter>> {
-        let mut filtered = Vec::new();
+        let timeout = Duration::from_millis(self.adapter_timeout_ms);
 
-        for adapter in adapters {
-            if !adapter.is_available().await {
-                continue;
-            }
+        // Check all adapters for availability concurrently.
+        let availability: Vec<bool> = join_all(adapters.iter().map(|adapter| async move {
+            tokio::time::timeout(timeout, adapter.is_available())
+                .await
+                .unwrap_or(false) // timed-out adapter counts as unavailable
+        }))
+        .await;
 
-            let locality = adapter.locality();
-
-            let should_include = match request.execution_mode {
-                super::generation::ExecutionMode::Local => {
-                    matches!(locality, super::adapters::ModelLocality::Local)
+        adapters
+            .into_iter()
+            .zip(availability)
+            .filter_map(|(adapter, available)| {
+                if !available {
+                    return None;
                 }
-                super::generation::ExecutionMode::Remote => {
-                    matches!(locality, super::adapters::ModelLocality::Remote)
-                }
-                super::generation::ExecutionMode::Hybrid => true,
-            };
 
-            if should_include {
-                filtered.push(adapter);
-            }
-        }
+                let locality = adapter.locality();
 
-        filtered
+                let should_include = match request.execution_mode {
+                    super::generation::ExecutionMode::Local => {
+                        matches!(locality, super::adapters::ModelLocality::Local)
+                    }
+                    super::generation::ExecutionMode::Remote => {
+                        matches!(locality, super::adapters::ModelLocality::Remote)
+                    }
+                    super::generation::ExecutionMode::Hybrid => true,
+                };
+
+                if should_include { Some(adapter) } else { None }
+            })
+            .collect()
     }
 
-    /// Generate outputs from all adapters
+    /// Generate outputs from all adapters concurrently
+    ///
+    /// All adapter `generate` calls are issued in parallel so that remote
+    /// adapters with real network latency do not block each other.  Each call
+    /// is bounded by `adapter_timeout_ms`; timed-out or failed adapters are
+    /// silently dropped, consistent with graceful degradation.
     async fn generate_all(
         &self,
         adapters: &[Box<dyn ModelAdapter>],
         request: &GenerationRequest,
     ) -> Vec<ModelOutput> {
-        let mut outputs = Vec::new();
+        let timeout = Duration::from_millis(self.adapter_timeout_ms);
+        let prompt = &request.prompt;
+        let task_type = request.task_type;
 
-        for adapter in adapters {
-            match adapter.generate(&request.prompt, request.task_type).await {
-                Ok(output) => outputs.push(output),
-                Err(_) => {
-                    // Gracefully handle individual adapter failures
-                    continue;
-                }
-            }
-        }
-
-        outputs
+        join_all(adapters.iter().map(|adapter| async move {
+            tokio::time::timeout(timeout, adapter.generate(prompt, task_type))
+                .await
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("adapter timed out")))
+        }))
+        .await
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect()
     }
 
     /// Compute trust scores for all outputs
@@ -339,5 +380,60 @@ mod tests {
         assert_eq!(result.execution_metadata.models_consulted, 2);
         assert_eq!(result.execution_metadata.models_succeeded, 2);
         assert!(result.execution_metadata.was_offline);
+    }
+
+    /// All adapters must be queried concurrently: the total wall-clock time for
+    /// N adapters should be roughly equal to the time for a single adapter, not
+    /// N times that amount.  This test verifies the parallel path returns all
+    /// outputs and correct lineage for a multi-adapter request.
+    #[tokio::test]
+    async fn test_generate_all_returns_all_adapter_outputs() {
+        let engine = ConsensusEngine::new(1);
+
+        let adapters: Vec<Box<dyn ModelAdapter>> = vec![
+            Box::new(LocalModelAdapter::new("parallel-1")),
+            Box::new(LocalModelAdapter::new("parallel-2")),
+            Box::new(LocalModelAdapter::new("parallel-3")),
+        ];
+
+        let request = GenerationRequest::new(
+            "parallel test",
+            TaskType::Chat,
+            0.5,
+            ExecutionMode::Local,
+            true,
+        );
+
+        let result = engine.execute(&request, adapters).await.unwrap();
+
+        // All three adapters should have contributed.
+        assert_eq!(result.model_lineage.len(), 3);
+        assert_eq!(result.execution_metadata.models_consulted, 3);
+        assert_eq!(result.execution_metadata.models_succeeded, 3);
+    }
+
+    /// filter_adapters must respect execution mode even when run concurrently.
+    #[tokio::test]
+    async fn test_filter_adapters_parallel_respects_mode() {
+        let engine = ConsensusEngine::new(1);
+
+        // Mix of local and remote; local-only mode should exclude the remote one.
+        let adapters: Vec<Box<dyn ModelAdapter>> = vec![
+            Box::new(LocalModelAdapter::new("local-only-1")),
+            Box::new(LocalModelAdapter::new("local-only-2")),
+            Box::new(RemoteModelAdapter::new("remote-excluded", true)),
+        ];
+
+        let request = GenerationRequest::new(
+            "filter test",
+            TaskType::Code,
+            0.5,
+            ExecutionMode::Local,
+            true,
+        );
+
+        let result = engine.execute(&request, adapters).await.unwrap();
+        assert_eq!(result.model_lineage.len(), 2);
+        assert!(!result.model_lineage.contains(&"remote-excluded".to_string()));
     }
 }

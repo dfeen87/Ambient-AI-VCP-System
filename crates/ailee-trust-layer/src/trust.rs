@@ -46,43 +46,36 @@ impl Default for TrustScores {
 pub struct ConsistencyScore;
 
 impl ConsistencyScore {
-    /// Compute semantic similarity between two texts
+    /// Compute semantic similarity between two texts using word-level Jaccard
+    /// similarity.
     ///
-    /// **STUB IMPLEMENTATION**: This is a placeholder for demonstration purposes.
+    /// Jaccard similarity = |intersection| / |union| over the unique word sets
+    /// of each text.  This is significantly more accurate than the previous
+    /// character-set approach, which ignored word boundaries and used an
+    /// inconsistent byte-length denominator.
+    ///
+    /// **STUB IMPLEMENTATION**: Still a placeholder for demonstration purposes.
     ///
     /// Production implementations should use:
     /// - Sentence embeddings (e.g., Sentence-BERT, USE)
     /// - Cosine similarity on embedding vectors
     /// - Pre-trained language models
-    /// - Levenshtein distance for character-level similarity
-    ///
-    /// Current approach has known limitations:
-    /// - Only counts character overlap, not semantic meaning
-    /// - Doesn't consider word boundaries or order
-    /// - Inefficient HashSet allocation per call
     pub fn compute_similarity(text1: &str, text2: &str) -> f64 {
-        // Simple stub: normalized character overlap
-        let len1 = text1.len();
-        let len2 = text2.len();
+        let words1: std::collections::HashSet<&str> = text1.split_whitespace().collect();
+        let words2: std::collections::HashSet<&str> = text2.split_whitespace().collect();
 
-        if len1 == 0 && len2 == 0 {
+        if words1.is_empty() && words2.is_empty() {
             return 1.0;
         }
 
-        if len1 == 0 || len2 == 0 {
+        if words1.is_empty() || words2.is_empty() {
             return 0.0;
         }
 
-        // Convert text2 to HashSet for O(1) lookups
-        // NOTE: This is inefficient and should be replaced with proper similarity algorithm
-        use std::collections::HashSet;
-        let text2_chars: HashSet<char> = text2.chars().collect();
+        let intersection = words1.intersection(&words2).count();
+        let union = words1.union(&words2).count();
 
-        // Count common characters
-        let common = text1.chars().filter(|c| text2_chars.contains(c)).count();
-
-        let max_len = len1.max(len2) as f64;
-        (common as f64 / max_len).clamp(0.0, 1.0)
+        (intersection as f64 / union as f64).clamp(0.0, 1.0)
     }
 
     /// Compute consistency score for an output against a set of peer outputs
@@ -232,5 +225,25 @@ mod tests {
         assert_eq!(scores.confidence_score, 0.9);
         assert_eq!(scores.safety_score, 1.0);
         assert!(scores.consistency_score > 0.0);
+    }
+
+    /// Word-level Jaccard similarity must score identical sentences as 1.0 and
+    /// completely disjoint sentences as 0.0, and must rank a closely-related
+    /// pair higher than an unrelated pair — properties the old char-set
+    /// approach did not reliably provide.
+    #[test]
+    fn test_similarity_word_level_jaccard() {
+        // Completely disjoint word sets → 0.0
+        let sim_disjoint = ConsistencyScore::compute_similarity("foo bar", "baz qux");
+        assert_eq!(sim_disjoint, 0.0);
+
+        // One shared word out of three unique → 1/3
+        let sim_partial = ConsistencyScore::compute_similarity("hello world", "hello earth");
+        let expected = 1.0_f64 / 3.0_f64; // {"hello"} / {"hello","world","earth"}
+        assert!((sim_partial - expected).abs() < 1e-9);
+
+        // Closely related pair must score higher than disjoint pair.
+        let sim_close = ConsistencyScore::compute_similarity("the cat sat", "the cat sat on a mat");
+        assert!(sim_close > sim_disjoint);
     }
 }

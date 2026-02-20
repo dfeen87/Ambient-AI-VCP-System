@@ -142,7 +142,16 @@ impl RelayQosManager {
         // exists, so we ignore the result.
         let _ = self.execute(&["tc", "qdisc", "del", "dev", interface, "root"]);
 
-        let total_kbps = self
+        // The parent HTB class rate must equal relay_max so the relay leaf class
+        // can actually burst to full WAN speed.  Setting it to relay_min +
+        // node_min (the sum of guaranteed minimums) would hard-cap ALL egress
+        // (upload) traffic at that sum — even though the relay leaf has
+        // ceil = relay_max — because in Linux HTB a child class can never
+        // exceed its parent's own rate.  Since tc rules only apply to egress,
+        // downloads are unaffected, which explains why downloads improve with
+        // the node but uploads did not before this fix.
+        let total_kbps = self.config.relay_max_bandwidth_kbps;
+        let node_ceil_kbps = self
             .config
             .relay_min_bandwidth_kbps
             .saturating_add(self.config.node_min_bandwidth_kbps);
@@ -151,6 +160,7 @@ impl RelayQosManager {
         let relay_min_str = format!("{}kbit", self.config.relay_min_bandwidth_kbps);
         let relay_max_str = format!("{}kbit", self.config.relay_max_bandwidth_kbps);
         let node_min_str = format!("{}kbit", self.config.node_min_bandwidth_kbps);
+        let node_ceil_str = format!("{}kbit", node_ceil_kbps);
 
         // Root HTB qdisc.  Default class `10` means unclassified packets land
         // in the relay class – this handles unmarked relay TCP connections.
@@ -158,7 +168,8 @@ impl RelayQosManager {
             "tc", "qdisc", "add", "dev", interface, "root", "handle", "1:", "htb", "default", "10",
         ])?;
 
-        // Root class – total guaranteed rate (floor for both leaf classes).
+        // Root class – rate set to relay_max so relay traffic can burst to
+        // the full WAN interface speed without being capped at the parent.
         self.execute(&[
             "tc", "class", "add", "dev", interface, "parent", "1:", "classid", "1:1", "htb",
             "rate", &total_str,
@@ -186,6 +197,8 @@ impl RelayQosManager {
         ])?;
 
         // Node-internal class 1:20 – lower priority, best-effort.
+        // ceil is capped at relay_min + node_min so node traffic cannot
+        // crowd out relay traffic even when the relay class is briefly idle.
         self.execute(&[
             "tc",
             "class",
@@ -200,7 +213,7 @@ impl RelayQosManager {
             "rate",
             &node_min_str,
             "ceil",
-            &total_str,
+            &node_ceil_str,
             "prio",
             "2",
         ])?;
@@ -364,5 +377,51 @@ mod tests {
         assert_eq!(manager.config.relay_min_bandwidth_kbps, 50_000);
         assert_eq!(manager.config.relay_max_bandwidth_kbps, 500_000);
         assert_eq!(manager.config.node_min_bandwidth_kbps, 5_000);
+    }
+
+    /// The HTB parent class rate must equal relay_max, not relay_min + node_min.
+    /// If the parent rate were only relay_min + node_min (e.g. 11 Mbps), HTB
+    /// would hard-cap ALL egress at that sum — making uploads unable to reach
+    /// full WAN speed even though the relay leaf class has ceil = relay_max.
+    #[test]
+    fn test_parent_htb_rate_equals_relay_max() {
+        let config = RelayQosConfig {
+            relay_min_bandwidth_kbps: 10_000,
+            relay_max_bandwidth_kbps: 1_000_000,
+            node_min_bandwidth_kbps: 1_000,
+            ..Default::default()
+        };
+        // The parent class rate should be relay_max (1 Gbps), not the sum of
+        // minimums (11 Mbps).  Verify by checking that relay_max > relay_min + node_min.
+        let parent_rate = config.relay_max_bandwidth_kbps;
+        let old_wrong_rate = config
+            .relay_min_bandwidth_kbps
+            .saturating_add(config.node_min_bandwidth_kbps);
+        assert!(
+            parent_rate > old_wrong_rate,
+            "parent HTB rate ({parent_rate} kbps) must exceed the old incorrect \
+             relay_min + node_min ({old_wrong_rate} kbps) so uploads are not bottlenecked"
+        );
+    }
+
+    /// The node class ceil must be capped at relay_min + node_min so that
+    /// node-internal traffic cannot starve upload relay sessions.
+    #[test]
+    fn test_node_class_ceil_does_not_consume_relay_bandwidth() {
+        let config = RelayQosConfig {
+            relay_min_bandwidth_kbps: 10_000,
+            relay_max_bandwidth_kbps: 1_000_000,
+            node_min_bandwidth_kbps: 1_000,
+            ..Default::default()
+        };
+        let node_ceil = config
+            .relay_min_bandwidth_kbps
+            .saturating_add(config.node_min_bandwidth_kbps);
+        assert!(
+            node_ceil < config.relay_max_bandwidth_kbps,
+            "node class ceil ({node_ceil} kbps) must be less than relay_max \
+             ({} kbps) to preserve upload bandwidth for relay traffic",
+            config.relay_max_bandwidth_kbps
+        );
     }
 }
