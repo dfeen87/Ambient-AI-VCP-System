@@ -135,5 +135,4 @@ fn authorize_roles(request: &Request<Body>, allowed: &[&str]) -> Result<(), ApiE
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 }
