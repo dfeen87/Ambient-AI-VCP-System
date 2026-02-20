@@ -324,6 +324,242 @@ async fn handle_ncsi_connection(stream: TcpStream) -> Result<()> {
     Ok(())
 }
 
+/// Configuration for the HTTP CONNECT proxy that allows browsers on offline nodes
+/// to route their traffic through a connected relay node, preventing
+/// `ERR_INTERNET_DISCONNECTED` errors.
+///
+/// Configure the browser (or OS) to use `<node-ip>:<listen_port>` as its HTTP
+/// proxy.  The browser will issue `CONNECT host:port HTTP/1.1` requests and
+/// this server tunnels the underlying TCP stream to the real destination.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HttpConnectProxyConfig {
+    /// Address and port for the proxy to listen on.
+    pub listen_addr: String,
+    /// Session bearer token required in the `Proxy-Authorization: Bearer <token>`
+    /// request header. Set to an empty string to disable authentication
+    /// (not recommended outside development).
+    pub session_token: String,
+    /// Whether the HTTP CONNECT proxy is enabled.
+    pub enabled: bool,
+    /// Seconds to wait when establishing a connection to the upstream destination.
+    pub connect_timeout_secs: u64,
+    /// Maximum idle seconds before an established tunnel is torn down.
+    pub idle_timeout_secs: u64,
+}
+
+impl Default for HttpConnectProxyConfig {
+    fn default() -> Self {
+        Self {
+            listen_addr: "0.0.0.0:3128".to_string(),
+            session_token: String::new(),
+            enabled: false,
+            connect_timeout_secs: 10,
+            idle_timeout_secs: 300,
+        }
+    }
+}
+
+/// HTTP CONNECT proxy that enables browsers on offline nodes to tunnel their
+/// HTTPS traffic through a connected relay node.
+///
+/// ## How it works
+///
+/// 1. The disconnected device's browser is configured to use the relay node as
+///    its HTTP proxy (e.g. `Settings → Network → Manual proxy → <relay-ip>:3128`).
+/// 2. When the browser opens an HTTPS connection it sends:
+///    ```text
+///    CONNECT api.example.com:443 HTTP/1.1
+///    Proxy-Authorization: Bearer <session_token>
+///    ```
+/// 3. This server validates the token, opens a TCP connection to
+///    `api.example.com:443`, and replies with `200 Connection Established`.
+/// 4. Bidirectional I/O is relayed between the browser and the destination so
+///    the browser's TLS handshake and all subsequent encrypted traffic pass
+///    through unchanged, preventing `ERR_INTERNET_DISCONNECTED`.
+///
+/// Only the `CONNECT` method is supported.  Unauthenticated plain-HTTP
+/// proxying (`GET http://...`) is intentionally not implemented to avoid open
+/// relay abuse.
+pub struct HttpConnectProxy {
+    config: HttpConnectProxyConfig,
+}
+
+impl HttpConnectProxy {
+    pub fn new(config: HttpConnectProxyConfig) -> Self {
+        Self { config }
+    }
+
+    /// Start the HTTP CONNECT proxy.  Returns immediately when
+    /// `config.enabled` is `false`.
+    pub async fn run(self) -> Result<()> {
+        if !self.config.enabled {
+            return Ok(());
+        }
+
+        let listener = TcpListener::bind(&self.config.listen_addr)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to bind HTTP CONNECT proxy on {}",
+                    self.config.listen_addr
+                )
+            })?;
+
+        info!(listen_addr = %self.config.listen_addr, "HTTP CONNECT proxy listening");
+
+        let config = Arc::new(self.config);
+        loop {
+            let (stream, peer_addr) = listener.accept().await?;
+            let cfg = config.clone();
+            tokio::spawn(async move {
+                if let Err(err) = handle_connect_proxy(stream, cfg).await {
+                    warn!(%peer_addr, "HTTP CONNECT proxy connection error: {err:#}");
+                }
+            });
+        }
+    }
+}
+
+/// Handle one browser connection to the HTTP CONNECT proxy.
+async fn handle_connect_proxy(
+    stream: TcpStream,
+    config: Arc<HttpConnectProxyConfig>,
+) -> Result<()> {
+    let idle_timeout = Duration::from_secs(config.idle_timeout_secs);
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
+
+    // Read the HTTP request line, e.g. "CONNECT api.example.com:443 HTTP/1.1\r\n"
+    let mut request_line = String::new();
+    match tokio::time::timeout(idle_timeout, reader.read_line(&mut request_line)).await {
+        Err(_) => {
+            debug!("HTTP CONNECT request line timed out; closing connection");
+            return Ok(());
+        }
+        Ok(Err(e)) => {
+            debug!("HTTP CONNECT request line read error: {e}; closing connection");
+            return Ok(());
+        }
+        Ok(Ok(0)) => return Ok(()), // EOF before any data
+        Ok(Ok(_)) => {}
+    }
+
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("").to_ascii_uppercase();
+    let target = parts.next().unwrap_or("").to_string();
+
+    // Only the CONNECT method is supported.
+    if method != "CONNECT" {
+        write_half
+            .write_all(
+                b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .await?;
+        return Ok(());
+    }
+
+    if target.is_empty() {
+        write_half
+            .write_all(
+                b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .await?;
+        return Ok(());
+    }
+
+    // Drain remaining request headers; capture Proxy-Authorization if present.
+    let mut proxy_auth: Option<String> = None;
+    loop {
+        let mut header = String::new();
+        match tokio::time::timeout(idle_timeout, reader.read_line(&mut header)).await {
+            Ok(Ok(0)) | Err(_) => break,
+            Ok(Err(e)) => {
+                debug!("HTTP CONNECT header drain error: {e}");
+                break;
+            }
+            Ok(Ok(_)) if header == "\r\n" || header == "\n" => break,
+            Ok(Ok(_)) => {
+                let lower = header.to_lowercase();
+                if let Some(val) = lower.strip_prefix("proxy-authorization:") {
+                    proxy_auth = Some(val.trim().to_string());
+                }
+            }
+        }
+    }
+
+    // Validate the bearer token when authentication is configured.
+    if !config.session_token.is_empty() {
+        let provided = proxy_auth
+            .as_deref()
+            .and_then(|v| v.strip_prefix("bearer "))
+            .unwrap_or("");
+        if provided != config.session_token {
+            write_half
+                .write_all(
+                    b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Bearer\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await?;
+            return Ok(());
+        }
+    }
+
+    // Connect to the upstream destination.
+    let mut upstream = match tokio::time::timeout(
+        Duration::from_secs(config.connect_timeout_secs),
+        TcpStream::connect(&target),
+    )
+    .await
+    {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            warn!(target = %target, "HTTP CONNECT upstream connect failed: {e}");
+            write_half
+                .write_all(
+                    b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await?;
+            return Ok(());
+        }
+        Err(_) => {
+            write_half
+                .write_all(
+                    b"HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await?;
+            return Ok(());
+        }
+    };
+
+    // Inform the browser that the tunnel is established.
+    write_half
+        .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+        .await
+        .context("failed to send 200 Connection Established")?;
+
+    // Reunite the split halves and relay bidirectionally.
+    let mut client_stream = reader
+        .into_inner()
+        .reunite(write_half)
+        .context("failed to reunite TCP stream halves")?;
+
+    let bytes_relayed = tokio::time::timeout(
+        idle_timeout,
+        tokio::io::copy_bidirectional(&mut client_stream, &mut upstream),
+    )
+    .await
+    .context("HTTP CONNECT relay idle timeout")?
+    .context("HTTP CONNECT relay I/O failure")?;
+
+    debug!(
+        target = %target,
+        from_client_bytes = bytes_relayed.0,
+        from_upstream_bytes = bytes_relayed.1,
+        "HTTP CONNECT tunnel closed"
+    );
+
+    Ok(())
+}
+
 fn validate_session(session: &GatewaySession, provided_token: &str) -> Result<()> {
     if session.session_token != provided_token {
         anyhow::bail!("invalid session token");
@@ -702,5 +938,242 @@ mod tests {
             response_str.contains("204 No Content"),
             "expected HTTP 204, got: {response_str}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // HTTP CONNECT proxy tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn http_connect_proxy_disabled_exits_immediately() {
+        let config = HttpConnectProxyConfig {
+            listen_addr: "127.0.0.1:0".to_string(),
+            session_token: String::new(),
+            enabled: false,
+            connect_timeout_secs: 5,
+            idle_timeout_secs: 30,
+        };
+        let proxy = HttpConnectProxy::new(config);
+        let result = proxy.run().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn http_connect_proxy_rejects_non_connect_method() {
+        use tokio::io::AsyncReadExt;
+
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let config = HttpConnectProxyConfig {
+            listen_addr: addr.to_string(),
+            session_token: String::new(),
+            enabled: true,
+            connect_timeout_secs: 5,
+            idle_timeout_secs: 30,
+        };
+        let proxy = HttpConnectProxy::new(config);
+        tokio::spawn(async move { let _ = proxy.run().await; });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        client
+            .write_all(b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n")
+            .await
+            .unwrap();
+
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        let response_str = std::str::from_utf8(&response).unwrap();
+
+        assert!(
+            response_str.contains("405 Method Not Allowed"),
+            "expected 405, got: {response_str}"
+        );
+    }
+
+    #[tokio::test]
+    async fn http_connect_proxy_rejects_missing_auth_token() {
+        use tokio::io::AsyncReadExt;
+
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let config = HttpConnectProxyConfig {
+            listen_addr: addr.to_string(),
+            session_token: "secret-token".to_string(),
+            enabled: true,
+            connect_timeout_secs: 5,
+            idle_timeout_secs: 30,
+        };
+        let proxy = HttpConnectProxy::new(config);
+        tokio::spawn(async move { let _ = proxy.run().await; });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        // Send CONNECT without a Proxy-Authorization header.
+        client
+            .write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n")
+            .await
+            .unwrap();
+
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        let response_str = std::str::from_utf8(&response).unwrap();
+
+        assert!(
+            response_str.contains("407 Proxy Authentication Required"),
+            "expected 407, got: {response_str}"
+        );
+    }
+
+    #[tokio::test]
+    async fn http_connect_proxy_rejects_wrong_auth_token() {
+        use tokio::io::AsyncReadExt;
+
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let config = HttpConnectProxyConfig {
+            listen_addr: addr.to_string(),
+            session_token: "secret-token".to_string(),
+            enabled: true,
+            connect_timeout_secs: 5,
+            idle_timeout_secs: 30,
+        };
+        let proxy = HttpConnectProxy::new(config);
+        tokio::spawn(async move { let _ = proxy.run().await; });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        client
+            .write_all(b"CONNECT example.com:443 HTTP/1.1\r\nProxy-Authorization: Bearer wrong-token\r\n\r\n")
+            .await
+            .unwrap();
+
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        let response_str = std::str::from_utf8(&response).unwrap();
+
+        assert!(
+            response_str.contains("407 Proxy Authentication Required"),
+            "expected 407, got: {response_str}"
+        );
+    }
+
+    #[tokio::test]
+    async fn http_connect_proxy_tunnels_traffic_end_to_end() {
+        use tokio::io::AsyncReadExt;
+
+        // Spawn a simple echo server to act as the upstream destination.
+        let echo_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let echo_addr = echo_listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = echo_listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let n = socket.read(&mut buf).await.unwrap();
+                socket.write_all(&buf[..n]).await.unwrap();
+            }
+        });
+
+        // Spawn the HTTP CONNECT proxy.
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let config = HttpConnectProxyConfig {
+            listen_addr: proxy_addr.to_string(),
+            session_token: "proxy-token".to_string(),
+            enabled: true,
+            connect_timeout_secs: 5,
+            idle_timeout_secs: 30,
+        };
+        let proxy = HttpConnectProxy::new(config);
+        tokio::spawn(async move { let _ = proxy.run().await; });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Connect as a browser would.
+        let mut client = TcpStream::connect(proxy_addr).await.unwrap();
+        let connect_request = format!(
+            "CONNECT 127.0.0.1:{} HTTP/1.1\r\nProxy-Authorization: Bearer proxy-token\r\nHost: 127.0.0.1\r\n\r\n",
+            echo_addr.port()
+        );
+        client
+            .write_all(connect_request.as_bytes())
+            .await
+            .unwrap();
+
+        // Read the 200 Connection Established response.
+        let mut header_buf = [0u8; 256];
+        let n = client.read(&mut header_buf).await.unwrap();
+        let header_str = std::str::from_utf8(&header_buf[..n]).unwrap();
+        assert!(
+            header_str.contains("200 Connection Established"),
+            "expected 200, got: {header_str}"
+        );
+
+        // Send data through the established tunnel and verify the echo.
+        client.write_all(b"hello proxy").await.unwrap();
+        let mut echoed = vec![0u8; 11];
+        client.read_exact(&mut echoed).await.unwrap();
+        assert_eq!(&echoed, b"hello proxy");
+    }
+
+    #[tokio::test]
+    async fn http_connect_proxy_no_auth_required_when_token_empty() {
+        use tokio::io::AsyncReadExt;
+
+        // Echo server.
+        let echo_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let echo_addr = echo_listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = echo_listener.accept().await {
+                let mut buf = [0u8; 64];
+                let n = socket.read(&mut buf).await.unwrap();
+                socket.write_all(&buf[..n]).await.unwrap();
+            }
+        });
+
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        // session_token is empty → no auth check.
+        let config = HttpConnectProxyConfig {
+            listen_addr: proxy_addr.to_string(),
+            session_token: String::new(),
+            enabled: true,
+            connect_timeout_secs: 5,
+            idle_timeout_secs: 30,
+        };
+        let proxy = HttpConnectProxy::new(config);
+        tokio::spawn(async move { let _ = proxy.run().await; });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut client = TcpStream::connect(proxy_addr).await.unwrap();
+        let connect_request = format!(
+            "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            echo_addr.port()
+        );
+        client
+            .write_all(connect_request.as_bytes())
+            .await
+            .unwrap();
+
+        let mut header_buf = [0u8; 256];
+        let n = client.read(&mut header_buf).await.unwrap();
+        let header_str = std::str::from_utf8(&header_buf[..n]).unwrap();
+        assert!(
+            header_str.contains("200 Connection Established"),
+            "expected 200 without auth, got: {header_str}"
+        );
+
+        client.write_all(b"no-auth").await.unwrap();
+        let mut echoed = vec![0u8; 7];
+        client.read_exact(&mut echoed).await.unwrap();
+        assert_eq!(&echoed, b"no-auth");
     }
 }
