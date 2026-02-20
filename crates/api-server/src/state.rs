@@ -797,9 +797,9 @@ impl AppState {
         .await?;
 
         let session = ConnectSessionInfo {
-            session_id,
+            session_id: session_id.clone(),
             task_id: task_uuid.to_string(),
-            node_id,
+            node_id: node_id.clone(),
             requester_id: requester_id.to_string(),
             tunnel_protocol: protocol,
             egress_profile,
@@ -812,10 +812,113 @@ impl AppState {
             ended_at: None,
         };
 
+        // Automatically record a task_connected event in heartbeat history so that
+        // the connected task is immediately visible in the node's heartbeat activity
+        // without waiting for the next explicit node heartbeat.
+        self.record_task_connected_heartbeat_event(
+            &node_id,
+            task_uuid,
+            &session_id,
+            "connect_only",
+            now,
+        )
+        .await;
+
         Ok(ConnectSessionStartResponse {
             session,
             session_token,
         })
+    }
+
+    /// Record a `task_connected` event in heartbeat history for the given node.
+    ///
+    /// This is a best-effort operation: any database error is logged as a warning
+    /// and does not fail the calling operation.
+    async fn record_task_connected_heartbeat_event(
+        &self,
+        node_id: &str,
+        task_id: Uuid,
+        session_id: &str,
+        task_type: &str,
+        recorded_at: chrono::DateTime<chrono::Utc>,
+    ) {
+        let node_row = sqlx::query(
+            r#"
+            SELECT health_score
+            FROM nodes
+            WHERE node_id = $1 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(node_id)
+        .fetch_optional(&self.db)
+        .await;
+
+        let health_score = match node_row {
+            Ok(Some(row)) => row.get::<f64, _>("health_score"),
+            Ok(None) => return,
+            Err(e) => {
+                tracing::warn!(
+                    node_id = %node_id,
+                    task_id = %task_id,
+                    "Failed to fetch node state for task_connected heartbeat event: {:?}",
+                    e
+                );
+                return;
+            }
+        };
+
+        let active_tasks: i64 = match sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM task_assignments
+            WHERE node_id = $1 AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(node_id)
+        .fetch_one(&self.db)
+        .await
+        {
+            Ok(count) => count,
+            Err(e) => {
+                tracing::warn!(
+                    node_id = %node_id,
+                    task_id = %task_id,
+                    "Failed to count active tasks for task_connected heartbeat event: {:?}",
+                    e
+                );
+                return;
+            }
+        };
+
+        let metadata = serde_json::json!({
+            "task_id": task_id.to_string(),
+            "task_type": task_type,
+            "session_id": session_id,
+            "event": "task_connected"
+        });
+
+        if let Err(e) = sqlx::query(
+            r#"
+            INSERT INTO node_heartbeat_history
+                (node_id, health_score, active_tasks, status, metadata, recorded_at)
+            VALUES ($1, $2, $3, 'task_connected', $4, $5)
+            "#,
+        )
+        .bind(node_id)
+        .bind(health_score)
+        .bind(active_tasks.min(i32::MAX as i64) as i32)
+        .bind(&metadata)
+        .bind(recorded_at)
+        .execute(&self.db)
+        .await
+        {
+            tracing::warn!(
+                node_id = %node_id,
+                task_id = %task_id,
+                "Failed to record task_connected event in heartbeat history: {:?}",
+                e
+            );
+        }
     }
 
     pub async fn get_connect_session(
@@ -1179,7 +1282,7 @@ impl AppState {
         Ok(false)
     }
 
-    /// Get recent task-cleared events from heartbeat history for a node
+    /// Get recent task activity events (task_cleared and task_connected) from heartbeat history for a node
     pub async fn get_node_cleared_task_events(
         &self,
         node_id: &str,
@@ -1206,7 +1309,7 @@ impl AppState {
             SELECT metadata, recorded_at
             FROM node_heartbeat_history
             WHERE node_id = $1
-              AND status = 'task_cleared'
+              AND status IN ('task_cleared', 'task_connected')
             ORDER BY recorded_at DESC
             LIMIT 50
             "#,
