@@ -1,4 +1,4 @@
-/// Authentication and authorization middleware
+//! Authentication and authorization middleware
 use crate::auth::{hash_api_key, Claims};
 use crate::error::ApiError;
 use axum::{
