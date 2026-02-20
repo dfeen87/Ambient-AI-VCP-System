@@ -2202,6 +2202,9 @@
             return;
         }
 
+        // Refresh nodes and tasks so the modal shows up-to-date active tasks
+        await fetchData();
+
         // Find the node data to get status
         const node = nodes.find(n => n.node_id === nodeId);
         const nodeStatus = node ? node.status : 'unknown';
