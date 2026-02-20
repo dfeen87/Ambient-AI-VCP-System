@@ -1087,7 +1087,10 @@ async fn test_node_rejection_disconnects_task_assignments() {
     .await
     .expect("disconnected assignment count query should succeed");
 
-    assert_eq!(disconnected_count, 1, "assignment should be marked disconnected");
+    assert_eq!(
+        disconnected_count, 1,
+        "assignment should be marked disconnected"
+    );
 
     sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
         .execute(&pool)
