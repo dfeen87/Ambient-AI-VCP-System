@@ -2677,7 +2677,7 @@
         }
         tbody.innerHTML = nodes.map(n => {
             const isOwner = currentUserId && n.owner_id === currentUserId;
-            const canEject = isOwner && n.status !== 'rejected' && n.status !== 'offline';
+            const canEject = isOwner && n.status !== 'rejected';
             const statusClass = getStatusBadgeClass((n.status || '').toLowerCase());
             // Colour-code health bar: green ≥70, amber ≥40, red <40.
             // When health_score is missing show a neutral grey bar at 0% width.
