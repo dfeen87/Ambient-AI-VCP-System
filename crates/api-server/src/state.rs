@@ -6,6 +6,7 @@ use crate::models::*;
 use federated_learning::{FederatedAggregator, LayerWeights, ModelWeights, PrivacyBudget};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
+use wasm_engine::SandboxLimits;
 
 /// Application state with database connection pool
 pub struct AppState {
@@ -2629,6 +2630,8 @@ fn analyze_zk_proof_payload(map: &serde_json::Map<String, serde_json::Value>) ->
                 .map(|v| v as usize)
         });
 
+    let wiring_status = compute_zk_wiring_status(map, circuit_name);
+
     serde_json::json!({
         "task_type": "zk_proof",
         "analysis_mode": "zk_proof",
@@ -2637,8 +2640,63 @@ fn analyze_zk_proof_payload(map: &serde_json::Map<String, serde_json::Value>) ->
         "public_input_count": public_input_count,
         "has_witness": map.contains_key("witness") || map.contains_key("private_inputs"),
         "has_proof_system": map.contains_key("proof_system") || map.contains_key("protocol"),
+        "wiring_status": wiring_status,
         "top_level_keys": map.keys().cloned().collect::<Vec<String>>()
     })
+}
+
+/// Attempt to verify a ZK proof from the task payload.
+///
+/// Expects the payload to contain:
+/// - `proof_data`: base64-encoded Groth16 proof bytes
+/// - `public_inputs_bytes`: base64-encoded serialised public-input field elements
+///   (also accepted as `public_inputs_b64`)
+///
+/// Returns one of:
+/// - `"wired"` – proof bytes present and cryptographically valid
+/// - `"verification_failed"` – proof bytes present but verification failed
+/// - `"invalid_proof_encoding"` – base64 decoding of the supplied data failed
+/// - `"awaiting_proof_data"` – required fields are absent
+fn compute_zk_wiring_status(
+    map: &serde_json::Map<String, serde_json::Value>,
+    circuit_name: Option<&str>,
+) -> &'static str {
+    use base64::Engine;
+    use zk_prover::{ZKProof, ZKVerifier};
+
+    let proof_data_b64 = match map.get("proof_data").and_then(|v| v.as_str()) {
+        Some(v) => v,
+        None => return "awaiting_proof_data",
+    };
+
+    let public_inputs_b64 = match map
+        .get("public_inputs_bytes")
+        .and_then(|v| v.as_str())
+        .or_else(|| map.get("public_inputs_b64").and_then(|v| v.as_str()))
+    {
+        Some(v) => v,
+        None => return "awaiting_proof_data",
+    };
+
+    let proof_bytes = match base64::engine::general_purpose::STANDARD.decode(proof_data_b64) {
+        Ok(v) => v,
+        Err(_) => return "invalid_proof_encoding",
+    };
+    let public_inputs_bytes =
+        match base64::engine::general_purpose::STANDARD.decode(public_inputs_b64) {
+            Ok(v) => v,
+            Err(_) => return "invalid_proof_encoding",
+        };
+
+    let circuit_id = circuit_name.unwrap_or("default").to_string();
+    let proof = ZKProof::new(proof_bytes, public_inputs_bytes, circuit_id);
+    let verifier = ZKVerifier::default();
+
+    if verifier.verify_proof(&proof, &proof.public_inputs) {
+        "wired"
+    } else {
+        "verification_failed"
+    }
 }
 
 fn analyze_wasm_execution_payload(
@@ -2654,15 +2712,52 @@ fn analyze_wasm_execution_payload(
         .and_then(|v| v.as_str())
         .or_else(|| map.get("function").and_then(|v| v.as_str()));
 
+    let has_wasm_module = map.contains_key("wasm_module")
+        || map.contains_key("module_bytes")
+        || map.contains_key("module");
+
+    let wiring_status = match (has_wasm_module, function_name.is_some()) {
+        (true, true) => "wired",
+        (false, _) => "awaiting_module",
+        (true, false) => "awaiting_entrypoint",
+    };
+
+    let resolved_limits = build_wasm_sandbox_limits(map);
+
     serde_json::json!({
         "task_type": "wasm_execution",
         "analysis_mode": "wasm_execution",
         "summary": "WASM execution payload analyzed successfully.",
         "entrypoint": function_name,
         "module_size_bytes": module_size_bytes,
-        "has_wasm_module": map.contains_key("wasm_module") || map.contains_key("module_bytes") || map.contains_key("module"),
+        "has_wasm_module": has_wasm_module,
         "has_runtime_limits": map.contains_key("limits") || map.contains_key("timeout_ms") || map.contains_key("memory_limit_mb"),
+        "wiring_status": wiring_status,
+        "resolved_limits": resolved_limits,
         "top_level_keys": map.keys().cloned().collect::<Vec<String>>()
+    })
+}
+
+/// Build a `SandboxLimits` from the task payload, falling back to defaults for
+/// any value that is absent or invalid.
+fn build_wasm_sandbox_limits(map: &serde_json::Map<String, serde_json::Value>) -> serde_json::Value {
+    let mut limits = SandboxLimits::default();
+
+    if let Some(ms) = map.get("timeout_ms").and_then(|v| v.as_u64()) {
+        limits.timeout_seconds = ((ms / 1000).max(1)) as u32;
+    }
+    if let Some(mb) = map.get("memory_limit_mb").and_then(|v| v.as_u64()) {
+        limits.memory_mb = mb as u32;
+    }
+    if let Some(instr) = map.get("max_instructions").and_then(|v| v.as_u64()) {
+        limits.max_instructions = instr;
+    }
+
+    serde_json::json!({
+        "memory_mb": limits.memory_mb,
+        "timeout_seconds": limits.timeout_seconds,
+        "max_instructions": limits.max_instructions,
+        "gas_metering_enabled": limits.gas_metering_enabled
     })
 }
 
@@ -3156,6 +3251,62 @@ mod tests {
 
         assert_eq!(result["analysis_mode"], "zk_proof");
         assert_eq!(result["public_input_count"], 3);
+        // No proof bytes supplied → waiting for data
+        assert_eq!(result["wiring_status"], "awaiting_proof_data");
+    }
+
+    #[test]
+    fn zk_proof_wiring_verifies_valid_proof() {
+        use base64::Engine;
+        use zk_prover::{prover::ZKProver, verifier::ZKVerifier, ExecutionTrace};
+
+        // Generate a real proof with the default prover key-pair.
+        let prover = ZKProver::default();
+        let trace = ExecutionTrace {
+            module_hash: "wiring_test_module".to_string(),
+            function_name: "test_fn".to_string(),
+            inputs: vec![1, 2, 3],
+            outputs: vec![4, 5, 6],
+            execution_time_ms: 10,
+            gas_used: 100,
+            timestamp: 1,
+        };
+        let proof = prover.generate_proof(trace).unwrap();
+
+        let proof_data_b64 =
+            base64::engine::general_purpose::STANDARD.encode(&proof.proof_data);
+        let public_inputs_b64 =
+            base64::engine::general_purpose::STANDARD.encode(&proof.public_inputs);
+
+        let value = serde_json::json!({
+            "circuit": "execution_trace",
+            "proof_system": "groth16",
+            "proof_data": proof_data_b64,
+            "public_inputs_bytes": public_inputs_b64
+        });
+        let result = analyze_task_payload("zk_proof", &value);
+
+        assert_eq!(result["analysis_mode"], "zk_proof");
+        assert_eq!(result["wiring_status"], "wired");
+    }
+
+    #[test]
+    fn zk_proof_wiring_returns_verification_failed_for_bad_proof() {
+        use base64::Engine;
+
+        // Plausible-looking but invalid proof/inputs bytes.
+        let fake_proof = base64::engine::general_purpose::STANDARD.encode(vec![0xdeu8; 128]);
+        let fake_inputs = base64::engine::general_purpose::STANDARD.encode(vec![0xadu8; 64]);
+
+        let value = serde_json::json!({
+            "circuit": "range_check",
+            "proof_data": fake_proof,
+            "public_inputs_bytes": fake_inputs
+        });
+        let result = analyze_task_payload("zk_proof", &value);
+
+        assert_eq!(result["analysis_mode"], "zk_proof");
+        assert_eq!(result["wiring_status"], "verification_failed");
     }
 
     #[test]
@@ -3169,6 +3320,49 @@ mod tests {
 
         assert_eq!(result["analysis_mode"], "wasm_execution");
         assert_eq!(result["entrypoint"], "run");
+        // No module content supplied → waiting for module
+        assert_eq!(result["wiring_status"], "awaiting_module");
+    }
+
+    #[test]
+    fn wasm_execution_wiring_is_wired_when_module_and_entrypoint_present() {
+        let value = serde_json::json!({
+            "module": "base64encodedwasmmodule==",
+            "entrypoint": "main",
+            "timeout_ms": 10000,
+            "memory_limit_mb": 256
+        });
+        let result = analyze_task_payload("wasm_execution", &value);
+
+        assert_eq!(result["analysis_mode"], "wasm_execution");
+        assert_eq!(result["wiring_status"], "wired");
+        // resolved_limits should reflect the supplied values
+        assert_eq!(result["resolved_limits"]["timeout_seconds"], 10);
+        assert_eq!(result["resolved_limits"]["memory_mb"], 256);
+        assert_eq!(result["resolved_limits"]["gas_metering_enabled"], true);
+    }
+
+    #[test]
+    fn wasm_execution_wiring_awaits_entrypoint_when_module_present_but_no_entrypoint() {
+        let value = serde_json::json!({
+            "wasm_module": "base64wasmdata=="
+        });
+        let result = analyze_task_payload("wasm_execution", &value);
+
+        assert_eq!(result["wiring_status"], "awaiting_entrypoint");
+    }
+
+    #[test]
+    fn wasm_execution_resolved_limits_fall_back_to_defaults() {
+        // No timeout or memory specified → SandboxLimits::default() values are used.
+        let value = serde_json::json!({
+            "module": "base64encodedwasmmodule==",
+            "entrypoint": "run"
+        });
+        let result = analyze_task_payload("wasm_execution", &value);
+
+        assert_eq!(result["resolved_limits"]["memory_mb"], 512);
+        assert_eq!(result["resolved_limits"]["timeout_seconds"], 30);
     }
 
     #[test]
