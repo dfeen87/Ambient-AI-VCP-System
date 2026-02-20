@@ -136,6 +136,8 @@ Tip: To quickly verify the public demo is reachable, run:
 - 📊 **Prometheus Metrics**: `/metrics` endpoint with per-route latency and error tracking
 - 📝 **Audit Logging**: Comprehensive audit trail for security events
 - 🔍 **ZK Proof Verification**: Cryptographic verification (Groth16/BN254) with strict payload validation
+- 🔑 **P2P Message Integrity**: Ed25519 signature verification for offline peer policy sync messages
+- 🛡️ **Middleware Hardening**: Explicit state injection for reliable authentication flow
 - 🌐 **Security Headers**: HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy
 - 📊 **Request Tracing**: Structured logging with request IDs for all API calls
 - 💾 **Enhanced Persistence**: Migrations for task_runs, proof_artifacts, api_keys, audit_log, node_heartbeat_history
