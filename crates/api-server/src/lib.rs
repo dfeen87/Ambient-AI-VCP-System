@@ -646,7 +646,6 @@ async fn submit_task_result(
     Ok(Json(result))
 }
 
-
 #[utoipa::path(
     get,
     path = "/api/v1/nodes/{node_id}/heartbeat/activity",
@@ -705,13 +704,10 @@ async fn get_node_gateway_sessions(
     let owner_id = Uuid::parse_str(&auth_user.user_id)
         .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
 
-    let sessions = state
-        .get_node_gateway_sessions(&node_id, owner_id)
-        .await?;
+    let sessions = state.get_node_gateway_sessions(&node_id, owner_id).await?;
 
     Ok(Json(serde_json::json!({ "sessions": sessions })))
 }
-
 
 #[utoipa::path(
     post,
