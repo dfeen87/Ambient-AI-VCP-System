@@ -631,6 +631,73 @@ pub struct ClusterStats {
     pub total_compute_capacity: f64,
 }
 
+/// Node task result submission — sent by a node owner after the node has
+/// finished executing its portion of a task.
+///
+/// For tasks that require proof (`require_proof = true`) the caller should
+/// include `proof_data` and `public_inputs` (both Base64-encoded).  The
+/// server verifies the proof before marking the task as completed.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct NodeTaskResult {
+    /// ID of the node that performed the work.
+    pub node_id: String,
+    /// Execution output produced by the node (arbitrary JSON).
+    pub result: serde_json::Value,
+    /// Optional wall-clock execution time reported by the node (milliseconds).
+    pub execution_time_ms: Option<u64>,
+    /// Base64-encoded ZK proof blob (required when the task has `require_proof`).
+    pub proof_data: Option<String>,
+    /// Base64-encoded public inputs for the proof circuit.
+    pub public_inputs: Option<String>,
+    /// Circuit identifier; defaults to `"default"` when omitted.
+    pub circuit_id: Option<String>,
+}
+
+impl NodeTaskResult {
+    pub fn validate(&self) -> Result<(), ApiError> {
+        if self.node_id.is_empty() {
+            return Err(ApiError::bad_request("node_id cannot be empty"));
+        }
+        if self.node_id.len() > 64 {
+            return Err(ApiError::bad_request("node_id cannot exceed 64 characters"));
+        }
+
+        if let Some(ref proof_data) = self.proof_data {
+            if proof_data.len() > 100_000 {
+                return Err(ApiError::bad_request(
+                    "proof_data exceeds maximum size of 100KB (base64 encoded)",
+                ));
+            }
+            if base64::Engine::decode(
+                &base64::engine::general_purpose::STANDARD,
+                proof_data,
+            )
+            .is_err()
+            {
+                return Err(ApiError::bad_request("proof_data is not valid base64"));
+            }
+        }
+
+        if let Some(ref public_inputs) = self.public_inputs {
+            if public_inputs.len() > 10_000 {
+                return Err(ApiError::bad_request(
+                    "public_inputs exceeds maximum size of 10KB (base64 encoded)",
+                ));
+            }
+            if base64::Engine::decode(
+                &base64::engine::general_purpose::STANDARD,
+                public_inputs,
+            )
+            .is_err()
+            {
+                return Err(ApiError::bad_request("public_inputs is not valid base64"));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
