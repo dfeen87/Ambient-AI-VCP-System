@@ -384,8 +384,8 @@ mod tests {
     /// The HTB parent class rate must equal max_bandwidth, not the sum of
     /// per-class minimums.  If the parent rate were only control + interactive
     /// + bulk (e.g. 16 Mbps by default), HTB would hard-cap ALL egress at
-    /// that sum — making uploads unable to reach full WAN speed even when
-    /// only one class is active.
+    ///   that sum — making uploads unable to reach full WAN speed even when
+    ///   only one class is active.
     #[test]
     fn test_parent_htb_rate_equals_max_bandwidth() {
         let config = QosConfig {
