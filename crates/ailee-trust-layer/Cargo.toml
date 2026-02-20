@@ -10,6 +10,7 @@ description = "AILEE Trust Layer - External generative intelligence, trust scori
 # Async runtime
 tokio.workspace = true
 async-trait.workspace = true
+futures.workspace = true
 
 # Serialization
 serde.workspace = true

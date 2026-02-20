@@ -21,6 +21,7 @@ authors = ["Don Michael Feeney Jr."]
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
 async-trait = "0.1"
+futures = "0.3"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
