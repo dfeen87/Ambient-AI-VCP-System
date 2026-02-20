@@ -66,6 +66,34 @@ async fn main() -> Result<()> {
         "Connect session monitor task started"
     );
 
+    // Start node offline sweep — marks nodes as offline when they have not
+    // sent a heartbeat within NODE_HEARTBEAT_TIMEOUT_MINUTES (default: 5).
+    let node_sweep_interval_seconds: u64 = std::env::var("NODE_OFFLINE_SWEEP_INTERVAL_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|v: &u64| *v > 0)
+        .unwrap_or(60);
+    let node_sweep_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(node_sweep_interval_seconds));
+        loop {
+            ticker.tick().await;
+            match node_sweep_state.sweep_offline_nodes().await {
+                Ok(swept) if swept > 0 => {
+                    info!(swept, "Node offline sweep marked nodes offline");
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    tracing::error!("Node offline sweep failed: {err}");
+                }
+            }
+        }
+    });
+    info!(
+        node_sweep_interval_seconds,
+        "Node offline sweep task started"
+    );
+
     // Create router
     let app = create_router(state);
 

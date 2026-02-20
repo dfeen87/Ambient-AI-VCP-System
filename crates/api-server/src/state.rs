@@ -487,7 +487,10 @@ impl AppState {
                 INSERT INTO task_assignments (task_id, node_id)
                 VALUES ($1, $2)
                 ON CONFLICT (task_id, node_id)
-                DO UPDATE SET assigned_at = NOW(), disconnected_at = NULL
+                DO UPDATE SET assigned_at = NOW(), disconnected_at = NULL,
+                              execution_status = 'assigned',
+                              execution_started_at = NULL,
+                              execution_completed_at = NULL
                 WHERE task_assignments.disconnected_at IS NOT NULL
                 "#,
             )
@@ -615,7 +618,10 @@ impl AppState {
                 INSERT INTO task_assignments (task_id, node_id)
                 VALUES ($1, $2)
                 ON CONFLICT (task_id, node_id)
-                DO UPDATE SET assigned_at = NOW(), disconnected_at = NULL
+                DO UPDATE SET assigned_at = NOW(), disconnected_at = NULL,
+                              execution_status = 'assigned',
+                              execution_started_at = NULL,
+                              execution_completed_at = NULL
                 WHERE task_assignments.disconnected_at IS NOT NULL
                 "#,
             )
@@ -765,9 +771,10 @@ impl AppState {
             INSERT INTO connect_sessions (
                 session_id, task_id, requester_id, node_id, tunnel_protocol,
                 egress_profile, destination_policy_id, bandwidth_limit_mbps,
-                session_token_hash, status, created_at, expires_at, last_heartbeat_at
+                session_token_hash, session_token_cleartext,
+                status, created_at, expires_at, last_heartbeat_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $12, 'active', $10, $11, $10)
             ON CONFLICT (session_id)
             DO UPDATE SET
                 node_id = EXCLUDED.node_id,
@@ -776,6 +783,7 @@ impl AppState {
                 destination_policy_id = EXCLUDED.destination_policy_id,
                 bandwidth_limit_mbps = EXCLUDED.bandwidth_limit_mbps,
                 session_token_hash = EXCLUDED.session_token_hash,
+                session_token_cleartext = EXCLUDED.session_token_cleartext,
                 status = 'active',
                 created_at = EXCLUDED.created_at,
                 expires_at = EXCLUDED.expires_at,
@@ -794,6 +802,7 @@ impl AppState {
         .bind(&session_token_hash)
         .bind(now)
         .bind(expires_at)
+        .bind(&session_token) // $12 — cleartext token for gateway node use
         .execute(&self.db)
         .await?;
 
@@ -1857,16 +1866,20 @@ impl AppState {
 
     /// Update node heartbeat timestamp and record activity history.
     ///
-    /// Returns `Some((active_task_count, assigned_task_ids))` on success, where
-    /// `active_task_count` is the number of tasks the node is actively connected to
-    /// *after* any pending-task assignments triggered by this heartbeat, and
-    /// `assigned_task_ids` is the list of task IDs the node is currently assigned to.
+    /// Returns `Some((active_task_count, assigned_tasks))` on success, where
+    /// `active_task_count` is the number of tasks the node is actively
+    /// connected to *after* any pending-task assignments triggered by this
+    /// heartbeat, and `assigned_tasks` is a list of
+    /// `{"task_id": "...", "task_type": "..."}` objects.  Returning `task_type`
+    /// lets the node know which of its assignments are `connect_only` tasks that
+    /// require the data-plane gateway to be active.
+    ///
     /// Returns `None` when the node is not found or does not belong to `owner_id`.
     pub async fn update_node_heartbeat(
         &self,
         node_id: &str,
         owner_id: Uuid,
-    ) -> ApiResult<Option<(i64, Vec<String>)>> {
+    ) -> ApiResult<Option<(i64, Vec<serde_json::Value>)>> {
         // Fetch current node state (also verifies ownership and existence)
         let node_row = sqlx::query(
             r#"
@@ -1937,23 +1950,36 @@ impl AppState {
         // Sync any pending tasks that this node is eligible for.
         self.assign_pending_tasks_for_node(node_id).await?;
 
-        // Fetch active task assignments *after* any new assignments made above so that
-        // the response accurately reflects the node's current connected-task state.
-        let assigned_task_ids: Vec<String> = sqlx::query_scalar(
+        // Fetch active task assignments *after* any new assignments so the
+        // response accurately reflects the node's current connected-task state.
+        // Also joins tasks to return task_type so the node knows which tasks
+        // are connect_only (requiring gateway-mode activation) vs compute tasks.
+        let assigned_task_rows = sqlx::query(
             r#"
-            SELECT task_id::TEXT
-            FROM task_assignments
-            WHERE node_id = $1 AND disconnected_at IS NULL
-            ORDER BY assigned_at ASC
+            SELECT ta.task_id::TEXT, t.task_type
+            FROM task_assignments ta
+            JOIN tasks t ON t.task_id = ta.task_id
+            WHERE ta.node_id = $1 AND ta.disconnected_at IS NULL
+            ORDER BY ta.assigned_at ASC
             "#,
         )
         .bind(node_id)
         .fetch_all(&self.db)
         .await?;
 
-        let active_tasks_after = assigned_task_ids.len() as i64;
+        let assigned_tasks: Vec<serde_json::Value> = assigned_task_rows
+            .into_iter()
+            .map(|row| {
+                serde_json::json!({
+                    "task_id": row.get::<String, _>("task_id"),
+                    "task_type": row.get::<String, _>("task_type"),
+                })
+            })
+            .collect();
 
-        Ok(Some((active_tasks_after, assigned_task_ids)))
+        let active_tasks_after = assigned_tasks.len() as i64;
+
+        Ok(Some((active_tasks_after, assigned_tasks)))
     }
 
     /// Reject a node owned by the requesting user
@@ -2120,6 +2146,401 @@ impl AppState {
                 vec![]
             }
         }
+    }
+
+    /// Sweep nodes that have not sent a heartbeat within the configured
+    /// threshold and mark them as offline.  Also disconnects their active
+    /// task assignments and attempts to reassign those tasks to other nodes.
+    ///
+    /// The timeout is controlled by the `NODE_HEARTBEAT_TIMEOUT_MINUTES`
+    /// environment variable (default: 5 minutes).
+    ///
+    /// Returns the number of nodes swept offline.
+    pub async fn sweep_offline_nodes(&self) -> ApiResult<usize> {
+        let threshold_minutes: i64 = std::env::var("NODE_HEARTBEAT_TIMEOUT_MINUTES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|v: &i64| *v > 0)
+            .unwrap_or(5);
+
+        // Mark stale online nodes offline and collect their IDs in one statement.
+        let stale_node_ids: Vec<String> = sqlx::query_scalar(
+            r#"
+            WITH swept AS (
+                UPDATE nodes
+                SET status = 'offline', updated_at = NOW()
+                WHERE status = 'online'
+                  AND deleted_at IS NULL
+                  AND last_heartbeat < NOW() - (interval '1 minute' * $1)
+                RETURNING node_id
+            )
+            SELECT node_id FROM swept
+            "#,
+        )
+        .bind(threshold_minutes)
+        .fetch_all(&self.db)
+        .await?;
+
+        if stale_node_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let count = stale_node_ids.len();
+
+        for node_id in &stale_node_ids {
+            // Collect the tasks this node was still actively assigned to.
+            let affected_tasks = sqlx::query(
+                r#"
+                SELECT ta.task_id, t.min_nodes, t.task_type, t.require_gpu
+                FROM task_assignments ta
+                JOIN tasks t ON t.task_id = ta.task_id
+                WHERE ta.node_id = $1
+                  AND ta.disconnected_at IS NULL
+                "#,
+            )
+            .bind(node_id)
+            .fetch_all(&self.db)
+            .await?;
+
+            // Disconnect all active assignments for this node.
+            sqlx::query(
+                r#"
+                UPDATE task_assignments
+                SET disconnected_at = NOW(),
+                    execution_status = CASE
+                        WHEN execution_status = 'in_progress' THEN 'failed'
+                        ELSE execution_status
+                    END
+                WHERE node_id = $1 AND disconnected_at IS NULL
+                "#,
+            )
+            .bind(node_id)
+            .execute(&self.db)
+            .await?;
+
+            // For each affected task update its status and attempt reassignment.
+            for task_row in affected_tasks {
+                let task_id: Uuid = task_row.get("task_id");
+                let min_nodes: i32 = task_row.get("min_nodes");
+                let task_type: String = task_row.get("task_type");
+                let require_gpu: bool = task_row.get("require_gpu");
+
+                let _ = self
+                    .update_task_status_from_assignments(task_id, min_nodes as u32)
+                    .await;
+
+                if let Ok(status) = self.get_task_status(task_id).await {
+                    if status == "pending" {
+                        if let Some(entry) = task_type_registry_entry(&task_type) {
+                            let _ = self
+                                .assign_available_nodes_for_task(
+                                    task_id,
+                                    &task_type,
+                                    entry,
+                                    min_nodes as u32,
+                                    require_gpu,
+                                )
+                                .await;
+                        }
+                    }
+                }
+            }
+        }
+
+        tracing::info!(swept = count, "Node offline sweep completed");
+        Ok(count)
+    }
+
+    /// Accept an execution result submitted by a node owner.
+    ///
+    /// Validates that:
+    /// - The authenticated user owns the reporting node.
+    /// - The node is actively assigned to the task.
+    /// - The task is in a runnable state (`running` or `pending`).
+    /// - If `proof_data` is supplied, the ZK proof is verified before the
+    ///   result is stored.
+    ///
+    /// On success the task is marked `completed` and the result is persisted.
+    /// All remaining node assignments are disconnected so those nodes become
+    /// available for other pending tasks.
+    pub async fn submit_task_result(
+        &self,
+        task_id: Uuid,
+        submission: NodeTaskResult,
+        owner_id: Uuid,
+    ) -> ApiResult<serde_json::Value> {
+        // Verify the reporting node belongs to the authenticated user.
+        let node_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM nodes
+                WHERE node_id = $1 AND owner_id = $2 AND deleted_at IS NULL
+            )
+            "#,
+        )
+        .bind(&submission.node_id)
+        .bind(owner_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        if !node_exists {
+            return Err(ApiError::not_found_or_forbidden(
+                "Node not found or not owned by you",
+            ));
+        }
+
+        // Fetch task metadata.
+        let task_row = sqlx::query(
+            r#"
+            SELECT task_type, status, require_proof
+            FROM tasks
+            WHERE task_id = $1
+            "#,
+        )
+        .bind(task_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        let Some(task_row) = task_row else {
+            return Err(ApiError::not_found(format!("Task {} not found", task_id)));
+        };
+
+        let task_type: String = task_row.get("task_type");
+        let task_status: String = task_row.get("status");
+        let require_proof: bool = task_row.get("require_proof");
+
+        // connect_only tasks complete via session lifecycle, not node results.
+        if task_type == "connect_only" {
+            return Err(ApiError::bad_request(
+                "connect_only tasks complete via the connect-session API, not this endpoint",
+            ));
+        }
+
+        if task_status != "running" && task_status != "pending" {
+            return Err(ApiError::bad_request(format!(
+                "Task is not in an executable state (current status: {})",
+                task_status
+            )));
+        }
+
+        // Verify the node is actively assigned to this task.
+        let is_assigned: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM task_assignments
+                WHERE task_id = $1 AND node_id = $2 AND disconnected_at IS NULL
+            )
+            "#,
+        )
+        .bind(task_id)
+        .bind(&submission.node_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        if !is_assigned {
+            return Err(ApiError::bad_request(
+                "Node is not actively assigned to this task",
+            ));
+        }
+
+        // Enforce proof requirement declared on the task.
+        if require_proof && submission.proof_data.is_none() {
+            return Err(ApiError::bad_request(
+                "This task requires a ZK proof; include proof_data and public_inputs",
+            ));
+        }
+
+        // Verify ZK proof when provided.
+        let proof_verified = if let Some(ref proof_data_b64) = submission.proof_data {
+            let proof_bytes = base64::Engine::decode(
+                &base64::engine::general_purpose::STANDARD,
+                proof_data_b64,
+            )
+            .map_err(|_| ApiError::bad_request("proof_data is not valid base64"))?;
+
+            let public_inputs_bytes = submission
+                .public_inputs
+                .as_deref()
+                .map(|pi| {
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, pi)
+                        .map_err(|_| ApiError::bad_request("public_inputs is not valid base64"))
+                })
+                .transpose()?
+                .unwrap_or_default();
+
+            let circuit_id = submission
+                .circuit_id
+                .clone()
+                .unwrap_or_else(|| "default".to_string());
+            let proof =
+                zk_prover::ZKProof::new(proof_bytes, public_inputs_bytes.clone(), circuit_id);
+
+            let valid = tokio::task::spawn_blocking(move || {
+                let verifier = zk_prover::ZKVerifier::default();
+                verifier.verify_proof(&proof, &public_inputs_bytes)
+            })
+            .await
+            .map_err(|_| ApiError::internal_error("Proof verification task failed"))?;
+
+            if !valid {
+                return Err(ApiError::bad_request(
+                    "Proof verification failed: invalid proof or public inputs",
+                ));
+            }
+            true
+        } else {
+            false
+        };
+
+        let now = chrono::Utc::now();
+        let mut tx = self.db.begin().await?;
+
+        // Persist result and mark task completed.
+        sqlx::query(
+            r#"
+            UPDATE tasks
+            SET status = 'completed', result = $1, updated_at = $2
+            WHERE task_id = $3
+              AND status IN ('running', 'pending')
+            "#,
+        )
+        .bind(&submission.result)
+        .bind(now)
+        .bind(task_id)
+        .execute(&mut *tx)
+        .await?;
+
+        // Mark submitting node's assignment as completed.
+        sqlx::query(
+            r#"
+            UPDATE task_assignments
+            SET execution_status = 'completed', execution_completed_at = $1
+            WHERE task_id = $2 AND node_id = $3 AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(now)
+        .bind(task_id)
+        .bind(&submission.node_id)
+        .execute(&mut *tx)
+        .await?;
+
+        // Disconnect all remaining active assignments for this task.
+        sqlx::query(
+            r#"
+            UPDATE task_assignments
+            SET disconnected_at = $1
+            WHERE task_id = $2 AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(now)
+        .bind(task_id)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        // Let freed nodes pick up pending tasks.
+        let freed_nodes: Vec<String> = sqlx::query_scalar(
+            r#"SELECT node_id FROM task_assignments WHERE task_id = $1"#,
+        )
+        .bind(task_id)
+        .fetch_all(&self.db)
+        .await
+        .unwrap_or_default();
+
+        for node_id in freed_nodes {
+            let _ = self.assign_pending_tasks_for_node(&node_id).await;
+        }
+
+        Ok(serde_json::json!({
+            "task_id": task_id.to_string(),
+            "status": "completed",
+            "node_id": submission.node_id,
+            "proof_verified": proof_verified,
+            "completed_at": now.to_rfc3339(),
+        }))
+    }
+
+    /// Return the active gateway sessions that the given node should be relaying.
+    ///
+    /// Called by `open_internet` / relay nodes so they can populate their
+    /// `DataPlaneGateway` session store without relying on a static sessions file.
+    /// The response includes the cleartext `session_token` that the gateway uses
+    /// to authenticate incoming relay connections from clients.
+    ///
+    /// Only sessions are returned where:
+    /// - status is `active` and expiry is in the future
+    /// - `connect_sessions.node_id` matches this node
+    /// - the node is owned by the requesting user (ownership verified first)
+    pub async fn get_node_gateway_sessions(
+        &self,
+        node_id: &str,
+        owner_id: Uuid,
+    ) -> ApiResult<Vec<ambient_node::GatewaySession>> {
+        // Verify ownership before exposing session tokens.
+        let owns_node: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM nodes
+                WHERE node_id = $1 AND owner_id = $2 AND deleted_at IS NULL
+            )
+            "#,
+        )
+        .bind(node_id)
+        .bind(owner_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        if !owns_node {
+            return Err(ApiError::not_found_or_forbidden(
+                "Node not found or not owned by you",
+            ));
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                cs.session_id,
+                cs.session_token_cleartext,
+                cs.egress_profile,
+                cs.destination_policy_id,
+                EXTRACT(EPOCH FROM cs.expires_at)::BIGINT AS expires_at_epoch
+            FROM connect_sessions cs
+            WHERE cs.node_id = $1
+              AND cs.status = 'active'
+              AND cs.expires_at > NOW()
+              AND cs.session_token_cleartext IS NOT NULL
+            "#,
+        )
+        .bind(node_id)
+        .fetch_all(&self.db)
+        .await?;
+
+        let sessions = rows
+            .into_iter()
+            .filter_map(|row| {
+                let session_id: String = row.try_get("session_id").ok()?;
+                let session_token: String = row.try_get("session_token_cleartext").ok()?;
+                let egress_profile: String = row.try_get("egress_profile").ok()?;
+                let destination_policy_id: String =
+                    row.try_get("destination_policy_id").ok()?;
+                let expires_at_epoch: i64 = row.try_get("expires_at_epoch").ok()?;
+
+                Some(ambient_node::GatewaySession {
+                    session_id,
+                    session_token,
+                    egress_profile,
+                    destination_policy_id,
+                    // allowed_destinations is populated by a destination-policy store
+                    // (not yet implemented).  Nodes with egress_profile other than
+                    // "allowlist_domains" do not require this list to be populated.
+                    allowed_destinations: vec![],
+                    expires_at_epoch_seconds: expires_at_epoch.max(0) as u64,
+                })
+            })
+            .collect();
+
+        Ok(sessions)
     }
 }
 

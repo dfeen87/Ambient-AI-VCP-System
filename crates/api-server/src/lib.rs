@@ -36,10 +36,12 @@ use state::AppState;
         reject_node,
         update_heartbeat,
         get_node_heartbeat_activity,
+        get_node_gateway_sessions,
         submit_task,
         get_task,
         list_tasks,
         delete_task,
+        submit_task_result,
         start_connect_session,
         get_connect_session,
         heartbeat_connect_session,
@@ -57,6 +59,7 @@ use state::AppState;
         TaskSubmission,
         TaskInfo,
         TaskStatus,
+        NodeTaskResult,
         ConnectSessionStartRequest,
         ConnectSessionInfo,
         ConnectSessionStartResponse,
@@ -284,19 +287,28 @@ async fn update_heartbeat(
 
     let active_tasks = state.update_node_heartbeat(&node_id, user_id).await?;
 
-    let Some((active_task_count, assigned_task_ids)) = active_tasks else {
+    let Some((active_task_count, assigned_tasks)) = active_tasks else {
         return Err(ApiError::not_found_or_forbidden(format!(
             "Node {} not found or you don't have permission to update it",
             node_id
         )));
     };
 
+    // Extract plain task_id list for backward-compat consumers; also expose
+    // the richer {task_id, task_type} objects so nodes can identify
+    // connect_only assignments and activate their data-plane gateway.
+    let assigned_task_ids: Vec<&str> = assigned_tasks
+        .iter()
+        .filter_map(|t| t.get("task_id").and_then(|v| v.as_str()))
+        .collect();
+
     Ok(Json(serde_json::json!({
         "message": "Heartbeat updated successfully",
         "node_id": node_id,
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "active_tasks": active_task_count,
-        "assigned_task_ids": assigned_task_ids
+        "assigned_task_ids": assigned_task_ids,
+        "assigned_tasks": assigned_tasks
     })))
 }
 
@@ -335,6 +347,8 @@ async fn submit_task(
 
     let task_type = task.task_type.clone();
     let task_inputs = task.inputs.clone();
+    // Capture max_execution_time_sec before task is moved into submit_task.
+    let max_execution_time_sec = task.requirements.max_execution_time_sec;
 
     let task_info = state.submit_task(task, creator_id).await?;
 
@@ -344,10 +358,16 @@ async fn submit_task(
             .map_err(|_| ApiError::internal_error("Invalid task ID format"))?;
 
         tokio::spawn(async move {
-            if task_type == "connect_only" {
-                let delay = connect_only_completion_delay(&task_inputs);
-                tokio::time::sleep(delay).await;
-            }
+            // connect_only tasks complete after their declared session duration.
+            // All other task types wait up to max_execution_time_sec for a node
+            // to submit real results via POST /tasks/{id}/result; only then does
+            // the fallback synthetic completion fire.
+            let delay = if task_type == "connect_only" {
+                connect_only_completion_delay(&task_inputs)
+            } else {
+                Duration::from_secs(max_execution_time_sec)
+            };
+            tokio::time::sleep(delay).await;
 
             if let Err(err) = state_for_completion
                 .complete_task_if_running(task_id, task_type, task_inputs)
@@ -576,7 +596,54 @@ async fn delete_task(
     })))
 }
 
-/// Get task activity events (task_connected and task_cleared) from a node's heartbeat history
+/// Submit a task result from a node
+///
+/// Called by a node owner after the node has completed its portion of a task.
+/// If the task was submitted with `require_proof = true`, the request must
+/// include `proof_data` and `public_inputs` (Base64-encoded) and the proof
+/// will be verified before the result is accepted.
+#[utoipa::path(
+    post,
+    path = "/api/v1/tasks/{task_id}/result",
+    params(
+        ("task_id" = String, Path, description = "Task ID")
+    ),
+    request_body = NodeTaskResult,
+    responses(
+        (status = 200, description = "Task result accepted and task marked completed"),
+        (status = 400, description = "Invalid request or proof verification failed", body = ApiError),
+        (status = 404, description = "Task or node not found", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn submit_task_result(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Path(task_id): Path<String>,
+    Json(submission): Json<models::NodeTaskResult>,
+) -> ApiResult<Json<serde_json::Value>> {
+    submission.validate()?;
+
+    let owner_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+    let task_uuid = Uuid::parse_str(&task_id)
+        .map_err(|_| ApiError::bad_request("task_id must be a valid UUID"))?;
+
+    info!(
+        "Node {} submitting result for task {} (user {})",
+        submission.node_id, task_id, auth_user.username
+    );
+
+    let result = state
+        .submit_task_result(task_uuid, submission, owner_id)
+        .await?;
+
+    Ok(Json(result))
+}
+
+
 #[utoipa::path(
     get,
     path = "/api/v1/nodes/{node_id}/heartbeat/activity",
@@ -606,7 +673,43 @@ async fn get_node_heartbeat_activity(
     Ok(Json(serde_json::json!({ "events": events })))
 }
 
-/// Verify a ZK proof
+/// Get active gateway sessions for a node (node-owner only)
+///
+/// Returns the list of `connect_only` relay sessions currently assigned to this
+/// node including the cleartext `session_token` needed by `DataPlaneGateway` to
+/// validate incoming relay connections.  The node should poll this endpoint
+/// (e.g. every heartbeat cycle) and call `gateway.add_session()` for new
+/// entries and `gateway.revoke_session()` for entries that disappear.
+#[utoipa::path(
+    get,
+    path = "/api/v1/nodes/{node_id}/gateway-sessions",
+    params(
+        ("node_id" = String, Path, description = "Node ID")
+    ),
+    responses(
+        (status = 200, description = "Active gateway sessions returned"),
+        (status = 404, description = "Node not found or you don't have permission", body = ApiError)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn get_node_gateway_sessions(
+    State(state): State<Arc<AppState>>,
+    auth_user: auth::AuthUser,
+    Path(node_id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let owner_id = Uuid::parse_str(&auth_user.user_id)
+        .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
+
+    let sessions = state
+        .get_node_gateway_sessions(&node_id, owner_id)
+        .await?;
+
+    Ok(Json(serde_json::json!({ "sessions": sessions })))
+}
+
+
 #[utoipa::path(
     post,
     path = "/api/v1/proofs/verify",
@@ -948,8 +1051,13 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/nodes/:node_id/heartbeat/activity",
             get(get_node_heartbeat_activity),
         )
+        .route(
+            "/nodes/:node_id/gateway-sessions",
+            get(get_node_gateway_sessions),
+        )
         .route("/tasks", post(submit_task).get(list_tasks))
         .route("/tasks/:task_id", get(get_task).delete(delete_task))
+        .route("/tasks/:task_id/result", post(submit_task_result))
         .route("/connect-sessions/start", post(start_connect_session))
         .route("/connect-sessions/:session_id", get(get_connect_session))
         .route(
