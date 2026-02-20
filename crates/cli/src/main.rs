@@ -152,6 +152,8 @@ async fn run_node(
     // Simulate telemetry collection
     let telemetry = TelemetrySample {
         bandwidth_mbps: 100.0,
+        upload_bandwidth_mbps: 0.0,
+        download_bandwidth_mbps: 0.0,
         avg_latency_ms: 20.0,
         cpu_usage_percent: 50.0,
         memory_usage_percent: 60.0,
