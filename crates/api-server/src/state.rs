@@ -3258,7 +3258,7 @@ mod tests {
     #[test]
     fn zk_proof_wiring_verifies_valid_proof() {
         use base64::Engine;
-        use zk_prover::{prover::ZKProver, verifier::ZKVerifier, ExecutionTrace};
+        use zk_prover::{prover::ZKProver, ExecutionTrace};
 
         // Generate a real proof with the default prover key-pair.
         let prover = ZKProver::default();
