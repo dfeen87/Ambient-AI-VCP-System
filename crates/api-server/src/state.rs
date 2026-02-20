@@ -2740,7 +2740,9 @@ fn analyze_wasm_execution_payload(
 
 /// Build a `SandboxLimits` from the task payload, falling back to defaults for
 /// any value that is absent or invalid.
-fn build_wasm_sandbox_limits(map: &serde_json::Map<String, serde_json::Value>) -> serde_json::Value {
+fn build_wasm_sandbox_limits(
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
     let mut limits = SandboxLimits::default();
 
     if let Some(ms) = map.get("timeout_ms").and_then(|v| v.as_u64()) {
@@ -3273,8 +3275,7 @@ mod tests {
         };
         let proof = prover.generate_proof(trace).unwrap();
 
-        let proof_data_b64 =
-            base64::engine::general_purpose::STANDARD.encode(&proof.proof_data);
+        let proof_data_b64 = base64::engine::general_purpose::STANDARD.encode(&proof.proof_data);
         let public_inputs_b64 =
             base64::engine::general_purpose::STANDARD.encode(&proof.public_inputs);
 
