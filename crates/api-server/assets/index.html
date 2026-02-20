@@ -1678,8 +1678,11 @@
         authToken = null;
         currentUser = null;
         currentUserId = null;
+
+        // Explicitly disconnect the endpoint state
         isApiConnected = false;
         setConnectionStatus(false);
+
         taskCompletionLocks = loadTaskCompletionLocks();
         checkAuth();
     }
@@ -1690,8 +1693,42 @@
         const password = document.getElementById('login-password').value;
         const btn = e.target.querySelector('[type="submit"]');
         
-        btn.textContent = 'Logging in...';
+        // 1. Establish Connection
+        const inputEl = document.getElementById('api-url');
+        const candidateUrl = normalizeApiBaseUrl(inputEl.value);
+
+        btn.textContent = 'Connecting...';
         btn.disabled = true;
+
+        try {
+            if (!candidateUrl || candidateUrl === 'https://') {
+                throw new Error('Invalid endpoint URL');
+            }
+
+            // Probe the endpoint (no auth required for health/stats usually, or 401 proves connectivity)
+            const probeRes = await fetch(`${candidateUrl}/api/v1/cluster/stats`, {
+                // No headers needed for simple connectivity check
+            });
+
+            if (!probeRes.ok && probeRes.status !== 401 && probeRes.status !== 403) {
+                throw new Error(`Endpoint responded with HTTP ${probeRes.status}`);
+            }
+
+            // Connection confirmed
+            apiBaseUrl = candidateUrl;
+            localStorage.setItem('vcp_api_base_url', candidateUrl);
+            setConnectionStatus(true);
+
+        } catch (err) {
+            btn.textContent = 'Login';
+            btn.disabled = false;
+            setConnectionStatus(false);
+            showToast(`Connection failed: ${err.message}`, true);
+            return;
+        }
+
+        // 2. Perform Login
+        btn.textContent = 'Logging in...';
 
         try {
             const res = await fetch(`${apiBaseUrl}/api/v1/auth/login`, {
