@@ -149,7 +149,11 @@ impl ConsensusEngine {
                     super::generation::ExecutionMode::Hybrid => true,
                 };
 
-                if should_include { Some(adapter) } else { None }
+                if should_include {
+                    Some(adapter)
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -434,6 +438,8 @@ mod tests {
 
         let result = engine.execute(&request, adapters).await.unwrap();
         assert_eq!(result.model_lineage.len(), 2);
-        assert!(!result.model_lineage.contains(&"remote-excluded".to_string()));
+        assert!(!result
+            .model_lineage
+            .contains(&"remote-excluded".to_string()));
     }
 }
