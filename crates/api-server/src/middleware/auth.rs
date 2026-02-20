@@ -119,15 +119,6 @@ pub async fn require_admin_middleware(
     Ok(next.run(request).await)
 }
 
-/// Require scope membership for route access.
-pub async fn require_scope_middleware(
-    request: Request<Body>,
-    next: Next,
-) -> Result<Response, ApiError> {
-    authorize_scope(&request, "admin:audit")?;
-    Ok(next.run(request).await)
-}
-
 fn authorize_roles(request: &Request<Body>, allowed: &[&str]) -> Result<(), ApiError> {
     let claims = request
         .extensions()
@@ -142,38 +133,7 @@ fn authorize_roles(request: &Request<Body>, allowed: &[&str]) -> Result<(), ApiE
     Err(ApiError::forbidden("Insufficient role permissions"))
 }
 
-fn authorize_scope(request: &Request<Body>, required_scope: &str) -> Result<(), ApiError> {
-    if let Some(scopes) = request.extensions().get::<ApiScopes>() {
-        if scopes.0.iter().any(|s| s == required_scope || s == "*") {
-            return Ok(());
-        }
-        return Err(ApiError::forbidden("Insufficient scoped permissions"));
-    }
-
-    // JWT callers default to role-based policy if explicit scopes are absent.
-    let claims = request
-        .extensions()
-        .get::<Claims>()
-        .ok_or_else(|| ApiError::unauthorized("Authentication required"))?;
-
-    if claims.role == "admin" {
-        return Ok(());
-    }
-
-    Err(ApiError::forbidden("Insufficient scoped permissions"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::Request;
-
-    #[test]
-    fn test_scope_authorization_from_extension() {
-        let mut request = Request::builder().uri("/").body(Body::empty()).unwrap();
-        request
-            .extensions_mut()
-            .insert(ApiScopes(vec!["admin:audit".to_string()]));
-        assert!(authorize_scope(&request, "admin:audit").is_ok());
-    }
 }

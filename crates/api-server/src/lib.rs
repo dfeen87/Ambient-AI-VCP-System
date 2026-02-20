@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     middleware as axum_middleware,
     routing::{get, post, put},
-    Json, Router,
+    Extension, Json, Router,
 };
 use sqlx::Row;
 use std::{sync::Arc, time::Duration};
@@ -1077,9 +1077,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/admin/throttle-overrides", post(admin_throttle_overrides))
         .route("/admin/audit-log", get(admin_audit_log))
         .layer(axum_middleware::from_fn(
-            middleware::auth::require_scope_middleware,
-        ))
-        .layer(axum_middleware::from_fn(
             middleware::auth::require_admin_middleware,
         ))
         .layer(axum_middleware::from_fn(
@@ -1134,6 +1131,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         ))
         .layer(axum_middleware::from_fn(rate_limit::rate_limit_middleware))
         .layer(middleware::cors::create_cors_layer())
+        .layer(Extension(state.clone()))
         .with_state(state)
 }
 

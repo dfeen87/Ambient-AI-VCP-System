@@ -2561,7 +2561,7 @@ impl AppState {
         let mut tx = self.db.begin().await?;
 
         // Persist result and mark task completed.
-        sqlx::query(
+        let update_result = sqlx::query(
             r#"
             UPDATE tasks
             SET status = 'completed', result = $1, updated_at = $2
@@ -2574,6 +2574,13 @@ impl AppState {
         .bind(task_id)
         .execute(&mut *tx)
         .await?;
+
+        if update_result.rows_affected() == 0 {
+            tx.rollback().await?;
+            return Err(ApiError::conflict(
+                "Task is no longer in a runnable state (already completed or failed)",
+            ));
+        }
 
         // Mark submitting node's assignment as completed.
         sqlx::query(
@@ -2731,6 +2738,15 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
 
             if task_type == "computation" {
                 if let Some(expression) = map.get("expression").and_then(|v| v.as_str()) {
+                    // Limit expression length to prevent CPU exhaustion parsing massive strings
+                    if expression.len() > 1024 {
+                        return serde_json::json!({
+                            "task_type": task_type,
+                            "analysis_mode": "error",
+                            "error": "Expression exceeds 1024 character limit"
+                        });
+                    }
+
                     if let Some(result) = evaluate_arithmetic_expression(expression) {
                         tracing::info!(
                             task_type,
@@ -2750,6 +2766,15 @@ fn analyze_task_payload(task_type: &str, inputs: &serde_json::Value) -> serde_js
             }
 
             if let Some(prompt) = map.get("prompt").and_then(|v| v.as_str()) {
+                // Limit prompt length to 10KB
+                if prompt.len() > 10_240 {
+                    return serde_json::json!({
+                        "task_type": task_type,
+                        "analysis_mode": "error",
+                        "error": "Prompt exceeds 10KB character limit"
+                    });
+                }
+
                 if task_type == "computation" {
                     if let Some(expression) = infer_expression_from_prompt(prompt) {
                         if let Some(result) = evaluate_arithmetic_expression(&expression) {
@@ -3337,13 +3362,16 @@ fn build_wasm_sandbox_limits(
     let mut limits = SandboxLimits::default();
 
     if let Some(ms) = map.get("timeout_ms").and_then(|v| v.as_u64()) {
-        limits.timeout_seconds = ((ms / 1000).max(1)) as u32;
+        // Clamp timeout to [1, 60] seconds to prevent abuse
+        limits.timeout_seconds = ((ms / 1000).max(1).min(60)) as u32;
     }
     if let Some(mb) = map.get("memory_limit_mb").and_then(|v| v.as_u64()) {
-        limits.memory_mb = mb as u32;
+        // Clamp memory to [1, 2048] MB (2GB max)
+        limits.memory_mb = (mb as u32).max(1).min(2048);
     }
     if let Some(instr) = map.get("max_instructions").and_then(|v| v.as_u64()) {
-        limits.max_instructions = instr;
+        // Clamp max instructions to 50 billion
+        limits.max_instructions = instr.min(50_000_000_000);
     }
 
     serde_json::json!({
