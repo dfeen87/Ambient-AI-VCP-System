@@ -1949,7 +1949,97 @@ impl AppState {
         .execute(&self.db)
         .await?;
 
-        Ok(result.rows_affected() > 0)
+        if result.rows_affected() == 0 {
+            return Ok(false);
+        }
+
+        // Collect all tasks that had an active assignment to this node so we can
+        // update their status and attempt reassignment after disconnecting.
+        let affected_tasks = sqlx::query(
+            r#"
+            SELECT ta.task_id, t.min_nodes
+            FROM task_assignments ta
+            JOIN tasks t ON t.task_id = ta.task_id
+            WHERE ta.node_id = $1
+              AND ta.disconnected_at IS NULL
+            "#,
+        )
+        .bind(node_id)
+        .fetch_all(&self.db)
+        .await?;
+
+        // Disconnect all active task assignments for this rejected node.
+        sqlx::query(
+            r#"
+            UPDATE task_assignments
+            SET disconnected_at = $1
+            WHERE node_id = $2
+              AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(now)
+        .bind(node_id)
+        .execute(&self.db)
+        .await?;
+
+        // For each previously-assigned task, fix its status and try to find
+        // replacement nodes so the task is not left permanently stuck in 'running'.
+        for task_row in affected_tasks {
+            let task_id: Uuid = task_row.get("task_id");
+            let min_nodes: i32 = task_row.get("min_nodes");
+
+            self.update_task_status_from_assignments(task_id, min_nodes as u32)
+                .await?;
+
+            match self.get_task_status(task_id).await {
+                Ok(task_status) => {
+                    if task_status == "pending" {
+                        let task_details = sqlx::query(
+                            r#"
+                            SELECT task_type, require_gpu
+                            FROM tasks
+                            WHERE task_id = $1
+                            "#,
+                        )
+                        .bind(task_id)
+                        .fetch_optional(&self.db)
+                        .await?;
+
+                        if let Some(task_row) = task_details {
+                            let task_type: String = task_row.get("task_type");
+                            let require_gpu: bool = task_row.get("require_gpu");
+
+                            if let Some(task_registry_entry) = task_type_registry_entry(&task_type)
+                            {
+                                if let Err(err) = self
+                                    .assign_available_nodes_for_task(
+                                        task_id,
+                                        &task_type,
+                                        task_registry_entry,
+                                        min_nodes as u32,
+                                        require_gpu,
+                                    )
+                                    .await
+                                {
+                                    tracing::warn!(
+                                        task_id = %task_id,
+                                        "Failed to reassign task after node rejection: {err}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        task_id = %task_id,
+                        "Failed to retrieve task status during node rejection: {err}; skipping automatic reassignment for this task"
+                    );
+                }
+            }
+        }
+
+        Ok(true)
     }
 
     /// List nodes owned by a specific user
