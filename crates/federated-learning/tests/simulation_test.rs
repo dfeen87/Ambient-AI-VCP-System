@@ -112,11 +112,7 @@ fn simulate_multi_round_returns() {
     for round in 1u64..=3 {
         let scale = round as f64;
         aggregator
-            .add_client_update(
-                format!("client-{round}"),
-                make_model(scale, scale),
-                100,
-            )
+            .add_client_update(format!("client-{round}"), make_model(scale, scale), 100)
             .unwrap();
 
         let global = aggregator.aggregate().unwrap();
@@ -138,7 +134,10 @@ fn simulate_aggregate_with_no_contributions_returns_error() {
     let mut aggregator = FederatedAggregator::new(initial);
 
     let result = aggregator.aggregate();
-    assert!(result.is_err(), "aggregating with no contributions must fail");
+    assert!(
+        result.is_err(),
+        "aggregating with no contributions must fail"
+    );
     assert!(
         result
             .unwrap_err()
