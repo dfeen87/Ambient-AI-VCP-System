@@ -56,6 +56,21 @@ pub struct QosConfig {
     /// Bulk traffic bandwidth limit (kbps)
     pub bulk_bandwidth_kbps: u32,
 
+    /// Maximum total bandwidth for the hotspot interface (kbps).
+    ///
+    /// This is the HTB root class `rate`.  It must be set to (or above) the
+    /// actual WAN uplink speed so that individual traffic classes can burst
+    /// up to the full interface speed when other classes are idle.
+    ///
+    /// Setting this to the *sum* of the per-class minimums (the old default
+    /// behaviour) would hard-cap ALL egress (upload) at that sum — even when
+    /// only one class is active — because in Linux HTB a child class can
+    /// never exceed its parent's own rate.  Since `tc` rules only apply to
+    /// egress, this bug suppresses upload throughput without affecting
+    /// downloads.  The default is 1 Gbps so the hotspot never bottlenecks
+    /// the WAN uplink.
+    pub max_bandwidth_kbps: u32,
+
     /// Control traffic ports
     pub control_ports: Vec<u16>,
 
@@ -71,6 +86,7 @@ impl Default for QosConfig {
             control_bandwidth_kbps: 1000,      // 1 Mbps for control
             interactive_bandwidth_kbps: 5000,  // 5 Mbps for interactive
             bulk_bandwidth_kbps: 10000,        // 10 Mbps for bulk
+            max_bandwidth_kbps: 1_000_000,     // 1 Gbps – never cap the WAN uplink
             control_ports: vec![22, 443],      // SSH, HTTPS
             interactive_ports: vec![80, 8080], // HTTP
         }
@@ -152,11 +168,16 @@ impl QosManager {
     async fn create_traffic_classes(&self) -> Result<()> {
         debug!("Creating traffic classes");
 
-        let total_bandwidth = self.config.control_bandwidth_kbps
-            + self.config.interactive_bandwidth_kbps
-            + self.config.bulk_bandwidth_kbps;
+        // The root class rate must equal max_bandwidth so that individual leaf
+        // classes can burst up to the full WAN uplink speed.  Using the *sum*
+        // of per-class minimums here would hard-cap ALL egress at that sum —
+        // even when only one class is active — because in Linux HTB a child
+        // class can never exceed its parent's own rate.
+        let max_kbps = self.config.max_bandwidth_kbps;
+        let max_str = format!("{}kbit", max_kbps);
 
-        // Root class
+        // Root class – rate set to max_bandwidth so leaf classes can burst to
+        // the full interface speed without being capped at the parent.
         self.execute(&[
             "tc",
             "class",
@@ -169,7 +190,7 @@ impl QosManager {
             "1:1",
             "htb",
             "rate",
-            &format!("{}kbit", total_bandwidth),
+            &max_str,
         ])?;
 
         // Control class (highest priority)
@@ -187,7 +208,7 @@ impl QosManager {
             "rate",
             &format!("{}kbit", self.config.control_bandwidth_kbps),
             "ceil",
-            &format!("{}kbit", total_bandwidth),
+            &max_str,
             "prio",
             "1",
         ])?;
@@ -207,7 +228,7 @@ impl QosManager {
             "rate",
             &format!("{}kbit", self.config.interactive_bandwidth_kbps),
             "ceil",
-            &format!("{}kbit", total_bandwidth),
+            &max_str,
             "prio",
             "2",
         ])?;
@@ -227,7 +248,7 @@ impl QosManager {
             "rate",
             &format!("{}kbit", self.config.bulk_bandwidth_kbps),
             "ceil",
-            &format!("{}kbit", total_bandwidth),
+            &max_str,
             "prio",
             "3",
         ])?;
@@ -358,5 +379,57 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(manager.apply_qos());
         assert!(result.is_ok());
+    }
+
+    /// The HTB parent class rate must equal max_bandwidth, not the sum of
+    /// per-class minimums.  If the parent rate were only control + interactive
+    /// + bulk (e.g. 16 Mbps by default), HTB would hard-cap ALL egress at
+    /// that sum — making uploads unable to reach full WAN speed even when
+    /// only one class is active.
+    #[test]
+    fn test_parent_htb_rate_equals_max_bandwidth() {
+        let config = QosConfig {
+            control_bandwidth_kbps: 1_000,
+            interactive_bandwidth_kbps: 5_000,
+            bulk_bandwidth_kbps: 10_000,
+            max_bandwidth_kbps: 1_000_000, // 1 Gbps
+            ..Default::default()
+        };
+        let parent_rate = config.max_bandwidth_kbps;
+        let old_wrong_rate = config.control_bandwidth_kbps
+            + config.interactive_bandwidth_kbps
+            + config.bulk_bandwidth_kbps;
+        assert!(
+            parent_rate > old_wrong_rate,
+            "parent HTB rate ({parent_rate} kbps) must exceed the old incorrect \
+             sum of class minimums ({old_wrong_rate} kbps) so uploads are not bottlenecked"
+        );
+    }
+
+    /// Each leaf class ceil must equal max_bandwidth so that any single class
+    /// can burst to the full WAN uplink speed when other classes are idle.
+    #[test]
+    fn test_leaf_class_ceil_equals_max_bandwidth() {
+        let config = QosConfig::default();
+        // All class minimum rates must be strictly below max_bandwidth so the
+        // burst headroom is meaningful.
+        assert!(
+            config.control_bandwidth_kbps < config.max_bandwidth_kbps,
+            "control class min ({} kbps) must be below max_bandwidth ({} kbps)",
+            config.control_bandwidth_kbps,
+            config.max_bandwidth_kbps
+        );
+        assert!(
+            config.interactive_bandwidth_kbps < config.max_bandwidth_kbps,
+            "interactive class min ({} kbps) must be below max_bandwidth ({} kbps)",
+            config.interactive_bandwidth_kbps,
+            config.max_bandwidth_kbps
+        );
+        assert!(
+            config.bulk_bandwidth_kbps < config.max_bandwidth_kbps,
+            "bulk class min ({} kbps) must be below max_bandwidth ({} kbps)",
+            config.bulk_bandwidth_kbps,
+            config.max_bandwidth_kbps
+        );
     }
 }

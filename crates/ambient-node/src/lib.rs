@@ -115,7 +115,7 @@ impl AmbientNode {
     }
 
     /// Calculate overall health score (0.0 - 1.0)
-    /// Weights: Bandwidth 40%, Latency 30%, Compute 20%, Reputation 10%
+    /// Weights: Bandwidth (upload+download bottleneck) 40%, Latency 30%, Compute 20%, Reputation 10%
     pub fn health_score(&self) -> f64 {
         let bandwidth_score = self.telemetry.bandwidth_score();
         let latency_score = self.telemetry.latency_score();
@@ -179,6 +179,8 @@ mod tests {
 
         let telemetry = TelemetrySample {
             bandwidth_mbps: 100.0,
+            upload_bandwidth_mbps: 0.0,
+            download_bandwidth_mbps: 0.0,
             avg_latency_ms: 20.0,
             cpu_usage_percent: 50.0,
             memory_usage_percent: 60.0,
