@@ -4,16 +4,18 @@ use crate::auth::{hash_api_key, Claims};
 use crate::error::ApiError;
 use axum::{
     body::Body,
-    extract::Request,
+    extract::{Request, State},
     http::{header, HeaderMap},
     middleware::Next,
     response::Response,
 };
 use sqlx::Row;
+use std::sync::Arc;
 use tracing::{debug, warn};
 
 /// Extract and validate JWT token from Authorization header.
 pub async fn jwt_auth_middleware(
+    State(state): State<Arc<crate::state::AppState>>,
     headers: HeaderMap,
     mut request: Request<Body>,
     next: Next,
@@ -26,12 +28,6 @@ pub async fn jwt_auth_middleware(
     let token = auth_header
         .strip_prefix("Bearer ")
         .ok_or_else(|| ApiError::unauthorized("Invalid authorization header format"))?;
-
-    let state = request
-        .extensions()
-        .get::<std::sync::Arc<crate::state::AppState>>()
-        .cloned()
-        .ok_or_else(|| ApiError::internal_error("Application state missing from request"))?;
 
     let claims = state
         .auth_config()?
@@ -50,6 +46,7 @@ pub async fn jwt_auth_middleware(
 /// API key auth middleware.
 /// Accepts `X-API-Key: <key>` and resolves the associated user and scopes.
 pub async fn api_key_auth_middleware(
+    State(state): State<Arc<crate::state::AppState>>,
     mut request: Request<Body>,
     next: Next,
 ) -> Result<Response, ApiError> {
@@ -60,12 +57,6 @@ pub async fn api_key_auth_middleware(
         .ok_or_else(|| ApiError::unauthorized("Missing X-API-Key header"))?;
 
     let key_hash = hash_api_key(key);
-
-    let state = request
-        .extensions()
-        .get::<std::sync::Arc<crate::state::AppState>>()
-        .cloned()
-        .ok_or_else(|| ApiError::internal_error("Application state missing from request"))?;
 
     let row = sqlx::query(
         r#"
