@@ -284,7 +284,7 @@ async fn update_heartbeat(
 
     let active_tasks = state.update_node_heartbeat(&node_id, user_id).await?;
 
-    let Some(active_tasks) = active_tasks else {
+    let Some((active_task_count, assigned_task_ids)) = active_tasks else {
         return Err(ApiError::not_found_or_forbidden(format!(
             "Node {} not found or you don't have permission to update it",
             node_id
@@ -295,7 +295,8 @@ async fn update_heartbeat(
         "message": "Heartbeat updated successfully",
         "node_id": node_id,
         "timestamp": chrono::Utc::now().to_rfc3339(),
-        "active_tasks": active_tasks
+        "active_tasks": active_task_count,
+        "assigned_task_ids": assigned_task_ids
     })))
 }
 

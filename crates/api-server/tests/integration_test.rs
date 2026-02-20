@@ -1215,16 +1215,16 @@ async fn test_heartbeat_triggers_pending_task_assignment() {
 
     // 5. Send a heartbeat — this must call assign_pending_tasks_for_node and connect
     //    the node to task2 if it wasn't already assigned.
-    let active_tasks_after_heartbeat = state
+    let (active_task_count, _assigned_task_ids) = state
         .update_node_heartbeat(&node_id, owner_id)
         .await
         .expect("heartbeat should succeed")
         .expect("heartbeat should return Some(active_tasks) for a known node");
 
     assert!(
-        active_tasks_after_heartbeat > 0,
+        active_task_count > 0,
         "heartbeat response must report active_tasks > 0; got {}",
-        active_tasks_after_heartbeat
+        active_task_count
     );
 
     // Verify at the DB level that task2 is assigned to the node.
