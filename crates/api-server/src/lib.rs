@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     middleware as axum_middleware,
     routing::{get, post, put},
-    Extension, Json, Router,
+    Json, Router,
 };
 use sqlx::Row;
 use std::{sync::Arc, time::Duration};
@@ -1062,13 +1062,15 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         )
         .route("/proofs/verify", post(verify_proof))
         .route("/cluster/stats", get(get_cluster_stats))
-        .layer(axum_middleware::from_fn(
+        .layer(axum_middleware::from_fn_with_state(
+            state.clone(),
             middleware::auth::jwt_auth_middleware,
         ));
 
     let api_key_routes = Router::new()
         .route("/auth/api-key/validate", get(validate_api_key))
-        .layer(axum_middleware::from_fn(
+        .layer(axum_middleware::from_fn_with_state(
+            state.clone(),
             middleware::auth::api_key_auth_middleware,
         ));
 
@@ -1079,7 +1081,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .layer(axum_middleware::from_fn(
             middleware::auth::require_admin_middleware,
         ))
-        .layer(axum_middleware::from_fn(
+        .layer(axum_middleware::from_fn_with_state(
+            state.clone(),
             middleware::auth::jwt_auth_middleware,
         ));
 
@@ -1101,7 +1104,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .layer(axum_middleware::from_fn(
             middleware::auth::require_admin_middleware,
         ))
-        .layer(axum_middleware::from_fn(
+        .layer(axum_middleware::from_fn_with_state(
+            state.clone(),
             middleware::auth::jwt_auth_middleware,
         ));
 
@@ -1131,7 +1135,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         ))
         .layer(axum_middleware::from_fn(rate_limit::rate_limit_middleware))
         .layer(middleware::cors::create_cors_layer())
-        .layer(Extension(state.clone()))
         .with_state(state)
 }
 

@@ -524,6 +524,18 @@ impl LocalSessionManager {
             return Err("peer sync message has invalid signature");
         }
 
+        // Reject the message unless the signer's public key is registered in
+        // our local trusted key set.  This prevents an attacker from crafting a
+        // message with an arbitrary key pair they control.
+        let trusted = self
+            .cache
+            .verification_keys
+            .values()
+            .any(|k| k == &msg.signer_public_key);
+        if !trusted {
+            return Err("peer sync message signer is not a trusted key");
+        }
+
         let mut applied = 0;
 
         // Merge egress policies — only add entries not already present locally.
@@ -952,6 +964,31 @@ mod tests {
 
         let mut local_mgr = make_manager_with_policy("p-local", "https://local.example", "k1", &kp);
 
+        assert!(local_mgr.import_peer_sync(&msg).is_err());
+    }
+
+    #[test]
+    fn import_peer_sync_rejects_untrusted_signer() {
+        let trusted_kp = key_pair();
+        let attacker_kp = key_pair();
+
+        // Build a valid message signed by the trusted peer.
+        let peer_mgr =
+            make_manager_with_policy("p-peer", "https://peer.example", "k1", &trusted_kp);
+        let mut msg = peer_mgr.export_peer_sync("node-peer", &trusted_kp);
+
+        // Attacker re-signs the same content_hash with their own key and
+        // substitutes their public key.  verify_signature() will pass (the sig
+        // is valid for the attacker's key), but the key is not trusted.
+        msg.signature = attacker_kp
+            .sign(msg.content_hash.as_bytes())
+            .as_ref()
+            .to_vec();
+        msg.signer_public_key = attacker_kp.public_key().as_ref().to_vec();
+
+        // Local node only trusts trusted_kp — must reject the attacker's message.
+        let mut local_mgr =
+            make_manager_with_policy("p-local", "https://local.example", "k1", &trusted_kp);
         assert!(local_mgr.import_peer_sync(&msg).is_err());
     }
 
