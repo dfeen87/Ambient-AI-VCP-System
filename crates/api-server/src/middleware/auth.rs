@@ -1,4 +1,5 @@
 /// Authentication and authorization middleware
+
 use crate::auth::{hash_api_key, Claims};
 use crate::error::ApiError;
 use axum::{
@@ -41,8 +42,8 @@ pub async fn jwt_auth_middleware(
         "JWT validated for user: {} (role: {})",
         claims.username, claims.role
     );
-    request.extensions_mut().insert(claims);
 
+    request.extensions_mut().insert(claims);
     Ok(next.run(request).await)
 }
 
@@ -100,6 +101,7 @@ pub async fn api_key_auth_middleware(
     };
 
     let scopes: Vec<String> = row.try_get("scopes").unwrap_or_default();
+
     request.extensions_mut().insert(claims);
     request.extensions_mut().insert(ApiScopes(scopes));
 
@@ -131,8 +133,4 @@ fn authorize_roles(request: &Request<Body>, allowed: &[&str]) -> Result<(), ApiE
 
     warn!("RBAC deny user={} role={}", claims.username, claims.role);
     Err(ApiError::forbidden("Insufficient role permissions"))
-}
-
-#[cfg(test)]
-mod tests {
 }
