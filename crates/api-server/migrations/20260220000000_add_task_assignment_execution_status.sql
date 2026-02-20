@@ -2,10 +2,13 @@
 -- have started/completed their portion of a task.
 --
 -- execution_status lifecycle:
---   'assigned'    → node has been allocated to the task but has not started yet
---   'in_progress' → node has acknowledged the task (reported via heartbeat or explicit start)
---   'completed'   → node submitted a successful result via POST /tasks/{id}/result
---   'failed'      → node reported an error or was swept offline while executing
+--   'assigned'    → node has been allocated to the task but has not confirmed activity yet
+--   'in_progress' → node confirmed active via heartbeat (first heartbeat after assignment)
+--   'completed'   → assignment ended successfully; this occurs through three paths:
+--                   (a) node submitted a result via POST /tasks/{id}/result,
+--                   (b) synthetic fallback completion after max_execution_time_sec,
+--                   (c) connect_only session lifecycle ended normally
+--   'failed'      → node was swept offline, deleted, or rejected while in_progress
 
 ALTER TABLE task_assignments
     ADD COLUMN IF NOT EXISTS execution_status VARCHAR(32) NOT NULL DEFAULT 'assigned';

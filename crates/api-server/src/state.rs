@@ -8,6 +8,22 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 use wasm_engine::SandboxLimits;
 
+/// Structured result returned by `update_node_heartbeat`.
+///
+/// Contains everything the heartbeat API endpoint needs to build a rich response
+/// for the node's status modal and task-tracking UI.
+pub struct NodeHeartbeatResult {
+    /// Number of tasks the node is actively connected to after this heartbeat.
+    pub active_task_count: i64,
+    /// List of `{"task_id": "…", "task_type": "…"}` objects for every active assignment.
+    /// Includes `connect_only` tasks so the node knows to activate its data-plane gateway.
+    pub assigned_tasks: Vec<serde_json::Value>,
+    /// Current health score of this node (0.0 – 100.0).
+    pub health_score: f64,
+    /// Current status string of this node (e.g. `"online"`, `"offline"`).
+    pub node_status: String,
+}
+
 /// Application state with database connection pool
 pub struct AppState {
     /// PostgreSQL connection pool
@@ -327,6 +343,7 @@ impl AppState {
             UPDATE tasks
             SET status = 'completed', result = $1, updated_at = NOW()
             WHERE task_id = $2
+              AND status = 'running'
             "#,
         )
         .bind(&result)
@@ -336,6 +353,21 @@ impl AppState {
 
         let should_disconnect_assignments = should_disconnect_assignments_on_completion(&task_type);
         if should_disconnect_assignments {
+            // Mark assignments as completed before disconnecting so the execution
+            // lifecycle is fully recorded (assigned → in_progress → completed).
+            sqlx::query(
+                r#"
+                UPDATE task_assignments
+                SET execution_status = 'completed',
+                    execution_completed_at = COALESCE(execution_completed_at, NOW())
+                WHERE task_id = $1
+                  AND disconnected_at IS NULL
+                "#,
+            )
+            .bind(task_id)
+            .execute(&mut *tx)
+            .await?;
+
             self.disconnect_task_assignments(task_id, &mut tx).await?;
         }
 
@@ -463,7 +495,7 @@ impl AppState {
                     AND existing.node_id = n.node_id
                     AND existing.disconnected_at IS NULL
               )
-            GROUP BY n.node_id, n.registered_at, n.health_score
+            GROUP BY n.node_id
             HAVING COUNT(ta.task_id) < $7
             ORDER BY n.health_score DESC, n.registered_at ASC
             LIMIT $8
@@ -669,6 +701,7 @@ impl AppState {
             UPDATE tasks
             SET status = $1, updated_at = NOW()
             WHERE task_id = $2
+              AND status NOT IN ('completed', 'failed')
             "#,
         )
         .bind(next_status)
@@ -1795,11 +1828,16 @@ impl AppState {
         .fetch_all(&mut *tx)
         .await?;
 
-        // Mark all task assignments from this node as disconnected
+        // Mark all task assignments from this node as disconnected,
+        // and fail any that were in_progress so the status history is accurate.
         sqlx::query(
             r#"
             UPDATE task_assignments
-            SET disconnected_at = $1
+            SET disconnected_at = $1,
+                execution_status = CASE
+                    WHEN execution_status = 'in_progress' THEN 'failed'
+                    ELSE execution_status
+                END
             WHERE node_id = $2
               AND disconnected_at IS NULL
             "#,
@@ -1866,20 +1904,21 @@ impl AppState {
 
     /// Update node heartbeat timestamp and record activity history.
     ///
-    /// Returns `Some((active_task_count, assigned_tasks))` on success, where
-    /// `active_task_count` is the number of tasks the node is actively
-    /// connected to *after* any pending-task assignments triggered by this
-    /// heartbeat, and `assigned_tasks` is a list of
-    /// `{"task_id": "...", "task_type": "..."}` objects.  Returning `task_type`
-    /// lets the node know which of its assignments are `connect_only` tasks that
-    /// require the data-plane gateway to be active.
+    /// On success returns `Some(NodeHeartbeatResult)` containing the current
+    /// active task count, the enriched task list (with `task_type` so the node
+    /// knows which assignments are `connect_only` and require gateway-mode),
+    /// the node's `health_score`, and its `node_status`.
+    ///
+    /// Also advances `execution_status` from `'assigned'` → `'in_progress'` for
+    /// every task the node is currently connected to, registering the moment the
+    /// node confirmed it is actively working.
     ///
     /// Returns `None` when the node is not found or does not belong to `owner_id`.
     pub async fn update_node_heartbeat(
         &self,
         node_id: &str,
         owner_id: Uuid,
-    ) -> ApiResult<Option<(i64, Vec<serde_json::Value>)>> {
+    ) -> ApiResult<Option<NodeHeartbeatResult>> {
         // Fetch current node state (also verifies ownership and existence)
         let node_row = sqlx::query(
             r#"
@@ -1947,6 +1986,24 @@ impl AppState {
         .execute(&self.db)
         .await?;
 
+        // Activity registration: advance execution_status from 'assigned' to
+        // 'in_progress' for every task this node is actively connected to.
+        // This records the moment the node confirmed it is working on the task.
+        sqlx::query(
+            r#"
+            UPDATE task_assignments
+            SET execution_status = 'in_progress',
+                execution_started_at = COALESCE(execution_started_at, $1)
+            WHERE node_id = $2
+              AND disconnected_at IS NULL
+              AND execution_status = 'assigned'
+            "#,
+        )
+        .bind(now)
+        .bind(node_id)
+        .execute(&self.db)
+        .await?;
+
         // Sync any pending tasks that this node is eligible for.
         self.assign_pending_tasks_for_node(node_id).await?;
 
@@ -1956,7 +2013,7 @@ impl AppState {
         // are connect_only (requiring gateway-mode activation) vs compute tasks.
         let assigned_task_rows = sqlx::query(
             r#"
-            SELECT ta.task_id::TEXT, t.task_type
+            SELECT ta.task_id::TEXT, t.task_type, ta.execution_status
             FROM task_assignments ta
             JOIN tasks t ON t.task_id = ta.task_id
             WHERE ta.node_id = $1 AND ta.disconnected_at IS NULL
@@ -1973,13 +2030,19 @@ impl AppState {
                 serde_json::json!({
                     "task_id": row.get::<String, _>("task_id"),
                     "task_type": row.get::<String, _>("task_type"),
+                    "execution_status": row.get::<String, _>("execution_status"),
                 })
             })
             .collect();
 
-        let active_tasks_after = assigned_tasks.len() as i64;
+        let active_task_count = assigned_tasks.len() as i64;
 
-        Ok(Some((active_tasks_after, assigned_tasks)))
+        Ok(Some(NodeHeartbeatResult {
+            active_task_count,
+            assigned_tasks,
+            health_score,
+            node_status: status,
+        }))
     }
 
     /// Reject a node owned by the requesting user
@@ -2022,11 +2085,16 @@ impl AppState {
         .fetch_all(&self.db)
         .await?;
 
-        // Disconnect all active task assignments for this rejected node.
+        // Disconnect all active task assignments for this rejected node,
+        // and fail any that were in_progress so the status history is accurate.
         sqlx::query(
             r#"
             UPDATE task_assignments
-            SET disconnected_at = $1
+            SET disconnected_at = $1,
+                execution_status = CASE
+                    WHEN execution_status = 'in_progress' THEN 'failed'
+                    ELSE execution_status
+                END
             WHERE node_id = $2
               AND disconnected_at IS NULL
             "#,
@@ -2535,6 +2603,9 @@ impl AppState {
                     // (not yet implemented).  Nodes with egress_profile other than
                     // "allowlist_domains" do not require this list to be populated.
                     allowed_destinations: vec![],
+                    // .max(0): defensive guard against sub-second clock skew between
+                    // app-server and DB that could produce a slightly negative epoch
+                    // when the session expires almost immediately.
                     expires_at_epoch_seconds: expires_at_epoch.max(0) as u64,
                 })
             })

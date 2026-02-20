@@ -285,9 +285,9 @@ async fn update_heartbeat(
     let user_id = Uuid::parse_str(&auth_user.user_id)
         .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
 
-    let active_tasks = state.update_node_heartbeat(&node_id, user_id).await?;
+    let heartbeat = state.update_node_heartbeat(&node_id, user_id).await?;
 
-    let Some((active_task_count, assigned_tasks)) = active_tasks else {
+    let Some(result) = heartbeat else {
         return Err(ApiError::not_found_or_forbidden(format!(
             "Node {} not found or you don't have permission to update it",
             node_id
@@ -295,9 +295,10 @@ async fn update_heartbeat(
     };
 
     // Extract plain task_id list for backward-compat consumers; also expose
-    // the richer {task_id, task_type} objects so nodes can identify
-    // connect_only assignments and activate their data-plane gateway.
-    let assigned_task_ids: Vec<&str> = assigned_tasks
+    // the richer objects (with task_type and execution_status) so nodes can
+    // identify connect_only assignments and activate their data-plane gateway.
+    let assigned_task_ids: Vec<&str> = result
+        .assigned_tasks
         .iter()
         .filter_map(|t| t.get("task_id").and_then(|v| v.as_str()))
         .collect();
@@ -306,9 +307,11 @@ async fn update_heartbeat(
         "message": "Heartbeat updated successfully",
         "node_id": node_id,
         "timestamp": chrono::Utc::now().to_rfc3339(),
-        "active_tasks": active_task_count,
+        "health_score": result.health_score,
+        "node_status": result.node_status,
+        "active_tasks": result.active_task_count,
         "assigned_task_ids": assigned_task_ids,
-        "assigned_tasks": assigned_tasks
+        "assigned_tasks": result.assigned_tasks
     })))
 }
 
