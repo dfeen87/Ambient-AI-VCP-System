@@ -974,7 +974,9 @@ mod tests {
             idle_timeout_secs: 30,
         };
         let proxy = HttpConnectProxy::new(config);
-        tokio::spawn(async move { let _ = proxy.run().await; });
+        tokio::spawn(async move {
+            let _ = proxy.run().await;
+        });
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let mut client = TcpStream::connect(addr).await.unwrap();
@@ -1009,7 +1011,9 @@ mod tests {
             idle_timeout_secs: 30,
         };
         let proxy = HttpConnectProxy::new(config);
-        tokio::spawn(async move { let _ = proxy.run().await; });
+        tokio::spawn(async move {
+            let _ = proxy.run().await;
+        });
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let mut client = TcpStream::connect(addr).await.unwrap();
@@ -1045,7 +1049,9 @@ mod tests {
             idle_timeout_secs: 30,
         };
         let proxy = HttpConnectProxy::new(config);
-        tokio::spawn(async move { let _ = proxy.run().await; });
+        tokio::spawn(async move {
+            let _ = proxy.run().await;
+        });
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let mut client = TcpStream::connect(addr).await.unwrap();
@@ -1092,7 +1098,9 @@ mod tests {
             idle_timeout_secs: 30,
         };
         let proxy = HttpConnectProxy::new(config);
-        tokio::spawn(async move { let _ = proxy.run().await; });
+        tokio::spawn(async move {
+            let _ = proxy.run().await;
+        });
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Connect as a browser would.
@@ -1101,10 +1109,7 @@ mod tests {
             "CONNECT 127.0.0.1:{} HTTP/1.1\r\nProxy-Authorization: Bearer proxy-token\r\nHost: 127.0.0.1\r\n\r\n",
             echo_addr.port()
         );
-        client
-            .write_all(connect_request.as_bytes())
-            .await
-            .unwrap();
+        client.write_all(connect_request.as_bytes()).await.unwrap();
 
         // Read the 200 Connection Established response.
         let mut header_buf = [0u8; 256];
@@ -1150,7 +1155,9 @@ mod tests {
             idle_timeout_secs: 30,
         };
         let proxy = HttpConnectProxy::new(config);
-        tokio::spawn(async move { let _ = proxy.run().await; });
+        tokio::spawn(async move {
+            let _ = proxy.run().await;
+        });
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let mut client = TcpStream::connect(proxy_addr).await.unwrap();
@@ -1158,10 +1165,7 @@ mod tests {
             "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
             echo_addr.port()
         );
-        client
-            .write_all(connect_request.as_bytes())
-            .await
-            .unwrap();
+        client.write_all(connect_request.as_bytes()).await.unwrap();
 
         let mut header_buf = [0u8; 256];
         let n = client.read(&mut header_buf).await.unwrap();
