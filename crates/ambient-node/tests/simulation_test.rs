@@ -67,7 +67,10 @@ fn simulate_node_health_score_returns() {
         healthy_score > degraded_score,
         "healthy telemetry should raise health score: {healthy_score} vs {degraded_score}"
     );
-    assert!(!node.is_safe_mode(), "healthy node must not be in safe mode");
+    assert!(
+        !node.is_safe_mode(),
+        "healthy node must not be in safe mode"
+    );
 }
 
 #[test]
@@ -83,10 +86,7 @@ fn simulate_node_safe_mode_returns() {
         ..Default::default()
     });
 
-    assert!(
-        node.is_safe_mode(),
-        "overheated node must enter safe mode"
-    );
+    assert!(node.is_safe_mode(), "overheated node must enter safe mode");
 }
 
 #[test]
