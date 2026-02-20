@@ -1,5 +1,6 @@
 use anyhow::Result;
 use api_server::{create_router, db, rate_limit, state::AppState};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, Level};
@@ -105,7 +106,11 @@ async fn main() -> Result<()> {
     info!("API Documentation at http://{}/api-docs/openapi.json", addr);
     info!("Prometheus metrics at http://{}/metrics", addr);
 
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
