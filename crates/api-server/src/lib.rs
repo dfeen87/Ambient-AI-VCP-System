@@ -282,19 +282,20 @@ async fn update_heartbeat(
     let user_id = Uuid::parse_str(&auth_user.user_id)
         .map_err(|_| ApiError::internal_error("Invalid user ID format"))?;
 
-    let updated = state.update_node_heartbeat(&node_id, user_id).await?;
+    let active_tasks = state.update_node_heartbeat(&node_id, user_id).await?;
 
-    if !updated {
+    let Some(active_tasks) = active_tasks else {
         return Err(ApiError::not_found_or_forbidden(format!(
             "Node {} not found or you don't have permission to update it",
             node_id
         )));
-    }
+    };
 
     Ok(Json(serde_json::json!({
         "message": "Heartbeat updated successfully",
         "node_id": node_id,
-        "timestamp": chrono::Utc::now().to_rfc3339()
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "active_tasks": active_tasks
     })))
 }
 

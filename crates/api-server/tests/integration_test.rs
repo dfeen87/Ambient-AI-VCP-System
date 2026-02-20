@@ -1097,3 +1097,153 @@ async fn test_node_rejection_disconnects_task_assignments() {
         .await
         .expect("cleanup tables after integration test");
 }
+
+/// Test that sending a heartbeat assigns a pending task to the node.
+///
+/// Scenario:
+///   1. A node is registered.
+///   2. A first task is submitted and immediately assigned to the node.
+///   3. The first task is completed so the node becomes free again.
+///   4. A second task is submitted.  The node may or may not be immediately
+///      assigned, but the heartbeat below will guarantee the assignment.
+///   5. The node sends a heartbeat — `update_node_heartbeat` must call
+///      `assign_pending_tasks_for_node`, which connects the node to the second task.
+///   6. The heartbeat return value must report `active_tasks > 0`.
+#[tokio::test]
+async fn test_heartbeat_triggers_pending_task_assignment() {
+    let db_url = match std::env::var("TEST_DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("Skipping test_heartbeat_triggers_pending_task_assignment — no TEST_DATABASE_URL set");
+            return;
+        }
+    };
+
+    let pool = PgPool::connect(&db_url)
+        .await
+        .expect("connect to postgres for integration test");
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations should apply successfully for integration test");
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables before integration test");
+
+    let state = AppState::new(pool.clone());
+    let owner_id = Uuid::new_v4();
+    let creator_id = Uuid::new_v4();
+
+    // 1. Register a node so it can absorb the first pending task immediately.
+    let node_id = format!("heartbeat-task-node-{}", Uuid::new_v4());
+    state
+        .register_node(
+            NodeRegistration {
+                node_id: node_id.clone(),
+                region: "us-west".to_string(),
+                node_type: "compute".to_string(),
+                capabilities: NodeCapabilities {
+                    bandwidth_mbps: 500.0,
+                    cpu_cores: 8,
+                    memory_gb: 16.0,
+                    gpu_available: false,
+                },
+                observability_port: None,
+            },
+            owner_id,
+        )
+        .await
+        .expect("node registration should succeed");
+
+    // 2. Submit the first task — node absorbs it at submission time.
+    let task1 = state
+        .submit_task(
+            TaskSubmission {
+                task_type: "computation".to_string(),
+                wasm_module: None,
+                inputs: serde_json::json!({"job": "heartbeat-test-task1"}),
+                requirements: TaskRequirements {
+                    min_nodes: 1,
+                    max_execution_time_sec: 300,
+                    require_gpu: false,
+                    require_proof: false,
+                },
+            },
+            creator_id,
+        )
+        .await
+        .expect("first task submission should succeed");
+    assert_eq!(task1.status, TaskStatus::Running);
+    assert!(task1.assigned_nodes.contains(&node_id));
+
+    // 3. Complete the first task so the node becomes free again.
+    state
+        .complete_task_if_running(
+            Uuid::parse_str(&task1.task_id).unwrap(),
+            "computation".to_string(),
+            serde_json::json!({"job": "heartbeat-test-task1"}),
+        )
+        .await
+        .expect("completing first task should succeed");
+
+    // 4. Submit a second task — the node is already registered but may not be
+    //    immediately reassigned (depends on timing/ordering).  We force a heartbeat
+    //    below to guarantee assignment.
+    let task2 = state
+        .submit_task(
+            TaskSubmission {
+                task_type: "computation".to_string(),
+                wasm_module: None,
+                inputs: serde_json::json!({"job": "heartbeat-test-task2"}),
+                requirements: TaskRequirements {
+                    min_nodes: 1,
+                    max_execution_time_sec: 300,
+                    require_gpu: false,
+                    require_proof: false,
+                },
+            },
+            creator_id,
+        )
+        .await
+        .expect("second task submission should succeed");
+
+    // task2 may be Running or Pending depending on whether the node was
+    // immediately picked up; the heartbeat below will guarantee assignment.
+
+    // 5. Send a heartbeat — this must call assign_pending_tasks_for_node and connect
+    //    the node to task2 if it wasn't already assigned.
+    let active_tasks_after_heartbeat = state
+        .update_node_heartbeat(&node_id, owner_id)
+        .await
+        .expect("heartbeat should succeed")
+        .expect("heartbeat should return Some(active_tasks) for a known node");
+
+    assert!(
+        active_tasks_after_heartbeat > 0,
+        "heartbeat response must report active_tasks > 0; got {}",
+        active_tasks_after_heartbeat
+    );
+
+    // Verify at the DB level that task2 is assigned to the node.
+    let task2_after = state
+        .get_task(&task2.task_id, creator_id)
+        .await
+        .expect("task2 should still exist");
+    assert_eq!(
+        task2_after.status,
+        TaskStatus::Running,
+        "task2 should be running after heartbeat triggers assignment"
+    );
+    assert!(
+        task2_after.assigned_nodes.contains(&node_id),
+        "node should be listed in task2's assigned_nodes after heartbeat"
+    );
+
+    sqlx::query("TRUNCATE TABLE task_assignments, tasks, nodes, users CASCADE")
+        .execute(&pool)
+        .await
+        .expect("cleanup tables after integration test");
+}

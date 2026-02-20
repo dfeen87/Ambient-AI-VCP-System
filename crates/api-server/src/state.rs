@@ -1854,8 +1854,17 @@ impl AppState {
         Ok(true)
     }
 
-    /// Update node heartbeat timestamp and record activity history
-    pub async fn update_node_heartbeat(&self, node_id: &str, owner_id: Uuid) -> ApiResult<bool> {
+    /// Update node heartbeat timestamp and record activity history.
+    ///
+    /// Returns `Some(active_task_count)` on success, where `active_task_count` is
+    /// the number of tasks the node is actively connected to *after* any pending-task
+    /// assignments triggered by this heartbeat.  Returns `None` when the node is not
+    /// found or does not belong to `owner_id`.
+    pub async fn update_node_heartbeat(
+        &self,
+        node_id: &str,
+        owner_id: Uuid,
+    ) -> ApiResult<Option<i64>> {
         // Fetch current node state (also verifies ownership and existence)
         let node_row = sqlx::query(
             r#"
@@ -1870,7 +1879,7 @@ impl AppState {
         .await?;
 
         let Some(node_row) = node_row else {
-            return Ok(false);
+            return Ok(None);
         };
 
         let health_score: f64 = node_row.get("health_score");
@@ -1891,11 +1900,12 @@ impl AppState {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Ok(false);
+            return Ok(None);
         }
 
-        // Count currently active task assignments for this node
-        let active_tasks: i64 = sqlx::query_scalar(
+        // Count currently active task assignments for this node (pre-assignment snapshot
+        // for the heartbeat history record).
+        let active_tasks_before: i64 = sqlx::query_scalar(
             r#"
             SELECT COUNT(*)
             FROM task_assignments
@@ -1916,7 +1926,7 @@ impl AppState {
         )
         .bind(node_id)
         .bind(health_score)
-        .bind(active_tasks as i32)
+        .bind(active_tasks_before as i32)
         .bind(&status)
         .bind(now)
         .execute(&self.db)
@@ -1925,7 +1935,20 @@ impl AppState {
         // Sync any pending tasks that this node is eligible for.
         self.assign_pending_tasks_for_node(node_id).await?;
 
-        Ok(true)
+        // Count active task assignments *after* any new assignments made above so that
+        // the response accurately reflects the node's current connected-task state.
+        let active_tasks_after: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM task_assignments
+            WHERE node_id = $1 AND disconnected_at IS NULL
+            "#,
+        )
+        .bind(node_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        Ok(Some(active_tasks_after))
     }
 
     /// Reject a node owned by the requesting user
