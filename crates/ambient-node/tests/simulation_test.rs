@@ -215,16 +215,10 @@ async fn simulate_offline_graceful_degradation_returns() {
 async fn simulate_code_task_type_returns() {
     let engine = ConsensusEngine::new(1);
 
-    let adapters: Vec<Box<dyn ModelAdapter>> =
-        vec![Box::new(LocalModelAdapter::new("code-model"))];
+    let adapters: Vec<Box<dyn ModelAdapter>> = vec![Box::new(LocalModelAdapter::new("code-model"))];
 
-    let request = GenerationRequest::new(
-        "fibonacci",
-        TaskType::Code,
-        0.5,
-        ExecutionMode::Local,
-        true,
-    );
+    let request =
+        GenerationRequest::new("fibonacci", TaskType::Code, 0.5, ExecutionMode::Local, true);
 
     let result = engine.execute(&request, adapters).await.unwrap();
 
@@ -270,7 +264,7 @@ async fn simulate_vcp_adapter_online_returns() {
     let adapter = AileeEngineAdapter::new(2);
 
     let context = VcpExecutionContext::new(
-        true,        // online
+        true, // online
         "us-west-1",
         "gateway",
         5000,
@@ -298,7 +292,7 @@ async fn simulate_vcp_adapter_offline_returns() {
     let adapter = AileeEngineAdapter::new(2);
 
     let context = VcpExecutionContext::new(
-        false,       // offline
+        false, // offline
         "eu-central-1",
         "compute",
         3000,

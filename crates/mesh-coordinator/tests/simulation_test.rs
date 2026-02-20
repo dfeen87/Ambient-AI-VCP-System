@@ -9,8 +9,8 @@ use mesh_coordinator::{
     ClusterStats, MeshCoordinator, NodeConnectivityStatus, Task, TaskAssignmentStrategy,
     TaskRequirements,
 };
-use wasm_engine::WasmCall;
 use std::time::{SystemTime, UNIX_EPOCH};
+use wasm_engine::WasmCall;
 
 fn ts() -> u64 {
     SystemTime::now()
@@ -156,7 +156,13 @@ async fn simulate_task_dispatch_returns() {
     let mut coordinator =
         MeshCoordinator::new("sim-cluster".to_string(), TaskAssignmentStrategy::Weighted);
 
-    coordinator.register_node(make_node("dispatch-node", "us-west", "gateway", 500.0, 10.0));
+    coordinator.register_node(make_node(
+        "dispatch-node",
+        "us-west",
+        "gateway",
+        500.0,
+        10.0,
+    ));
 
     let task = Task {
         id: "task-sim-001".to_string(),
