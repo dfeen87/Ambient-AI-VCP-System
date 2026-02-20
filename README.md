@@ -1,12 +1,12 @@
 # Ambient AI + VCP System
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-264%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-274%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
  
 A **live online application** and implementation of a **Verifiable Computation Protocol (VCP)** for running and verifying distributed compute tasks across many machines.
 
 ## 🎯 Status: **Live in Production (Public Demo Running)**
 
-✅ **All 264 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
+✅ **All 274 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
 
 > Yes — this app is already deployed and running online.
 > You can use it as-is, and if you self-host it, you should still tune infra/security settings for your own environment.
@@ -114,6 +114,7 @@ Tip: To quickly verify the public demo is reachable, run:
 - 🎨 **Offline-First Dashboard Fonts**: Syne and JetBrains Mono fonts are self-hosted from bundled woff2 files; no Google Fonts CDN dependency, dashboard renders fully in air-gapped environments
 - 🛡️ **Safe-Default Backhaul Routing**: `monitor_only = true` is the new default — the backhaul manager observes interfaces and scores them without touching kernel routing tables until explicitly opted in; `ip rule` entries are scoped to `from <src-ip>` to avoid affecting unrelated host traffic; health probes bind to the interface's own address for accurate per-interface metrics
 - 🌐 **NCSI Spoof Server**: `NcsiSpoofServer` prevents false `ERR_INTERNET_DISCONNECTED` errors when the node acts as internet gateway for connected clients. When a client's direct internet is gone and the VCP node is the upstream provider, the client OS connectivity checks (Windows NCSI `GET /connecttest.txt`, Linux NetworkManager `GET /check_network_status.txt`, and generic captive-portal probes) are answered locally by a lightweight HTTP listener configured with `NcsiSpoofConfig`, stopping the OS from blocking traffic with a false disconnection signal.
+- 🌍 **HTTP CONNECT Proxy**: `HttpConnectProxy` lets a browser on an offline node route all HTTPS traffic through a connected relay node, permanently bypassing `ERR_INTERNET_DISCONNECTED`. Point the browser's proxy settings at `<relay-ip>:3128`; it issues `CONNECT host:443 HTTP/1.1` with a `Proxy-Authorization: Bearer <token>` header, the proxy validates the token and opens a bidirectional TCP tunnel to the real destination. Non-CONNECT requests are rejected (405), bad or missing tokens return 407, and upstream failures surface as 502/504. Configured via `HttpConnectProxyConfig` (listen address, bearer token, connect/idle timeouts, enabled flag).
 - 📶 **Relay Session QoS**: `RelayQosManager` installs WAN-side `tc` HTB + FQ-CoDel rules on the active backhaul interface when a `connect_only` session is active on an `open_internet` or `any` node — guaranteeing minimum bandwidth and low latency for relayed traffic while preventing node-internal traffic from crowding out the relay stream. Call `BackhaulManager::activate_relay_qos()` when a session starts and `deactivate_relay_qos()` when it ends.
 
 ### Security & Infrastructure
@@ -448,7 +449,8 @@ When you clone this repo, you immediately get:
 - ✅ **Web Dashboard** for real-time monitoring
 - ✅ **AILEE ∆v Metric** for continuous efficiency monitoring (new)
 - ✅ **Offline-First + Peer Policy Sync** — nodes keep working and routing internet traffic even without the API endpoint (new)
-- ✅ **264 Passing Tests** + Zero compiler warnings
+- ✅ **HTTP CONNECT Proxy** — browsers on offline nodes tunnel HTTPS through a connected relay node, bypassing `ERR_INTERNET_DISCONNECTED` (new)
+- ✅ **274 Passing Tests** + Zero compiler warnings
 - ✅ **Complete Documentation** (15+ guides)
 - ✅ **MIT License** - Use commercially, modify freely
 
@@ -474,7 +476,7 @@ cd Ambient-AI-VCP-System
 # Build the project (zero warnings!)
 cargo build --release
 
-# Run all tests (264 tests)
+# Run all tests (274 tests)
 cargo test
 ```
 
