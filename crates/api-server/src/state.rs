@@ -315,7 +315,10 @@ impl AppState {
         )
         .await?;
 
-        let task_status = self.get_task_status(task_id).await?;
+        let task_status = self
+            .get_task_status(task_id)
+            .await?
+            .ok_or_else(|| crate::error::ApiError::internal_error("Task status not found"))?;
 
         let status = parse_task_status(&task_status);
 
@@ -342,7 +345,11 @@ impl AppState {
         task_type: String,
         task_inputs: serde_json::Value,
     ) -> ApiResult<()> {
-        let task_status = self.get_task_status(task_id).await?;
+        let task_status = match self.get_task_status(task_id).await? {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+
         if task_status != "running" {
             return Ok(());
         }
@@ -424,7 +431,7 @@ impl AppState {
         Ok(assigned_nodes)
     }
 
-    async fn get_task_status(&self, task_id: Uuid) -> ApiResult<String> {
+    async fn get_task_status(&self, task_id: Uuid) -> ApiResult<Option<String>> {
         let status = sqlx::query_scalar::<_, String>(
             r#"
             SELECT status
@@ -433,7 +440,7 @@ impl AppState {
             "#,
         )
         .bind(task_id)
-        .fetch_one(&self.db)
+        .fetch_optional(&self.db)
         .await?;
 
         Ok(status)
@@ -1963,7 +1970,7 @@ impl AppState {
                 .await?;
 
             // Try to assign the task to other available nodes
-            if let Ok(task_status) = self.get_task_status(task_id).await {
+            if let Ok(Some(task_status)) = self.get_task_status(task_id).await {
                 if task_status == "pending" {
                     // Get task details for reassignment
                     let task_details = sqlx::query(
@@ -2222,7 +2229,7 @@ impl AppState {
                 .await?;
 
             match self.get_task_status(task_id).await {
-                Ok(task_status) => {
+                Ok(Some(task_status)) => {
                     if task_status == "pending" {
                         let task_details = sqlx::query(
                             r#"
@@ -2260,6 +2267,7 @@ impl AppState {
                         }
                     }
                 }
+                Ok(None) => {}
                 Err(err) => {
                     tracing::warn!(
                         task_id = %task_id,
@@ -2405,7 +2413,7 @@ impl AppState {
                     .update_task_status_from_assignments(task_id, min_nodes as u32)
                     .await;
 
-                if let Ok(status) = self.get_task_status(task_id).await {
+                if let Ok(Some(status)) = self.get_task_status(task_id).await {
                     if status == "pending" {
                         if let Some(entry) = task_type_registry_entry(&task_type) {
                             let _ = self
