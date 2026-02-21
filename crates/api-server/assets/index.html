@@ -1545,11 +1545,6 @@
             <div id="heartbeat-message" class="heartbeat-status-message" role="status" aria-live="polite" hidden></div>
         </div>
 
-        <div class="heartbeat-tasks" id="heartbeat-tasks-section" hidden>
-            <div class="heartbeat-tasks-title">Active Tasks</div>
-            <div id="heartbeat-tasks-list"></div>
-        </div>
-
         <div class="heartbeat-ping-log" id="heartbeat-ping-log" hidden>
             <div class="heartbeat-ping-log-title">Activity Log</div>
             <div id="heartbeat-ping-entries"></div>
@@ -2349,88 +2344,6 @@
         }
     }
 
-    // renderHeartbeatTasks — show execution_status badge and gateway hint per task.
-    // freshTasks: optional array from the heartbeat response (contains execution_status).
-    // Falls back to filtering the global `tasks` array when freshTasks is not supplied.
-    function renderHeartbeatTasks(nodeId, freshTasks) {
-        const tasksSection = document.getElementById('heartbeat-tasks-section');
-        const tasksList = document.getElementById('heartbeat-tasks-list');
-        tasksList.textContent = '';
-
-        // Build the display list from the fresh response when available, otherwise
-        // fall back to the globally-cached tasks filtered to this node.
-        let displayTasks;
-        if (Array.isArray(freshTasks)) {
-            displayTasks = freshTasks.map(ft => ({
-                task_id: ft.task_id,
-                task_type: ft.task_type,
-                execution_status: ft.execution_status || 'assigned',
-                status: 'running',
-            }));
-        } else {
-            displayTasks = (typeof tasks !== 'undefined' ? tasks : [])
-                .filter(t => Array.isArray(t.assigned_nodes) && t.assigned_nodes.includes(nodeId)
-                          && t.status !== 'completed' && t.status !== 'failed')
-                .map(t => ({ task_id: t.task_id, task_type: t.task_type, status: t.status, execution_status: null }));
-        }
-
-        if (displayTasks.length > 0) {
-            displayTasks.forEach(t => {
-                const row = document.createElement('div');
-                row.className = 'heartbeat-task-row';
-
-                const idSpan = document.createElement('span');
-                idSpan.className = 'heartbeat-task-id';
-                idSpan.textContent = t.task_id.substring(0, 12) + '···';
-                idSpan.title = t.task_id;
-
-                const typeSpan = document.createElement('span');
-                typeSpan.className = 'heartbeat-task-type';
-                typeSpan.textContent = t.task_type;
-
-                const taskStatusCls = getStatusBadgeClass((t.status || 'pending').toLowerCase());
-                const taskBadge = document.createElement('span');
-                taskBadge.className = `badge ${taskStatusCls}`;
-                taskBadge.textContent = t.status || 'running';
-
-                row.appendChild(idSpan);
-                row.appendChild(typeSpan);
-                row.appendChild(taskBadge);
-
-                // Show execution_status chip when known (from heartbeat response).
-                if (t.execution_status) {
-                    const execBadge = document.createElement('span');
-                    const execCls = t.execution_status === 'in_progress' ? 'exec-in-progress'
-                                  : t.execution_status === 'completed'   ? 'exec-completed'
-                                  : t.execution_status === 'failed'      ? 'exec-failed'
-                                  :                                        'exec-assigned';
-                    execBadge.className = `heartbeat-exec-badge ${execCls}`;
-                    execBadge.textContent = t.execution_status.replace('_', ' ');
-                    row.appendChild(execBadge);
-                }
-
-                // For connect_only tasks that are in_progress, show a gateway hint.
-                if (t.task_type === 'connect_only' && t.execution_status === 'in_progress') {
-                    const hint = document.createElement('span');
-                    hint.className = 'heartbeat-gateway-hint';
-                    hint.title = 'This node should have its DataPlaneGateway active and polling /gateway-sessions';
-                    hint.textContent = '🌐 gateway mode';
-                    row.appendChild(hint);
-                }
-
-                tasksList.appendChild(row);
-            });
-            tasksSection.hidden = false;
-        } else {
-            const empty = document.createElement('div');
-            empty.className = 'heartbeat-task-row';
-            empty.style.color = 'var(--text-muted)';
-            empty.textContent = 'No active tasks currently assigned to this node.';
-            tasksList.appendChild(empty);
-            tasksSection.hidden = false;
-        }
-    }
-
     async function openHeartbeatModal(nodeId, nodeStatus) {
         document.getElementById('heartbeat-node-id').textContent = nodeId;
         document.getElementById('heartbeat-node-status').textContent = nodeStatus;
@@ -2456,9 +2369,6 @@
         
         // Store node ID for the send button
         sendBtn.setAttribute('data-node-id', nodeId);
-
-        // Populate connected tasks (active only — completed/failed appear in Activity Log)
-        renderHeartbeatTasks(nodeId);
 
         // Pre-populate activity log with all task activity for this node
         const pingLog = document.getElementById('heartbeat-ping-log');
@@ -2492,7 +2402,11 @@
             }
         } catch (_) {}
 
+        // Always show the log section, even if empty initially, so it feels like a consistent console
+        pingLog.hidden = false;
+
         const hasAnyActivity = activeNodeTasks.length > 0 || finishedNodeTasks.length > 0 || clearedNodeTasks.length > 0 || deletedClearedEvents.length > 0;
+
         if (hasAnyActivity) {
             activeNodeTasks.forEach(t => {
                 addHeartbeatPingEntry(pingEntries, `Task ${t.task_id.substring(0, 12)}··· [${t.task_type}] — ${t.status} (active)`, 'ok');
@@ -2513,9 +2427,8 @@
                 const shortId = (ev.task_id || '').substring(0, 12);
                 addHeartbeatPingEntry(pingEntries, `Task ${shortId}··· [${ev.task_type}] — cleared`, 'err');
             });
-            pingLog.hidden = false;
         } else {
-            pingLog.hidden = true;
+            addHeartbeatPingEntry(pingEntries, 'No recent activity recorded for this node.');
         }
         
         document.getElementById('heartbeat-modal-overlay').classList.add('open');
@@ -2543,8 +2456,6 @@
         document.getElementById('heartbeat-node-health').textContent = '—';
 
         // Clear tasks section and ping log
-        document.getElementById('heartbeat-tasks-section').hidden = true;
-        document.getElementById('heartbeat-tasks-list').textContent = '';
         document.getElementById('heartbeat-ping-log').hidden = true;
         document.getElementById('heartbeat-ping-entries').textContent = '';
     }
@@ -2632,8 +2543,6 @@
 
                 showToast(`Heartbeat sent for ${nodeId}`);
                 await fetchData();
-                // Re-render tasks section using the fresh data from the heartbeat response.
-                renderHeartbeatTasks(nodeId, assignedTasks);
 
                 // Change button to "Close" by setting a flag
                 sendBtn.textContent = 'Close';
@@ -2677,7 +2586,7 @@
         }
         tbody.innerHTML = nodes.map(n => {
             const isOwner = currentUserId && n.owner_id === currentUserId;
-            const canEject = isOwner && n.status !== 'rejected' && n.status !== 'offline';
+            const canEject = isOwner && n.status !== 'rejected';
             const statusClass = getStatusBadgeClass((n.status || '').toLowerCase());
             // Colour-code health bar: green ≥70, amber ≥40, red <40.
             // When health_score is missing show a neutral grey bar at 0% width.
