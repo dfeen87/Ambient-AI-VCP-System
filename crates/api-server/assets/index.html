@@ -1545,7 +1545,7 @@
             <div id="heartbeat-message" class="heartbeat-status-message" role="status" aria-live="polite" hidden></div>
         </div>
 
-        <div class="heartbeat-ping-log" id="heartbeat-ping-log" hidden>
+        <div class="heartbeat-ping-log" id="heartbeat-ping-log">
             <div class="heartbeat-ping-log-title">Activity Log</div>
             <div id="heartbeat-ping-entries"></div>
         </div>
@@ -2212,17 +2212,6 @@
                 refreshRelayConnectionSnapshot(tasks);
                 renderTasks(tasks);
                 document.getElementById('tasks-count').textContent = tasks.length;
-
-                // If the heartbeat modal is open, refresh its active-tasks section so
-                // newly-assigned tasks appear without requiring the user to reopen the modal.
-                // The node ID is stored as data-node-id on the send button when the modal opens.
-                const heartbeatOverlay = document.getElementById('heartbeat-modal-overlay');
-                if (heartbeatOverlay && heartbeatOverlay.classList.contains('open')) {
-                    const currentNodeId = document.getElementById('send-heartbeat-btn').getAttribute('data-node-id');
-                    if (currentNodeId) {
-                        renderHeartbeatTasks(currentNodeId);
-                    }
-                }
             }
 
             errorEl.style.display = 'none';
@@ -2371,7 +2360,6 @@
         sendBtn.setAttribute('data-node-id', nodeId);
 
         // Pre-populate activity log with all task activity for this node
-        const pingLog = document.getElementById('heartbeat-ping-log');
         const pingEntries = document.getElementById('heartbeat-ping-entries');
         pingEntries.textContent = '';
 
@@ -2401,9 +2389,6 @@
                 deletedClearedEvents = data.events || [];
             }
         } catch (_) {}
-
-        // Always show the log section, even if empty initially, so it feels like a consistent console
-        pingLog.hidden = false;
 
         const hasAnyActivity = activeNodeTasks.length > 0 || finishedNodeTasks.length > 0 || clearedNodeTasks.length > 0 || deletedClearedEvents.length > 0;
 
@@ -2455,8 +2440,7 @@
         document.getElementById('heartbeat-node-status').textContent = '—';
         document.getElementById('heartbeat-node-health').textContent = '—';
 
-        // Clear tasks section and ping log
-        document.getElementById('heartbeat-ping-log').hidden = true;
+        // Clear ping log
         document.getElementById('heartbeat-ping-entries').textContent = '';
     }
 

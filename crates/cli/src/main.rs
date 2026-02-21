@@ -1,8 +1,7 @@
 #[cfg(feature = "observability")]
 use ambient_node::LocalObservabilityServer;
 use ambient_node::{
-    AmbientNode, BackhaulMonitor, BackhaulPath, DataPlaneGateway, GatewayConfig, LocalPolicyCache,
-    LocalSessionManager, NodeId, PersistentAuditQueue, SafetyPolicy, TelemetrySample,
+    AmbientNode, DataPlaneGateway, GatewayConfig, NodeId, SafetyPolicy, TelemetrySample,
 };
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -171,46 +170,38 @@ async fn run_node(
     info!("Health Score: {:.2}", node.health_score());
     info!("Safe Mode: {}", node.is_safe_mode());
 
-    // Initialize Local Session Manager for offline resilience
-    let cache = LocalPolicyCache::default();
-    let audit_queue = PersistentAuditQueue::new(PathBuf::from("node_audit.log"));
-    let session_manager = LocalSessionManager::new(cache, audit_queue);
-
-    // Attach manager to node
-    let node = node.with_session_manager(session_manager);
-
-    info!("Node running with offline session persistence enabled... Press Ctrl+C to stop");
-
-    // Define a dummy monitor for the maintenance loop
-    struct Monitor;
-    impl BackhaulMonitor for Monitor {
-        fn available_paths(&self) -> Vec<BackhaulPath> {
-            vec![BackhaulPath { name: "default".into(), is_up: true }]
-        }
-    }
-    let monitor = Monitor;
-
-    #[cfg(feature = "observability")]
-    let node_container = Arc::new(RwLock::new(node));
-
-    #[cfg(not(feature = "observability"))]
-    let mut node_container = node;
+    info!("Node running... Press Ctrl+C to stop");
 
     // Start local observability server if enabled
     #[cfg(feature = "observability")]
     if observability {
         info!("Local observability enabled on port {}", observability_port);
 
-        // Create and start observability server using the shared container
-        let server = LocalObservabilityServer::new(observability_port, node_container.clone());
+        // Wrap node in Arc<RwLock<>> for shared access
+        let node_arc = Arc::new(RwLock::new(node));
+
+        // Create and start observability server
+        let server = LocalObservabilityServer::new(observability_port, node_arc);
         server.print_curl_command();
 
         // Run server in background
-        tokio::spawn(async move {
+        let server_handle = tokio::spawn(async move {
             if let Err(e) = server.run().await {
                 tracing::error!("Observability server error: {}", e);
             }
         });
+
+        // Keep running until interrupted
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("Shutting down node...");
+            }
+            _ = server_handle => {
+                info!("Observability server stopped");
+            }
+        }
+
+        return Ok(());
     }
 
     #[cfg(feature = "observability")]
@@ -219,28 +210,9 @@ async fn run_node(
     #[cfg(not(feature = "observability"))]
     let _ = (observability, observability_port); // Suppress unused warnings
 
-    // Main event loop
-    loop {
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                info!("Shutting down node...");
-                break;
-            }
-            _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
-                // Periodically maintain session state (refresh offline status, expire stale sessions)
-                // This keeps the node "on the internet" locally even if the API endpoint is disconnected.
-                #[cfg(feature = "observability")]
-                {
-                    let mut guard = node_container.write().await;
-                    guard.maintain_session_state(&monitor);
-                }
-                #[cfg(not(feature = "observability"))]
-                {
-                    node_container.maintain_session_state(&monitor);
-                }
-            }
-        }
-    }
+    // Default path: run without observability
+    tokio::signal::ctrl_c().await?;
+    info!("Shutting down node...");
 
     Ok(())
 }

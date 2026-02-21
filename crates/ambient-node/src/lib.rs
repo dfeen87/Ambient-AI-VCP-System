@@ -94,8 +94,6 @@ pub struct AmbientNode {
     pub id: NodeId,
     pub telemetry: TelemetrySample,
     pub reputation: Reputation,
-    #[serde(skip, default)]
-    pub session_manager: Option<LocalSessionManager>,
     safety_policy: SafetyPolicy,
     error_count: u32,
 }
@@ -106,31 +104,8 @@ impl AmbientNode {
             id,
             telemetry: TelemetrySample::default(),
             reputation: Reputation::default(),
-            session_manager: None,
             safety_policy,
             error_count: 0,
-        }
-    }
-
-    /// Attach a local session manager for offline/resilient operation
-    pub fn with_session_manager(mut self, manager: LocalSessionManager) -> Self {
-        self.session_manager = Some(manager);
-        self
-    }
-
-    /// Maintain session state (expire stale sessions, refresh node state)
-    /// Should be called periodically by the node's main loop.
-    pub fn maintain_session_state(&mut self, backhaul_monitor: &impl BackhaulMonitor) {
-        if let Some(manager) = &mut self.session_manager {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-
-            // In a real implementation, 'control_plane_reachable' would be determined by actual ping status.
-            // For now we assume offline if we are in this maintenance loop without explicit API ack.
-            manager.refresh_state(false, backhaul_monitor);
-            manager.expire_stale_sessions(now, std::time::Duration::from_secs(60));
         }
     }
 
