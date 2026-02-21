@@ -109,7 +109,10 @@ mod tests {
     use ambient_node::{NodeId, SafetyPolicy};
 
     fn make_node(id: &str) -> AmbientNode {
-        AmbientNode::new(NodeId::new(id, "us-west", "worker"), SafetyPolicy::default())
+        AmbientNode::new(
+            NodeId::new(id, "us-west", "worker"),
+            SafetyPolicy::default(),
+        )
     }
 
     #[test]
