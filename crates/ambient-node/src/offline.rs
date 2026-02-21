@@ -286,7 +286,7 @@ pub struct ActiveSession {
     pub bytes_sent: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LocalSessionManager {
     pub state: NodeState,
     pub cache: LocalPolicyCache,
