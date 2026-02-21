@@ -263,6 +263,17 @@ cargo test --package api-server
 cargo test --package api-server -- --ignored
 ```
 
+### Lint / Clippy
+
+The project enforces `-D warnings`, so all Clippy lints are treated as hard errors. Run Clippy before submitting changes:
+
+```bash
+cargo clippy --package api-server -- -D warnings
+```
+
+Notable lint rules enforced:
+- `clippy::useless_vec` — use array literals (`[…]`) instead of `vec![…]` where the `Vec` is never grown or consumed as a `Vec`.
+
 ## Troubleshooting
 
 ### Database Connection Issues

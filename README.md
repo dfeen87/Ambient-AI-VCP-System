@@ -906,6 +906,7 @@ If you are integrating the system, use these tests as the authoritative referenc
 - ✅ **Hardware Keepalive** — `BackhaulManager::hardware_keepalive_tick(now_secs)` emits periodic low-level keepalive probes at a configurable interval (`HardwareKeepaliveConfig`), preventing NAT and stateful-firewall session expiry on idle `connect_only` relay links
 - ✅ **Node Heartbeat Tracking** — `NodeRegistry::record_heartbeat(id, now_secs)` and `is_node_alive(id, now_secs, timeout_secs)` give the mesh coordinator a lightweight, no-network-round-trip liveness signal for each registered node
 - ✅ **`internet_required()` on `LocalSessionManager`** — returns `true` when any active local session needs outbound internet, enabling `BackhaulManager` to prioritise WAN interface selection for relay tasks
+- ✅ **Clippy compliance** — heartbeat unit tests updated to use array literals instead of `vec![]` (`clippy::useless_vec`), keeping `-D warnings` clean
 
 ### 🔄 Phase 3 - Advanced Features (IN PROGRESS)
 - [x] Authentication & authorization (JWT/API keys) ✅ **COMPLETED**
