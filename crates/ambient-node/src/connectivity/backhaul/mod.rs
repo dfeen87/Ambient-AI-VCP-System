@@ -367,7 +367,8 @@ impl BackhaulManager {
         self.last_hw_keepalive_secs.load(Ordering::Relaxed)
     }
 
-    /// Activate WAN-side relay QoS on the currently active backhaul interface.    ///
+    /// Activate WAN-side relay QoS on the currently active backhaul interface.
+    ///
     /// Call this when a `connect_only` relay session starts on an
     /// `open_internet` or `any` node.  The rules guarantee minimum bandwidth
     /// and reduce latency for relayed traffic on the WAN backhaul interface
