@@ -2140,9 +2140,9 @@ impl AppState {
             .collect();
 
         let active_task_count = assigned_tasks.len() as i64;
-        let internet_active = assigned_tasks.iter().any(|t| {
-            t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only")
-        });
+        let internet_active = assigned_tasks
+            .iter()
+            .any(|t| t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only"));
 
         Ok(Some(NodeHeartbeatResult {
             active_task_count,
@@ -4009,9 +4009,9 @@ mod tests {
         let assigned_tasks = [
             serde_json::json!({"task_id": "t1", "task_type": "connect_only", "execution_status": "running"}),
         ];
-        let internet_active = assigned_tasks.iter().any(|t| {
-            t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only")
-        });
+        let internet_active = assigned_tasks
+            .iter()
+            .any(|t| t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only"));
         assert!(internet_active);
     }
 
@@ -4021,18 +4021,18 @@ mod tests {
             serde_json::json!({"task_id": "t1", "task_type": "computation", "execution_status": "running"}),
             serde_json::json!({"task_id": "t2", "task_type": "federated_learning", "execution_status": "running"}),
         ];
-        let internet_active = assigned_tasks.iter().any(|t| {
-            t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only")
-        });
+        let internet_active = assigned_tasks
+            .iter()
+            .any(|t| t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only"));
         assert!(!internet_active);
     }
 
     #[test]
     fn node_heartbeat_internet_active_false_when_no_tasks_assigned() {
         let assigned_tasks: Vec<serde_json::Value> = vec![];
-        let internet_active = assigned_tasks.iter().any(|t| {
-            t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only")
-        });
+        let internet_active = assigned_tasks
+            .iter()
+            .any(|t| t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only"));
         assert!(!internet_active);
     }
 
