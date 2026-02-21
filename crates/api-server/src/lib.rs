@@ -311,7 +311,8 @@ async fn update_heartbeat(
         "node_status": result.node_status,
         "active_tasks": result.active_task_count,
         "assigned_task_ids": assigned_task_ids,
-        "assigned_tasks": result.assigned_tasks
+        "assigned_tasks": result.assigned_tasks,
+        "internet_active": result.internet_active
     })))
 }
 

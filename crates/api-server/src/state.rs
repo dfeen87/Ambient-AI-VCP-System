@@ -22,6 +22,10 @@ pub struct NodeHeartbeatResult {
     pub health_score: f64,
     /// Current status string of this node (e.g. `"online"`, `"offline"`).
     pub node_status: String,
+    /// `true` when at least one active `connect_only` task is assigned to this node,
+    /// meaning internet relay is currently live.  Browsers and phones can use this
+    /// flag to confirm that internet is still on without inspecting individual tasks.
+    pub internet_active: bool,
 }
 
 /// Application state with database connection pool
@@ -872,6 +876,7 @@ impl AppState {
             destination_policy_id,
             bandwidth_limit_mbps,
             status: ConnectSessionStatus::Active,
+            internet_active: true,
             created_at: now.to_rfc3339(),
             expires_at: expires_at.to_rfc3339(),
             last_heartbeat_at: Some(now.to_rfc3339()),
@@ -2135,12 +2140,16 @@ impl AppState {
             .collect();
 
         let active_task_count = assigned_tasks.len() as i64;
+        let internet_active = assigned_tasks.iter().any(|t| {
+            t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only")
+        });
 
         Ok(Some(NodeHeartbeatResult {
             active_task_count,
             assigned_tasks,
             health_score,
             node_status: status,
+            internet_active,
         }))
     }
 
@@ -3596,6 +3605,8 @@ fn parse_connect_session_status(status: &str) -> ConnectSessionStatus {
 }
 
 fn map_connect_session_row(row: sqlx::postgres::PgRow) -> ConnectSessionInfo {
+    let status = parse_connect_session_status(&row.get::<String, _>("status"));
+    let internet_active = matches!(status, ConnectSessionStatus::Active);
     ConnectSessionInfo {
         session_id: row.get("session_id"),
         task_id: row.get::<Uuid, _>("task_id").to_string(),
@@ -3605,7 +3616,8 @@ fn map_connect_session_row(row: sqlx::postgres::PgRow) -> ConnectSessionInfo {
         egress_profile: row.get("egress_profile"),
         destination_policy_id: row.get("destination_policy_id"),
         bandwidth_limit_mbps: row.get("bandwidth_limit_mbps"),
-        status: parse_connect_session_status(&row.get::<String, _>("status")),
+        status,
+        internet_active,
         created_at: row
             .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
             .to_rfc3339(),
@@ -3990,5 +4002,49 @@ mod tests {
         assert!(should_disconnect_assignments_on_completion(
             "wasm_execution"
         ));
+    }
+
+    #[test]
+    fn node_heartbeat_internet_active_true_when_connect_only_assigned() {
+        let assigned_tasks = vec![
+            serde_json::json!({"task_id": "t1", "task_type": "connect_only", "execution_status": "running"}),
+        ];
+        let internet_active = assigned_tasks.iter().any(|t| {
+            t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only")
+        });
+        assert!(internet_active);
+    }
+
+    #[test]
+    fn node_heartbeat_internet_active_false_when_no_connect_only_assigned() {
+        let assigned_tasks = vec![
+            serde_json::json!({"task_id": "t1", "task_type": "computation", "execution_status": "running"}),
+            serde_json::json!({"task_id": "t2", "task_type": "federated_learning", "execution_status": "running"}),
+        ];
+        let internet_active = assigned_tasks.iter().any(|t| {
+            t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only")
+        });
+        assert!(!internet_active);
+    }
+
+    #[test]
+    fn node_heartbeat_internet_active_false_when_no_tasks_assigned() {
+        let assigned_tasks: Vec<serde_json::Value> = vec![];
+        let internet_active = assigned_tasks.iter().any(|t| {
+            t.get("task_type").and_then(|v| v.as_str()) == Some("connect_only")
+        });
+        assert!(!internet_active);
+    }
+
+    #[test]
+    fn connect_session_info_internet_active_matches_active_status() {
+        let active_status = parse_connect_session_status("active");
+        assert!(matches!(active_status, ConnectSessionStatus::Active));
+
+        let ended_status = parse_connect_session_status("ended");
+        assert!(!matches!(ended_status, ConnectSessionStatus::Active));
+
+        let expired_status = parse_connect_session_status("expired");
+        assert!(!matches!(expired_status, ConnectSessionStatus::Active));
     }
 }
