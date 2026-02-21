@@ -355,7 +355,8 @@ impl BackhaulManager {
         }
         let last = self.last_hw_keepalive_secs.load(Ordering::Relaxed);
         if now_secs.saturating_sub(last) >= self.config.hardware_keepalive.interval_secs {
-            self.last_hw_keepalive_secs.store(now_secs, Ordering::Relaxed);
+            self.last_hw_keepalive_secs
+                .store(now_secs, Ordering::Relaxed);
             return true;
         }
         false
