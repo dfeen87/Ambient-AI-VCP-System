@@ -529,6 +529,10 @@ pub struct ConnectSessionInfo {
     pub destination_policy_id: String,
     pub bandwidth_limit_mbps: f64,
     pub status: ConnectSessionStatus,
+    /// `true` while the session is active and internet relay is on.
+    /// Browsers and phones should use this field to determine whether the
+    /// internet connection provided by this connect-only task is currently live.
+    pub internet_active: bool,
     pub created_at: String,
     pub expires_at: String,
     pub last_heartbeat_at: Option<String>,
