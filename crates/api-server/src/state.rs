@@ -4006,7 +4006,7 @@ mod tests {
 
     #[test]
     fn node_heartbeat_internet_active_true_when_connect_only_assigned() {
-        let assigned_tasks = vec![
+        let assigned_tasks = [
             serde_json::json!({"task_id": "t1", "task_type": "connect_only", "execution_status": "running"}),
         ];
         let internet_active = assigned_tasks.iter().any(|t| {
@@ -4017,7 +4017,7 @@ mod tests {
 
     #[test]
     fn node_heartbeat_internet_active_false_when_no_connect_only_assigned() {
-        let assigned_tasks = vec![
+        let assigned_tasks = [
             serde_json::json!({"task_id": "t1", "task_type": "computation", "execution_status": "running"}),
             serde_json::json!({"task_id": "t2", "task_type": "federated_learning", "execution_status": "running"}),
         ];
