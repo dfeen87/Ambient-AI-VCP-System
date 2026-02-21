@@ -571,6 +571,20 @@ impl LocalSessionManager {
     pub fn active_sessions(&self) -> usize {
         self.sessions.len()
     }
+
+    /// Returns `true` when at least one relay session is currently active and
+    /// the internet path **must** be kept alive.
+    ///
+    /// The backhaul management loop (or any caller that owns a
+    /// [`BackhaulManager`](crate::BackhaulManager)) should call
+    /// [`BackhaulManager::hardware_keepalive_tick`] at least as often as the
+    /// configured keepalive interval whenever this returns `true`.  This is the
+    /// primary signal that ensures `connect_only` relay tasks remain operational
+    /// for their full declared duration: as long as at least one session is
+    /// active, the WAN hardware must not be allowed to idle-disconnect.
+    pub fn internet_required(&self) -> bool {
+        !self.sessions.is_empty()
+    }
 }
 
 /// A signed, serialisable snapshot of a node's policy cache that can be shared
@@ -1048,5 +1062,104 @@ mod tests {
             records.iter().any(|r| r.event_type == "peer_sync_applied"),
             "audit trail should contain a peer_sync_applied record"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // internet_required – hardware keepalive signal for connect_only sessions
+    // -----------------------------------------------------------------------
+
+    /// Build a minimal `LocalSessionManager` with one policy and verification
+    /// key so it can accept a signed lease.
+    fn make_mgr_for_keepalive(kp: &signature::Ed25519KeyPair) -> LocalSessionManager {
+        make_manager_with_policy("policy-1", "https://allowed.example", "k1", kp)
+    }
+
+    #[test]
+    fn internet_required_false_when_no_sessions() {
+        let kp = key_pair();
+        let mgr = make_mgr_for_keepalive(&kp);
+        assert!(
+            !mgr.internet_required(),
+            "no active sessions → internet_required must be false"
+        );
+    }
+
+    #[test]
+    fn internet_required_true_while_connect_only_session_active() {
+        // Simulate the lifecycle of a connect_only relay task:
+        // 1. Session is activated (lease accepted).
+        // 2. internet_required() returns true → hardware keepalive must fire.
+        // 3. Session expires / is evicted.
+        // 4. internet_required() returns false again.
+        let kp = key_pair();
+        let mut mgr = make_mgr_for_keepalive(&kp);
+
+        // No session yet.
+        assert!(!mgr.internet_required());
+
+        // Activate a session (this is what happens when a connect_only task
+        // assigns this node as the relay).
+        let claims = SessionLeaseClaims {
+            session_id: "relay-session-1".into(),
+            egress_policy_id: "policy-1".into(),
+            issued_at: 0,
+            expires_at: 9_000,
+            max_duration_secs: 9_000,
+            max_bandwidth_mbps: 100,
+            allowed_protocols: vec![Protocol::Https],
+        };
+        let lease = SessionLease::sign("k1", claims, &kp);
+        mgr.activate_session(lease, 100).unwrap();
+
+        // Session is active → internet_required must be true so the backhaul
+        // management loop knows to keep firing hardware_keepalive_tick().
+        assert!(
+            mgr.internet_required(),
+            "active relay session → internet_required must be true"
+        );
+
+        // Simulate heartbeat (as the node management loop would call it).
+        mgr.heartbeat("relay-session-1", 200).unwrap();
+        assert!(
+            mgr.internet_required(),
+            "internet_required must remain true after heartbeat"
+        );
+
+        // Session expires — evict it via expire_stale_sessions.
+        // Use a timestamp past expires_at so the lease is considered expired.
+        mgr.expire_stale_sessions(10_000, Duration::from_secs(60));
+        assert!(
+            !mgr.internet_required(),
+            "no active sessions after expiry → internet_required must be false"
+        );
+    }
+
+    #[test]
+    fn internet_required_tracks_multiple_sessions() {
+        let kp = key_pair();
+        let mut mgr = make_mgr_for_keepalive(&kp);
+
+        // Activate two sessions with different IDs.
+        for (sid, policy) in [("relay-s1", "policy-1"), ("relay-s2", "policy-1")] {
+            let claims = SessionLeaseClaims {
+                session_id: sid.into(),
+                egress_policy_id: policy.into(),
+                issued_at: 0,
+                expires_at: 9_000,
+                max_duration_secs: 9_000,
+                max_bandwidth_mbps: 50,
+                allowed_protocols: vec![Protocol::Https],
+            };
+            let lease = SessionLease::sign("k1", claims, &kp);
+            mgr.activate_session(lease, 100).unwrap();
+        }
+
+        assert_eq!(mgr.active_sessions(), 2);
+        assert!(mgr.internet_required());
+
+        // Expire both sessions.
+        mgr.expire_stale_sessions(10_000, Duration::from_secs(60));
+        assert_eq!(mgr.active_sessions(), 0);
+        assert!(!mgr.internet_required());
     }
 }

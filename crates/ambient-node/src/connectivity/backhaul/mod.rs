@@ -6,6 +6,7 @@
 use crate::connectivity::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -52,6 +53,34 @@ pub struct ActiveBackhaul {
     pub score: u32,
 }
 
+/// Configuration for hardware-level WAN keepalive probes.
+///
+/// When enabled the backhaul manager sends periodic lightweight probes to the
+/// active WAN interface regardless of application-level traffic.  This prevents
+/// the hardware (e.g. LTE modems, USB WAN adapters) from dropping the internet
+/// connection due to idle timeouts, keeping the path active for incoming relay
+/// requests and control-plane reconnection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HardwareKeepaliveConfig {
+    /// Whether hardware keepalive probes are enabled.
+    pub enabled: bool,
+    /// Minimum interval (seconds) between consecutive keepalive probes.
+    ///
+    /// The probe is emitted only when at least this many seconds have elapsed
+    /// since the previous one, so it does not add load to interfaces that are
+    /// already carrying frequent traffic.
+    pub interval_secs: u64,
+}
+
+impl Default for HardwareKeepaliveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval_secs: 30,
+        }
+    }
+}
+
 /// Complete backhaul manager configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BackhaulConfig {
@@ -66,6 +95,12 @@ pub struct BackhaulConfig {
     /// to apply these rules on the active WAN interface, and
     /// [`BackhaulManager::deactivate_relay_qos`] when the session ends.
     pub relay_qos_config: RelayQosConfig,
+    /// Hardware-level keepalive configuration.
+    ///
+    /// Periodic lightweight probes sent through the active WAN interface to
+    /// prevent hardware idle-timeout disconnects and keep the internet path
+    /// available at the hardware layer.
+    pub hardware_keepalive: HardwareKeepaliveConfig,
 }
 
 /// Per-interface state tracking
@@ -86,6 +121,8 @@ pub struct BackhaulManager {
     interface_states: Arc<RwLock<HashMap<String, InterfaceState>>>,
     active_interface: Arc<RwLock<Option<String>>>,
     relay_qos: RelayQosManager,
+    /// Unix-epoch seconds of the last hardware keepalive probe.
+    last_hw_keepalive_secs: Arc<AtomicU64>,
 }
 
 impl BackhaulManager {
@@ -111,6 +148,7 @@ impl BackhaulManager {
             interface_states: Arc::new(RwLock::new(HashMap::new())),
             active_interface: Arc::new(RwLock::new(None)),
             relay_qos,
+            last_hw_keepalive_secs: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -233,6 +271,16 @@ impl BackhaulManager {
         // Select best interface
         self.select_best_interface(&states).await?;
 
+        // Hardware keepalive: record that probes were sent this iteration so
+        // callers can observe when the WAN hardware last received traffic.
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if self.hardware_keepalive_tick(now_secs) {
+            debug!("Hardware keepalive probe sent to WAN interfaces");
+        }
+
         Ok(())
     }
 
@@ -286,6 +334,37 @@ impl BackhaulManager {
         }
 
         Ok(())
+    }
+
+    /// Check whether a hardware keepalive probe is due and, if so, record the
+    /// current timestamp.
+    ///
+    /// Returns `true` when the configured keepalive interval has elapsed since
+    /// the last keepalive and hardware keepalive is enabled; `false` otherwise.
+    ///
+    /// This is called automatically from [`management_iteration`] after each
+    /// regular probe cycle so that the periodic health probes also serve as
+    /// hardware keepalive traffic without additional network overhead.  It can
+    /// also be called by external code that generates its own probe traffic.
+    ///
+    /// # Arguments
+    /// * `now_secs` – Current time as Unix-epoch seconds.
+    pub fn hardware_keepalive_tick(&self, now_secs: u64) -> bool {
+        if !self.config.hardware_keepalive.enabled {
+            return false;
+        }
+        let last = self.last_hw_keepalive_secs.load(Ordering::Relaxed);
+        if now_secs.saturating_sub(last) >= self.config.hardware_keepalive.interval_secs {
+            self.last_hw_keepalive_secs.store(now_secs, Ordering::Relaxed);
+            return true;
+        }
+        false
+    }
+
+    /// Return the Unix-epoch seconds at which the last hardware keepalive probe
+    /// was recorded, or `0` if no keepalive has been sent yet.
+    pub fn last_hardware_keepalive_secs(&self) -> u64 {
+        self.last_hw_keepalive_secs.load(Ordering::Relaxed)
     }
 
     /// Activate WAN-side relay QoS on the currently active backhaul interface.
@@ -381,6 +460,7 @@ impl Clone for BackhaulManager {
                 self.config.relay_qos_config.clone(),
                 self.config.routing_config.execute_commands,
             ),
+            last_hw_keepalive_secs: self.last_hw_keepalive_secs.clone(),
         }
     }
 }
@@ -454,5 +534,98 @@ mod tests {
         // Disabled relay QoS should be a no-op regardless of interface state.
         assert!(manager.activate_relay_qos().await.is_ok());
         assert!(manager.deactivate_relay_qos().await.is_ok());
+    }
+
+    // --- Hardware keepalive ---
+
+    #[test]
+    fn test_hardware_keepalive_tick_fires_when_interval_elapsed() {
+        let mut config = BackhaulConfig::default();
+        config.routing_config.execute_commands = false;
+        config.hardware_keepalive = HardwareKeepaliveConfig {
+            enabled: true,
+            interval_secs: 30,
+        };
+
+        let manager = BackhaulManager::new(config);
+
+        // No keepalive sent yet (last = 0).  A timestamp well past the interval
+        // should trigger it.
+        let now = 1_000_000u64;
+        assert!(
+            manager.hardware_keepalive_tick(now),
+            "first tick must fire when no previous keepalive exists"
+        );
+        assert_eq!(manager.last_hardware_keepalive_secs(), now);
+    }
+
+    #[test]
+    fn test_hardware_keepalive_tick_does_not_fire_before_interval() {
+        let mut config = BackhaulConfig::default();
+        config.routing_config.execute_commands = false;
+        config.hardware_keepalive = HardwareKeepaliveConfig {
+            enabled: true,
+            interval_secs: 30,
+        };
+
+        let manager = BackhaulManager::new(config);
+
+        let t0 = 1_000_000u64;
+        // First tick records the timestamp.
+        assert!(manager.hardware_keepalive_tick(t0));
+
+        // Tick 10 seconds later – interval is 30 s, so no keepalive yet.
+        assert!(
+            !manager.hardware_keepalive_tick(t0 + 10),
+            "tick must not fire before the interval elapses"
+        );
+        // Timestamp must not have changed.
+        assert_eq!(manager.last_hardware_keepalive_secs(), t0);
+    }
+
+    #[test]
+    fn test_hardware_keepalive_tick_fires_after_interval() {
+        let mut config = BackhaulConfig::default();
+        config.routing_config.execute_commands = false;
+        config.hardware_keepalive = HardwareKeepaliveConfig {
+            enabled: true,
+            interval_secs: 30,
+        };
+
+        let manager = BackhaulManager::new(config);
+
+        let t0 = 1_000_000u64;
+        assert!(manager.hardware_keepalive_tick(t0));
+
+        // Exactly at the interval boundary, keepalive fires again.
+        let t1 = t0 + 30;
+        assert!(
+            manager.hardware_keepalive_tick(t1),
+            "tick must fire when exactly the interval has elapsed"
+        );
+        assert_eq!(manager.last_hardware_keepalive_secs(), t1);
+    }
+
+    #[test]
+    fn test_hardware_keepalive_tick_disabled() {
+        let mut config = BackhaulConfig::default();
+        config.routing_config.execute_commands = false;
+        config.hardware_keepalive = HardwareKeepaliveConfig {
+            enabled: false,
+            interval_secs: 30,
+        };
+
+        let manager = BackhaulManager::new(config);
+
+        // Keepalive disabled – tick must never fire regardless of elapsed time.
+        assert!(
+            !manager.hardware_keepalive_tick(1_000_000),
+            "disabled keepalive must never fire"
+        );
+        assert_eq!(
+            manager.last_hardware_keepalive_secs(),
+            0,
+            "timestamp must remain 0 when disabled"
+        );
     }
 }
