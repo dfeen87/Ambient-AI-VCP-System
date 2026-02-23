@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 // VCP modules
 pub mod connectivity;
+pub mod feen;
 pub mod gateway;
 pub mod health;
 pub mod offline;
