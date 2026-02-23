@@ -56,6 +56,7 @@ impl NodeRegistration {
             "validator",
             "open_internet",
             "any",
+            "feen_resonator",
         ];
         if !VALID_NODE_TYPES.contains(&self.node_type.as_str()) {
             return Err(ApiError::bad_request(format!(
@@ -117,7 +118,7 @@ pub struct TaskTypeRegistryEntry {
     pub allow_wasm_module: bool,
 }
 
-pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 5] = [
+pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 6] = [
     TaskTypeRegistryEntry {
         task_type: "federated_learning",
         preferred_node_type: "compute",
@@ -181,6 +182,19 @@ pub const TASK_TYPE_REGISTRY: [TaskTypeRegistryEntry; 5] = [
         },
         max_execution_time_sec: 3600,
         max_input_size_mb: 1,
+        allow_wasm_module: false,
+    },
+    TaskTypeRegistryEntry {
+        task_type: "feen_connectivity",
+        preferred_node_type: "feen_resonator",
+        minimum_capabilities: NodeCapabilities {
+            bandwidth_mbps: 100.0,
+            cpu_cores: 4,
+            memory_gb: 4.0,
+            gpu_available: false,
+        },
+        max_execution_time_sec: 600,
+        max_input_size_mb: 5,
         allow_wasm_module: false,
     },
 ];
@@ -277,6 +291,10 @@ impl TaskSubmission {
                     "connect_only tasks cannot require proof",
                 ));
             }
+        }
+
+        if self.task_type == "feen_connectivity" {
+            validate_feen_connectivity_inputs(&self.inputs)?;
         }
 
         // Validate requirements
@@ -384,6 +402,30 @@ fn validate_connect_only_inputs(inputs: &serde_json::Value) -> Result<(), ApiErr
     if destination_policy_id.is_empty() || destination_policy_id.len() > 128 {
         return Err(ApiError::bad_request(
             "destination_policy_id must be between 1 and 128 characters",
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_feen_connectivity_inputs(inputs: &serde_json::Value) -> Result<(), ApiError> {
+    let obj = inputs
+        .as_object()
+        .ok_or_else(|| ApiError::bad_request("feen_connectivity inputs must be a JSON object"))?;
+
+    // Check for network definition or similar.
+    // The prompt says: "Inputs: excitation parameters, coupling updates, simulation control (start/stop/step)."
+    // And for the Task Type: "accept a structured description of two or more VCP nodes and their connection parameters"
+
+    // Let's require a "nodes" list and "connections" list.
+    if !obj.contains_key("nodes") {
+        return Err(ApiError::bad_request(
+            "feen_connectivity inputs requires 'nodes' list",
+        ));
+    }
+    if !obj.contains_key("connections") {
+        return Err(ApiError::bad_request(
+            "feen_connectivity inputs requires 'connections' list",
         ));
     }
 

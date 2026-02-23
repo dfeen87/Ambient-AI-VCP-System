@@ -33,3 +33,6 @@ chrono = { version = "0.4", features = ["clock"] }
 
 # Optional dependency for observability feature
 axum = { version = "0.7", optional = true }
+
+# HTTP Client for FEEN integration
+reqwest = { version = "0.11", features = ["json"] }
