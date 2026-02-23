@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use crate::{AileeMetric, AileeSample};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 /// Configuration for a FEEN Resonator
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +42,14 @@ pub struct Excitation {
 /// or use FFI to call the C++ library.
 #[async_trait]
 pub trait FeenEngine: Send + Sync {
-    async fn simulate_resonator(&self, config: &ResonatorConfig, state: &ResonatorState, input: &Excitation, dt: f64, steps: u32) -> Result<ResonatorState, String>;
+    async fn simulate_resonator(
+        &self,
+        config: &ResonatorConfig,
+        state: &ResonatorState,
+        input: &Excitation,
+        dt: f64,
+        steps: u32,
+    ) -> Result<ResonatorState, String>;
     async fn update_coupling(&self, config: &CouplingConfig) -> Result<(), String>;
 }
 
@@ -80,7 +87,14 @@ struct SimulationResponse {
 
 #[async_trait]
 impl FeenEngine for FeenClient {
-    async fn simulate_resonator(&self, config: &ResonatorConfig, state: &ResonatorState, input: &Excitation, dt: f64, steps: u32) -> Result<ResonatorState, String> {
+    async fn simulate_resonator(
+        &self,
+        config: &ResonatorConfig,
+        state: &ResonatorState,
+        input: &Excitation,
+        dt: f64,
+        steps: u32,
+    ) -> Result<ResonatorState, String> {
         let request = SimulationRequest {
             config,
             state,
@@ -90,7 +104,9 @@ impl FeenEngine for FeenClient {
         };
 
         let url = format!("{}/api/v1/simulate", self.api_url);
-        let response = self.client.post(&url)
+        let response = self
+            .client
+            .post(&url)
             .json(&request)
             .send()
             .await
@@ -100,7 +116,8 @@ impl FeenEngine for FeenClient {
             return Err(format!("FEEN API error: {}", response.status()));
         }
 
-        let sim_res: SimulationResponse = response.json()
+        let sim_res: SimulationResponse = response
+            .json()
             .await
             .map_err(|e| format!("Failed to parse response: {}", e))?;
 
@@ -109,7 +126,9 @@ impl FeenEngine for FeenClient {
 
     async fn update_coupling(&self, config: &CouplingConfig) -> Result<(), String> {
         let url = format!("{}/api/v1/coupling", self.api_url);
-        let response = self.client.post(&url)
+        let response = self
+            .client
+            .post(&url)
             .json(config)
             .send()
             .await
@@ -138,13 +157,21 @@ impl FeenNode {
         Self {
             client,
             resonator_config: config,
-            current_state: ResonatorState { x: 0.0, v: 0.0, energy: 0.0, phase: 0.0 },
+            current_state: ResonatorState {
+                x: 0.0,
+                v: 0.0,
+                energy: 0.0,
+                phase: 0.0,
+            },
             metric: AileeMetric::default(),
         }
     }
 
     pub async fn tick(&mut self, input: &Excitation, dt: f64) -> Result<(), String> {
-        let new_state = self.client.simulate_resonator(&self.resonator_config, &self.current_state, input, dt, 1).await?;
+        let new_state = self
+            .client
+            .simulate_resonator(&self.resonator_config, &self.current_state, input, dt, 1)
+            .await?;
 
         // Calculate physics values for AileeSample
         // P_input ~ Energy input (simplified as excitation amplitude squared)

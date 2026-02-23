@@ -18,6 +18,9 @@ def simulate():
     """
     data = request.get_json()
 
+    if not data:
+        return jsonify({"error": "Missing or invalid JSON body"}), 400
+
     config = data.get('config')
     state = data.get('state')
     input_signal = data.get('input')
@@ -44,6 +47,10 @@ def calculate_delta_v():
     }
     """
     data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "Missing or invalid JSON body"}), 400
+
     samples = data.get('samples', [])
     params = data.get('params', {})
 
@@ -63,6 +70,9 @@ def update_coupling_endpoint():
     }
     """
     data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "Missing or invalid JSON body"}), 400
 
     # In a real integration, this would call into the engine to update the network graph
     try:
