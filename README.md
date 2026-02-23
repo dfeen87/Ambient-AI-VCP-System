@@ -61,11 +61,11 @@ Tip: To quickly verify the public demo is reachable, run:
 - **The System** = Matches tasks to nodes, orchestrates execution, returns results
 
 **Nodes** = Devices that join the network to contribute computing power (your laptop, server, etc.)
-  - **4 Node Types**: Compute (run tasks), Gateway (route traffic), Storage (store data), Validator (verify proofs)
+  - **5 Node Types**: Compute (run tasks), Gateway (route traffic), Storage (store data), Validator (verify proofs), Resonator (FEEN physics)
   - 👉 [Learn more about node types →](./docs/NODES_AND_TASKS_GUIDE.md#node-types-explained)
 
 **Tasks** = Work submitted to the network for execution (train a model, run a computation, etc.)
-  - **5 Task Types**: Federated Learning, ZK Proof, WASM Execution, General Computation, Connect-Only
+  - **6 Task Types**: Federated Learning, ZK Proof, WASM Execution, General Computation, Connect-Only, FEEN Connectivity
   - **Who creates tasks?** App developers, data scientists, researchers, businesses - anyone who needs computation
   - 👉 [Learn more about task types →](./docs/NODES_AND_TASKS_GUIDE.md#task-types-explained)
   - 👉 [Who creates tasks and why? →](./docs/WHO_CREATES_TASKS.md)
@@ -431,6 +431,63 @@ let added = node_b_mgr.import_peer_sync(&msg)?;
 - 🔄 Auto-refresh every 5 seconds
 - 🎨 Modern gradient UI design
 - 👁️ **Owner-only node observability** (v2.1.0): "View" button for local node status inspection
+
+---
+
+### 12. **FEEN Physics Engine Integration** (`ambient-node/feen`) 🆕
+**Purpose**: Local wave-native physics simulation powering the `feen_resonator` node type and `feen_connectivity` task type
+
+> **FEEN repository**: [https://github.com/dfeen87/FEEN](https://github.com/dfeen87/FEEN)
+
+FEEN is a Duffing-resonator physics engine — VCP acts as the orchestrator while FEEN remains a self-contained, local physics backend.  The integration exposes three minimal REST endpoints (`/api/v1/simulate`, `/api/v1/coupling`, `/api/v1/delta_v`) and keeps FEEN internals fully hidden behind a clean Rust trait boundary.
+
+**New VCP primitives introduced:**
+
+| Primitive | Kind | Description |
+|-----------|------|-------------|
+| `feen_resonator` | Node type | Wraps a FEEN resonator's physical state `(x, v)`, coupling config, and accumulated ∆v |
+| `feen_connectivity` | Task type | Uses FEEN to compute resonance, interference, stability, and ∆v across a set of nodes |
+
+**Core Rust types** (`crates/ambient-node/src/feen.rs`):
+
+- 🔧 **`ResonatorConfig`** — resonator parameters: `frequency_hz`, `q_factor` (damping), `beta` (nonlinearity)
+- 📍 **`ResonatorState`** — physical state snapshot: displacement `x`, velocity `v`, `energy`, `phase`
+- 🔗 **`CouplingConfig`** — directed coupling between two resonators: `source_id`, `target_id`, `strength`, `phase_shift`
+- ⚡ **`Excitation`** — drive signal: `amplitude`, `frequency_hz`, `phase`
+- 🧩 **`FeenEngine` trait** — async interface (`simulate_resonator`, `update_coupling`) that allows both the live HTTP client and test mocks to be used interchangeably
+- 🌐 **`FeenClient`** — HTTP client that posts to the FEEN REST API (`/api/v1/simulate`, `/api/v1/coupling`)
+- 🏗️ **`FeenNode`** — stateful VCP node that wraps a `FeenClient`, owns the current `ResonatorState`, and accumulates the AILEE ∆v metric across ticks
+
+**FEEN-side REST API** (`feen-changes/`):
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/simulate` | POST | Stateless single-step simulation of a resonator |
+| `/api/v1/coupling` | POST | Apply a coupling update between two resonators |
+| `/api/v1/delta_v` | POST | Compute the AILEE ∆v metric for a sequence of telemetry samples |
+
+**Usage:**
+```rust
+use ambient_node::feen::{FeenClient, FeenNode, ResonatorConfig, Excitation};
+
+// Connect to a locally-running FEEN instance
+let client = FeenClient::new("http://localhost:8080".to_string());
+let config = ResonatorConfig { frequency_hz: 440.0, q_factor: 10.0, beta: 0.0 };
+let mut node = FeenNode::new(client, config);
+
+// Drive the resonator one time step (dt = 1 ms)
+let excitation = Excitation { amplitude: 1.0, frequency_hz: 440.0, phase: 0.0 };
+node.tick(&excitation, 0.001).await?;
+
+// Read the accumulated efficiency gain
+println!("∆v = {}", node.delta_v());
+```
+
+**Architectural invariants:**
+- 🔒 Each `/api/v1/simulate` call is **stateless** — state is owned by VCP, never by FEEN
+- 🔒 No persistent identity, session, or user semantics are introduced in FEEN
+- 🔒 `FeenNode` uses the **`FeenEngine` trait**, keeping the HTTP transport swappable for tests
+- 🔒 ∆v is computed **locally** by VCP's `AileeMetric`, not delegated to FEEN
 
 ---
 
@@ -907,6 +964,16 @@ If you are integrating the system, use these tests as the authoritative referenc
 - ✅ **Node Heartbeat Tracking** — `NodeRegistry::record_heartbeat(id, now_secs)` and `is_node_alive(id, now_secs, timeout_secs)` give the mesh coordinator a lightweight, no-network-round-trip liveness signal for each registered node
 - ✅ **`internet_required()` on `LocalSessionManager`** — returns `true` when any active local session needs outbound internet, enabling `BackhaulManager` to prioritise WAN interface selection for relay tasks
 
+### ⭐ Phase 2.11 - FEEN Physics Engine Integration (COMPLETED) 🆕
+- ✅ **`feen_resonator` node type** — new VCP node wrapping a FEEN Duffing resonator; owns physical state `(x, v)`, coupling configuration, and an `AileeMetric` accumulator that tracks ∆v across ticks
+- ✅ **`feen_connectivity` task type** — new VCP task that uses FEEN to compute resonance, interference, stability, and ∆v across a group of resonator nodes
+- ✅ **`FeenClient` Rust HTTP client** — posts to the local FEEN REST API (`/api/v1/simulate`, `/api/v1/coupling`) using `reqwest`; error handling propagates FEEN API status codes as typed `Result` errors
+- ✅ **`FeenEngine` trait boundary** — clean async trait separates VCP logic from the FEEN transport, keeping the HTTP client swappable with in-process mocks for unit tests
+- ✅ **Stateless simulation contract** — resonator state lives entirely in VCP; each `/api/v1/simulate` call is a pure function `(config, state, input, dt) → state′` with no server-side persistence
+- ✅ **FEEN-side minimal REST surface** — three endpoints added under `feen-changes/`: `/simulate`, `/coupling`, `/delta_v`; no FEEN internals exposed beyond what VCP needs
+- ✅ **12 new unit tests** covering construction, physics mock, error propagation, coupling updates, and JSON serialisation round-trips for all FEEN VCP types
+- 🔗 **FEEN repository**: [https://github.com/dfeen87/FEEN](https://github.com/dfeen87/FEEN)
+
 ### 🔄 Phase 3 - Advanced Features (IN PROGRESS)
 - [x] Authentication & authorization (JWT/API keys) ✅ **COMPLETED**
 - [x] Data persistence (PostgreSQL) ✅ **COMPLETED**
@@ -1032,6 +1099,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 - **WasmEdge** for WASM runtime
 - **arkworks** for production ZK proof libraries (Groth16)
 - **Axum** for the web framework
+- **[FEEN](https://github.com/dfeen87/FEEN)** — wave-native Duffing resonator physics engine powering the `feen_resonator` node type and `feen_connectivity` task
 - The decentralized computing community for verifiable computation research
 
 ---
@@ -1049,6 +1117,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 - [**What You Get By Cloning This Repo**](./docs/USER_BENEFITS.md) ⭐ **NEW**
 - [**Understanding Nodes & Tasks**](./docs/NODES_AND_TASKS_GUIDE.md) 📚 **NEW** - What are node types & tasks?
 - [**Node Security & Lifecycle Management**](./docs/NODE_SECURITY.md) 🔒 **NEW** - Ownership, authentication & offline handling
+- [**FEEN Physics Engine**](https://github.com/dfeen87/FEEN) ⚛️ **NEW** - Wave-native Duffing resonator engine powering `feen_resonator` nodes
 - [Getting Started Guide](./docs/GETTING_STARTED.md)
 - [API Documentation (Swagger)](http://localhost:3000/swagger-ui)
 - [Robustness Analysis](./docs/ROBUSTNESS_ANALYSIS.md)
