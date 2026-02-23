@@ -1285,6 +1285,7 @@
                         <option value="storage">Storage</option>
                         <option value="validator">Validator</option>
                         <option value="open_internet">Open Internet</option>
+                        <option value="feen_resonator">FEEN Resonator</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -1379,6 +1380,7 @@
                         <option value="zk_proof">ZK Proof</option>
                         <option value="wasm_execution">WASM Execution</option>
                         <option value="connect_only">Connect Only</option>
+                        <option value="feen_connectivity">FEEN Connectivity</option>
                     </select>
                     <div class="inline-hint" id="task-type-hint">Smart defaults will update based on task type.</div>
                 </div>
@@ -1589,6 +1591,7 @@
         zk_proof: 600,
         wasm_execution: 450,
         connect_only: 120,
+        feen_connectivity: 300,
     };
 
 
@@ -1988,6 +1991,23 @@
                 }, null, 2),
                 hint: 'Connect Only preset applied. JSON schema is strict and free-form task descriptions are not allowed.',
                 description: '<strong>Connect Only:</strong> Creates a secure connection session with strict policy-driven JSON fields and no compute workload.'
+            },
+            feen_connectivity: {
+                minNodes: 2,
+                maxExec: 600,
+                requireGpu: 'false',
+                requireProof: 'false',
+                inputs: JSON.stringify({
+                    nodes: [
+                        { id: 'resonator_a', frequency_hz: 440.0, q_factor: 10.0, beta: 0.1 },
+                        { id: 'resonator_b', frequency_hz: 880.0, q_factor: 8.0, beta: 0.05 }
+                    ],
+                    connections: [
+                        { source_id: 'resonator_a', target_id: 'resonator_b', strength: 0.5, phase_shift: 0.0 }
+                    ]
+                }, null, 2),
+                hint: 'FEEN Connectivity preset applied. Requires at least two resonator nodes and one connection.',
+                description: '<strong>FEEN Connectivity:</strong> Simulates coupled FEEN resonator networks across dedicated feen_resonator nodes using the VCP physics engine.'
             }
         };
 
@@ -2077,6 +2097,30 @@
                 minNodesHint.textContent = 'connect_only requires min_nodes = 1.';
                 minNodesHint.className = 'inline-hint error';
                 isValid = false;
+            }
+        } else if (taskType === 'feen_connectivity') {
+            if (strictJsonState !== 'valid' || typeof parsedInputs !== 'object' || parsedInputs === null || Array.isArray(parsedInputs)) {
+                inputsHint.textContent = 'feen_connectivity requires a valid JSON object with nodes and connections arrays.';
+                inputsHint.className = 'inline-hint error';
+                isValid = false;
+            } else {
+                const missingKeys = ['nodes', 'connections'].filter((k) => !(k in parsedInputs));
+                if (missingKeys.length > 0) {
+                    inputsHint.textContent = `feen_connectivity missing required fields: ${missingKeys.join(', ')}`;
+                    inputsHint.className = 'inline-hint error';
+                    isValid = false;
+                } else if (!Array.isArray(parsedInputs.nodes) || parsedInputs.nodes.length < 2) {
+                    inputsHint.textContent = 'feen_connectivity requires at least 2 nodes.';
+                    inputsHint.className = 'inline-hint error';
+                    isValid = false;
+                } else if (!Array.isArray(parsedInputs.connections) || parsedInputs.connections.length < 1) {
+                    inputsHint.textContent = 'feen_connectivity requires at least 1 connection.';
+                    inputsHint.className = 'inline-hint error';
+                    isValid = false;
+                } else {
+                    inputsHint.textContent = 'feen_connectivity schema looks valid.';
+                    inputsHint.className = 'inline-hint success';
+                }
             }
         } else if (strictJsonState === 'valid') {
             inputsHint.textContent = 'Valid JSON payload.';
