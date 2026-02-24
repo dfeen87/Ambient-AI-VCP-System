@@ -2435,6 +2435,44 @@ impl AppState {
         Ok(count)
     }
 
+    /// Soft-delete nodes that have been in the `offline` state for longer
+    /// than `NODE_REMOVAL_TIMEOUT_MINUTES` (default: 5 minutes) without
+    /// reconnecting.
+    ///
+    /// A soft-deleted node (`deleted_at IS NOT NULL`) disappears from the
+    /// node list and from cluster statistics, so the dashboard totals drop to
+    /// zero once all nodes have been purged.
+    ///
+    /// Returns the number of nodes removed.
+    pub async fn purge_stale_offline_nodes(&self) -> ApiResult<usize> {
+        let threshold_minutes: i64 = std::env::var("NODE_REMOVAL_TIMEOUT_MINUTES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|v: &i64| *v > 0)
+            .unwrap_or(5);
+
+        let purged: Vec<String> = sqlx::query_scalar(
+            r#"
+            WITH purged AS (
+                UPDATE nodes
+                SET deleted_at = NOW(), updated_at = NOW()
+                WHERE status = 'offline'
+                  AND deleted_at IS NULL
+                  AND updated_at < NOW() - (interval '1 minute' * $1)
+                RETURNING node_id
+            )
+            SELECT node_id FROM purged
+            "#,
+        )
+        .bind(threshold_minutes)
+        .fetch_all(&self.db)
+        .await?;
+
+        let count = purged.len();
+        tracing::info!(purged = count, "Stale offline node purge completed");
+        Ok(count)
+    }
+
     /// Accept an execution result submitted by a node owner.
     ///
     /// Validates that:
