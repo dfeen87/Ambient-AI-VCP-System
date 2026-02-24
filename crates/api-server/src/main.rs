@@ -96,6 +96,28 @@ async fn main() -> Result<()> {
         "Node offline sweep task started"
     );
 
+    // Start node removal sweep — soft-deletes nodes that have been
+    // offline for longer than NODE_REMOVAL_TIMEOUT_MINUTES (default: 5).
+    // The removal interval reuses NODE_OFFLINE_SWEEP_INTERVAL_SECONDS so the
+    // two sweeps run on the same cadence.
+    let node_removal_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(node_sweep_interval_seconds));
+        loop {
+            ticker.tick().await;
+            match node_removal_state.purge_stale_offline_nodes().await {
+                Ok(purged) if purged > 0 => {
+                    info!(purged, "Node removal sweep purged stale offline nodes");
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    tracing::error!("Node removal sweep failed: {err}");
+                }
+            }
+        }
+    });
+    info!("Node removal sweep task started");
+
     // Create router
     let app = create_router(state);
 
