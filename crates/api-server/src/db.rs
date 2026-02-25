@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 /// This module provides a connection pool and database operations
 /// for the Ambient AI VCP system. It uses sqlx for async database access.
 use sqlx::{postgres::PgPoolOptions, Executor, PgPool};
+use std::str::FromStr;
 use std::time::Duration;
 
 /// Database configuration
@@ -22,7 +23,9 @@ pub struct DatabaseConfig {
 impl DatabaseConfig {
     /// Create a new database configuration from environment variables
     pub fn from_env() -> Result<Self> {
-        let url = std::env::var("DATABASE_URL").context("DATABASE_URL must be set")?;
+        let url = resolve_database_url().context(
+            "No valid database connection URL found. Set DATABASE_URL or a Render-compatible fallback (DATABASE_INTERNAL_URL / POSTGRES_INTERNAL_URL / POSTGRES_URL)",
+        )?;
 
         let max_connections = std::env::var("DB_MAX_CONNECTIONS")
             .ok()
@@ -46,6 +49,50 @@ impl DatabaseConfig {
             connection_timeout,
         })
     }
+}
+
+fn resolve_database_url() -> Option<String> {
+    const CANDIDATE_KEYS: &[&str] = &[
+        "DATABASE_URL",
+        "DATABASE_INTERNAL_URL",
+        "POSTGRES_INTERNAL_URL",
+        "POSTGRES_URL",
+    ];
+
+    for key in CANDIDATE_KEYS {
+        let raw = match std::env::var(key) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+
+        let candidate = raw.trim().trim_matches('"').trim_matches('\'').to_string();
+        if candidate.is_empty() {
+            continue;
+        }
+
+        let Ok(connect_options) = sqlx::postgres::PgConnectOptions::from_str(&candidate) else {
+            tracing::warn!(
+                env_key = %key,
+                "Ignoring configured database URL because it is not a valid PostgreSQL connection string"
+            );
+            continue;
+        };
+
+        let host = connect_options.get_host();
+        if host.contains('$') || host.contains('{') || host.contains('}') {
+            tracing::warn!(
+                env_key = %key,
+                host = %host,
+                "Ignoring configured database URL because hostname appears to contain an unresolved template placeholder"
+            );
+            continue;
+        }
+
+        tracing::info!(env_key = %key, host = %host, "Using database connection URL");
+        return Some(candidate);
+    }
+
+    None
 }
 
 /// Create a PostgreSQL connection pool
