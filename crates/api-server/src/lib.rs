@@ -777,6 +777,10 @@ async fn register_user(
     State(state): State<Arc<AppState>>,
     Json(request): Json<auth::RegisterRequest>,
 ) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = &state.db else {
+        return Err(ApiError::service_unavailable("Database not configured"));
+    };
+
     request.validate()?;
 
     info!("Registering user: {}", request.username);
@@ -796,7 +800,7 @@ async fn register_user(
     .bind(&password_hash)
     .bind("user")
     .bind(request.email.as_deref())
-    .fetch_one(&state.db)
+    .fetch_one(db)
     .await
     .map_err(|e| {
         if let sqlx::Error::Database(ref db_err) = e {
@@ -818,7 +822,7 @@ async fn register_user(
     .bind(api_key.chars().take(8).collect::<String>())
     .bind("default")
     .bind(vec!["tasks:read".to_string(), "tasks:write".to_string()])
-    .execute(&state.db)
+    .execute(db)
     .await?;
 
     info!(
@@ -852,6 +856,10 @@ async fn login(
     State(state): State<Arc<AppState>>,
     Json(request): Json<auth::LoginRequest>,
 ) -> ApiResult<Json<auth::LoginResponse>> {
+    let Some(db) = &state.db else {
+        return Err(ApiError::service_unavailable("Database not configured"));
+    };
+
     // Validate login request
     request.validate()?;
 
@@ -865,7 +873,7 @@ async fn login(
         "#,
     )
     .bind(&request.username)
-    .fetch_optional(&state.db)
+    .fetch_optional(db)
     .await?
     .ok_or_else(|| ApiError::unauthorized("Invalid username or password"))?;
 
@@ -882,7 +890,7 @@ async fn login(
 
     sqlx::query("UPDATE users SET last_login = NOW() WHERE user_id = $1")
         .bind(user_id)
-        .execute(&state.db)
+        .execute(db)
         .await?;
 
     let auth_config = state.auth_config()?;
@@ -903,7 +911,7 @@ async fn login(
     .bind(user_id)
     .bind(&refresh_token_hash)
     .bind(expires_at)
-    .execute(&state.db)
+    .execute(db)
     .await?;
 
     info!("Login successful for user: {}", username);
@@ -930,6 +938,10 @@ async fn refresh_token(
     State(state): State<Arc<AppState>>,
     Json(request): Json<auth::RefreshTokenRequest>,
 ) -> ApiResult<Json<auth::RefreshTokenResponse>> {
+    let Some(db) = &state.db else {
+        return Err(ApiError::service_unavailable("Database not configured"));
+    };
+
     let token_hash = auth::hash_refresh_token(&request.refresh_token);
 
     // Fetch refresh token from database
@@ -942,7 +954,7 @@ async fn refresh_token(
         "#,
     )
     .bind(&token_hash)
-    .fetch_optional(&state.db)
+    .fetch_optional(db)
     .await?
     .ok_or_else(|| ApiError::unauthorized("Invalid refresh token"))?;
 
@@ -971,7 +983,7 @@ async fn refresh_token(
         "#,
     )
     .bind(&token_hash)
-    .execute(&state.db)
+    .execute(db)
     .await?;
 
     // Generate new JWT access token
@@ -993,7 +1005,7 @@ async fn refresh_token(
     .bind(user_id)
     .bind(&new_token_hash)
     .bind(new_expires_at)
-    .execute(&state.db)
+    .execute(db)
     .await?;
 
     info!("Token refreshed successfully for user_id: {}", user_id);

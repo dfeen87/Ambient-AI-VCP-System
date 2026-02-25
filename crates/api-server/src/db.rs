@@ -22,10 +22,10 @@ pub struct DatabaseConfig {
 
 impl DatabaseConfig {
     /// Create a new database configuration from environment variables
-    pub fn from_env() -> Result<Self> {
-        let url = resolve_database_url().context(
-            "No valid database connection URL found. Set DATABASE_URL or a Render-compatible fallback (DATABASE_INTERNAL_URL / POSTGRES_INTERNAL_URL / POSTGRES_URL)",
-        )?;
+    pub fn from_env() -> Result<Option<Self>> {
+        let Some(url) = resolve_database_url() else {
+            return Ok(None);
+        };
 
         let max_connections = std::env::var("DB_MAX_CONNECTIONS")
             .ok()
@@ -42,12 +42,12 @@ impl DatabaseConfig {
             .and_then(|v| v.parse().ok())
             .unwrap_or(30);
 
-        Ok(Self {
+        Ok(Some(Self {
             url,
             max_connections,
             min_connections,
             connection_timeout,
-        })
+        }))
     }
 }
 

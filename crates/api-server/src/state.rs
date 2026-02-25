@@ -31,16 +31,23 @@ pub struct NodeHeartbeatResult {
 /// Application state with database connection pool
 pub struct AppState {
     /// PostgreSQL connection pool
-    pub db: PgPool,
+    pub db: Option<PgPool>,
     /// Cached authentication configuration (set once at startup)
     auth_config: Option<crate::auth::AuthConfig>,
 }
 
 impl AppState {
+    fn require_db(&self) -> ApiResult<&PgPool> {
+        self.db
+            .as_ref()
+            .ok_or_else(|| ApiError::service_unavailable("Database not configured"))
+    }
+
     async fn select_active_connect_node_for_task(
         &self,
         task_id: Uuid,
     ) -> ApiResult<Option<String>> {
+        let db = self.require_db()?;
         let node_id = sqlx::query_scalar::<_, String>(
             r#"
             SELECT ta.node_id
@@ -56,7 +63,7 @@ impl AppState {
             "#,
         )
         .bind(task_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         Ok(node_id)
@@ -94,7 +101,7 @@ impl AppState {
     }
 
     /// Create new application state with database pool
-    pub fn new(db: PgPool) -> Self {
+    pub fn new(db: Option<PgPool>) -> Self {
         Self {
             db,
             auth_config: None,
@@ -123,6 +130,7 @@ impl AppState {
         registration: NodeRegistration,
         owner_id: Uuid,
     ) -> ApiResult<NodeInfo> {
+        let db = self.require_db()?;
         let now = chrono::Utc::now();
 
         // Insert node into database with owner_id
@@ -150,7 +158,7 @@ impl AppState {
         .bind(owner_id)
         .bind(now)
         .bind(registration.observability_port.map(|p| p as i32))
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         // Attempt to attach the newly registered node to pending tasks that still
@@ -177,6 +185,10 @@ impl AppState {
 
     /// List all nodes from the database (excludes soft-deleted nodes)
     pub async fn list_nodes(&self) -> Vec<NodeInfo> {
+        let Some(db) = &self.db else {
+            return vec![];
+        };
+
         let result = sqlx::query(
             r#"
             SELECT 
@@ -189,7 +201,7 @@ impl AppState {
             ORDER BY registered_at DESC
             "#,
         )
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await;
 
         match result {
@@ -228,6 +240,10 @@ impl AppState {
 
     /// Get a specific node from the database (excludes soft-deleted nodes)
     pub async fn get_node(&self, node_id: &str) -> Option<NodeInfo> {
+        let Some(db) = &self.db else {
+            return None;
+        };
+
         let result = sqlx::query(
             r#"
             SELECT 
@@ -239,7 +255,7 @@ impl AppState {
             "#,
         )
         .bind(node_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await;
 
         match result {
@@ -276,6 +292,7 @@ impl AppState {
 
     /// Submit a task to the database
     pub async fn submit_task(&self, task: TaskSubmission, creator_id: Uuid) -> ApiResult<TaskInfo> {
+        let db = self.require_db()?;
         let task_id = Uuid::new_v4();
         let now = chrono::Utc::now();
         let task_type = task.task_type.clone();
@@ -303,7 +320,7 @@ impl AppState {
         .bind(task.requirements.require_gpu)
         .bind(task.requirements.require_proof)
         .bind(creator_id)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         self.assign_available_nodes_for_task(
@@ -345,6 +362,10 @@ impl AppState {
         task_type: String,
         task_inputs: serde_json::Value,
     ) -> ApiResult<()> {
+        let Ok(db) = self.require_db() else {
+            return Ok(());
+        };
+
         let task_status = match self.get_task_status(task_id).await? {
             Some(s) => s,
             None => return Ok(()),
@@ -356,7 +377,7 @@ impl AppState {
 
         let result = analyze_task_payload(&task_type, &task_inputs);
 
-        let mut tx = self.db.begin().await?;
+        let mut tx = db.begin().await?;
 
         let assigned_nodes_for_completed_task = sqlx::query_scalar::<_, String>(
             r#"
@@ -415,6 +436,7 @@ impl AppState {
     }
 
     async fn get_assigned_nodes(&self, task_id: Uuid) -> ApiResult<Vec<String>> {
+        let db = self.require_db()?;
         let assigned_nodes = sqlx::query_scalar::<_, String>(
             r#"
             SELECT node_id
@@ -425,13 +447,14 @@ impl AppState {
             "#,
         )
         .bind(task_id)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         Ok(assigned_nodes)
     }
 
     async fn get_task_status(&self, task_id: Uuid) -> ApiResult<Option<String>> {
+        let db = self.require_db()?;
         let status = sqlx::query_scalar::<_, String>(
             r#"
             SELECT status
@@ -440,7 +463,7 @@ impl AppState {
             "#,
         )
         .bind(task_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         Ok(status)
@@ -474,6 +497,7 @@ impl AppState {
         min_nodes: u32,
         require_gpu: bool,
     ) -> ApiResult<()> {
+        let db = self.require_db()?;
         let max_attachments = Self::max_active_task_attachments_per_node();
         let assigned_nodes: i64 = sqlx::query_scalar(
             r#"
@@ -484,7 +508,7 @@ impl AppState {
             "#,
         )
         .bind(task_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await?;
 
         if assigned_nodes >= min_nodes as i64 {
@@ -544,7 +568,7 @@ impl AppState {
         .bind(max_attachments)
         .bind(additional_nodes_needed)
         .bind(forbid_active_connect_session)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         for node_id in node_ids {
@@ -562,7 +586,7 @@ impl AppState {
             )
             .bind(task_id)
             .bind(node_id)
-            .execute(&self.db)
+            .execute(db)
             .await?;
         }
 
@@ -571,6 +595,7 @@ impl AppState {
     }
 
     async fn active_attachment_count_for_node(&self, node_id: &str) -> ApiResult<i64> {
+        let db = self.require_db()?;
         let count = sqlx::query_scalar::<_, i64>(
             r#"
             SELECT COUNT(*)
@@ -580,13 +605,17 @@ impl AppState {
             "#,
         )
         .bind(node_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await?;
 
         Ok(count)
     }
 
     async fn assign_pending_tasks_for_node(&self, node_id: &str) -> ApiResult<()> {
+        let Ok(db) = self.require_db() else {
+            return Ok(());
+        };
+
         let max_attachments = Self::max_active_task_attachments_per_node();
         let mut current_attachments = self.active_attachment_count_for_node(node_id).await?;
 
@@ -615,7 +644,7 @@ impl AppState {
             ORDER BY t.created_at ASC
             "#,
         )
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         for task in pending_tasks {
@@ -672,7 +701,7 @@ impl AppState {
             .bind(task_registry_entry.minimum_capabilities.bandwidth_mbps)
             .bind(require_gpu || task_registry_entry.minimum_capabilities.gpu_available)
             .bind(forbid_active_connect_session)
-            .fetch_one(&self.db)
+            .fetch_one(db)
             .await?;
 
             if !node_is_eligible {
@@ -693,7 +722,7 @@ impl AppState {
             )
             .bind(task_id)
             .bind(node_id)
-            .execute(&self.db)
+            .execute(db)
             .await?;
 
             if rows.rows_affected() > 0 {
@@ -712,6 +741,7 @@ impl AppState {
         task_id: Uuid,
         min_nodes: u32,
     ) -> ApiResult<()> {
+        let db = self.require_db()?;
         let assigned_nodes: i64 = sqlx::query_scalar(
             r#"
             SELECT COUNT(*)
@@ -721,7 +751,7 @@ impl AppState {
             "#,
         )
         .bind(task_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await?;
 
         let next_status = if assigned_nodes >= min_nodes as i64 {
@@ -740,7 +770,7 @@ impl AppState {
         )
         .bind(next_status)
         .bind(task_id)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         Ok(())
@@ -751,6 +781,7 @@ impl AppState {
         request: ConnectSessionStartRequest,
         requester_id: Uuid,
     ) -> ApiResult<ConnectSessionStartResponse> {
+        let db = self.require_db()?;
         let task_uuid = Uuid::parse_str(&request.task_id)
             .map_err(|_| ApiError::bad_request("task_id must be a valid UUID"))?;
 
@@ -765,7 +796,7 @@ impl AppState {
         )
         .bind(task_uuid)
         .bind(requester_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         let Some(task_row) = task_row else {
@@ -870,7 +901,7 @@ impl AppState {
         .bind(now)
         .bind(expires_at)
         .bind(&session_token) // $12 — cleartext token for gateway node use
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         let session = ConnectSessionInfo {
@@ -920,6 +951,10 @@ impl AppState {
         task_type: &str,
         recorded_at: chrono::DateTime<chrono::Utc>,
     ) {
+        let Ok(db) = self.require_db() else {
+            return;
+        };
+
         let node_row = sqlx::query(
             r#"
             SELECT health_score
@@ -928,7 +963,7 @@ impl AppState {
             "#,
         )
         .bind(node_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await;
 
         let health_score = match node_row {
@@ -953,7 +988,7 @@ impl AppState {
             "#,
         )
         .bind(node_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await
         {
             Ok(count) => count,
@@ -987,7 +1022,7 @@ impl AppState {
         .bind(active_tasks.min(i32::MAX as i64) as i32)
         .bind(&metadata)
         .bind(recorded_at)
-        .execute(&self.db)
+        .execute(db)
         .await
         {
             tracing::warn!(
@@ -1004,6 +1039,10 @@ impl AppState {
         session_id: &str,
         requester_id: Uuid,
     ) -> ApiResult<Option<ConnectSessionInfo>> {
+        let Some(db) = &self.db else {
+            return Ok(None);
+        };
+
         let row = sqlx::query(
             r#"
             SELECT session_id, task_id, requester_id, node_id, tunnel_protocol,
@@ -1016,7 +1055,7 @@ impl AppState {
         )
         .bind(session_id)
         .bind(requester_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         Ok(row.map(map_connect_session_row))
@@ -1027,6 +1066,7 @@ impl AppState {
         session_id: &str,
         requester_id: Uuid,
     ) -> ApiResult<Option<ConnectSessionInfo>> {
+        let db = self.require_db()?;
         let row = sqlx::query(
             r#"
             UPDATE connect_sessions
@@ -1042,7 +1082,7 @@ impl AppState {
         )
         .bind(session_id)
         .bind(requester_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         let Some(session_row) = row else {
@@ -1066,7 +1106,7 @@ impl AppState {
             "#,
         )
         .bind(&session.node_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await?;
 
         if node_ready {
@@ -1096,7 +1136,7 @@ impl AppState {
                 .bind(&replacement_node_id)
                 .bind(session_id)
                 .bind(requester_id)
-                .fetch_optional(&self.db)
+                .fetch_optional(db)
                 .await?;
 
                 return Ok(replacement_row.map(map_connect_session_row));
@@ -1116,7 +1156,7 @@ impl AppState {
         )
         .bind(session_id)
         .bind(requester_id)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         sqlx::query(
@@ -1130,7 +1170,7 @@ impl AppState {
         )
         .bind(task_uuid)
         .bind(&session.node_id)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         let task_meta = sqlx::query(
@@ -1142,7 +1182,7 @@ impl AppState {
             "#,
         )
         .bind(task_uuid)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         if let Some(task_meta) = task_meta {
@@ -1170,6 +1210,7 @@ impl AppState {
         session_id: &str,
         requester_id: Uuid,
     ) -> ApiResult<Option<ConnectSessionInfo>> {
+        let db = self.require_db()?;
         let row = sqlx::query(
             r#"
             UPDATE connect_sessions
@@ -1184,7 +1225,7 @@ impl AppState {
         )
         .bind(session_id)
         .bind(requester_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         // When a session is explicitly stopped, complete its connect_only task so the
@@ -1203,6 +1244,7 @@ impl AppState {
     /// or via `sweep_connect_sessions`).  Safe to call after the session's
     /// node assignment has already been disconnected — all updates are idempotent.
     async fn complete_connect_only_task(&self, task_id: Uuid) -> ApiResult<()> {
+        let db = self.require_db()?;
         // Build a result summary from the most recent session for this task.
         let session_row = sqlx::query(
             r#"
@@ -1214,7 +1256,7 @@ impl AppState {
             "#,
         )
         .bind(task_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         let result = match session_row {
@@ -1228,7 +1270,7 @@ impl AppState {
             None => serde_json::json!({"task_type": "connect_only", "status": "session_ended"}),
         };
 
-        let mut tx = self.db.begin().await?;
+        let mut tx = db.begin().await?;
 
         // Only update if still running — idempotent against concurrent calls.
         sqlx::query(
@@ -1268,6 +1310,10 @@ impl AppState {
 
     /// Sweep active connect sessions and terminate sessions bound to expired/deleted nodes.
     pub async fn sweep_connect_sessions(&self) -> ApiResult<usize> {
+        let Ok(db) = self.require_db() else {
+            return Ok(0);
+        };
+
         let affected_task_ids = sqlx::query_scalar::<_, Uuid>(
             r#"
             WITH stale_sessions AS (
@@ -1314,7 +1360,7 @@ impl AppState {
             FROM disconnected_assignments
             "#,
         )
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         for task_id in &affected_task_ids {
@@ -1327,7 +1373,7 @@ impl AppState {
                 "#,
             )
             .bind(task_id)
-            .fetch_optional(&self.db)
+            .fetch_optional(db)
             .await?;
 
             if let Some(task_meta) = task_meta {
@@ -1353,6 +1399,7 @@ impl AppState {
 
     /// Delete a task created by the requesting user
     pub async fn delete_task(&self, task_id: &str, requester_id: Uuid) -> ApiResult<bool> {
+        let db = self.require_db()?;
         let task_uuid = match Uuid::parse_str(task_id) {
             Ok(id) => id,
             Err(_) => return Ok(false),
@@ -1372,7 +1419,7 @@ impl AppState {
         )
         .bind(task_uuid)
         .bind(requester_id)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         let task_type: Option<String> = pre_delete_rows
@@ -1392,7 +1439,7 @@ impl AppState {
         )
         .bind(task_uuid)
         .bind(requester_id)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         if result.rows_affected() > 0 {
@@ -1415,7 +1462,7 @@ impl AppState {
                     )
                     .bind(node_id)
                     .bind(&metadata)
-                    .execute(&self.db)
+                    .execute(db)
                     .await
                     {
                         tracing::warn!(
@@ -1442,13 +1489,17 @@ impl AppState {
         node_id: &str,
         owner_id: Uuid,
     ) -> ApiResult<Vec<serde_json::Value>> {
+        let Some(db) = &self.db else {
+            return Ok(vec![]);
+        };
+
         // Verify node ownership
         let exists: bool = sqlx::query_scalar(
             r#"SELECT EXISTS(SELECT 1 FROM nodes WHERE node_id = $1 AND owner_id = $2 AND deleted_at IS NULL)"#,
         )
         .bind(node_id)
         .bind(owner_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await?;
 
         if !exists {
@@ -1469,7 +1520,7 @@ impl AppState {
             "#,
         )
         .bind(node_id)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         let events: Vec<serde_json::Value> = rows
@@ -1489,6 +1540,10 @@ impl AppState {
 
     /// Get a specific task from the database
     pub async fn get_task(&self, task_id: &str, requester_id: Uuid) -> Option<TaskInfo> {
+        let Some(db) = &self.db else {
+            return None;
+        };
+
         let task_uuid = match Uuid::parse_str(task_id) {
             Ok(uuid) => uuid,
             Err(_) => return None,
@@ -1524,7 +1579,7 @@ impl AppState {
         )
         .bind(task_uuid)
         .bind(requester_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await;
 
         match result {
@@ -1564,6 +1619,10 @@ impl AppState {
 
     /// List all tasks from the database
     pub async fn list_tasks(&self, requester_id: Uuid) -> Vec<TaskInfo> {
+        let Some(db) = &self.db else {
+            return vec![];
+        };
+
         let result = sqlx::query(
             r#"
             SELECT 
@@ -1593,7 +1652,7 @@ impl AppState {
             "#,
         )
         .bind(requester_id)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await;
 
         let tasks: Vec<TaskInfo> = match result {
@@ -1635,6 +1694,10 @@ impl AppState {
     }
 
     async fn notify_if_task_completed(&self, task_id: Uuid, status: &str) -> ApiResult<()> {
+        let Ok(db) = self.require_db() else {
+            return Ok(());
+        };
+
         if status != "completed" {
             return Ok(());
         }
@@ -1650,7 +1713,7 @@ impl AppState {
             "#,
         )
         .bind(task_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         let Some(row) = row else {
@@ -1679,7 +1742,7 @@ impl AppState {
             "#,
         )
         .bind(task_id)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         Ok(())
@@ -1824,6 +1887,18 @@ impl AppState {
 
     /// Get cluster statistics from the database
     pub async fn get_cluster_stats(&self) -> ClusterStats {
+        let Some(db) = &self.db else {
+            return ClusterStats {
+                total_nodes: 0,
+                healthy_nodes: 0,
+                total_tasks: 0,
+                completed_tasks: 0,
+                failed_tasks: 0,
+                avg_health_score: 0.0,
+                total_compute_capacity: 0.0,
+            };
+        };
+
         // Get node statistics
         let node_stats = sqlx::query(
             r#"
@@ -1836,7 +1911,7 @@ impl AppState {
             WHERE deleted_at IS NULL
             "#,
         )
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await;
 
         // Get task statistics
@@ -1849,7 +1924,7 @@ impl AppState {
             FROM tasks
             "#,
         )
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await;
 
         match (node_stats, task_stats) {
@@ -1879,6 +1954,7 @@ impl AppState {
 
     /// Check if a user owns a specific node
     pub async fn check_node_ownership(&self, node_id: &str, user_id: Uuid) -> ApiResult<bool> {
+        let db = self.require_db()?;
         let result = sqlx::query_scalar::<_, i64>(
             r#"
             SELECT COUNT(*)
@@ -1888,7 +1964,7 @@ impl AppState {
         )
         .bind(node_id)
         .bind(user_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await?;
 
         Ok(result > 0)
@@ -1896,6 +1972,7 @@ impl AppState {
 
     /// Soft delete a node (sets deleted_at timestamp)
     pub async fn delete_node(&self, node_id: &str, owner_id: Uuid) -> ApiResult<bool> {
+        let db = self.require_db()?;
         // Verify ownership
         if !self.check_node_ownership(node_id, owner_id).await? {
             return Ok(false);
@@ -1904,7 +1981,7 @@ impl AppState {
         let now = chrono::Utc::now();
 
         // Start a transaction to ensure atomicity
-        let mut tx = self.db.begin().await?;
+        let mut tx = db.begin().await?;
 
         // Mark the node as deleted
         let result = sqlx::query(
@@ -1981,7 +2058,7 @@ impl AppState {
                         "#,
                     )
                     .bind(task_id)
-                    .fetch_optional(&self.db)
+                    .fetch_optional(db)
                     .await?;
 
                     if let Some(task_row) = task_details {
@@ -2030,6 +2107,7 @@ impl AppState {
         node_id: &str,
         owner_id: Uuid,
     ) -> ApiResult<Option<NodeHeartbeatResult>> {
+        let db = self.require_db()?;
         // Fetch current node state (also verifies ownership and existence)
         let node_row = sqlx::query(
             r#"
@@ -2040,7 +2118,7 @@ impl AppState {
         )
         .bind(node_id)
         .bind(owner_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         let Some(node_row) = node_row else {
@@ -2061,7 +2139,7 @@ impl AppState {
         .bind(now)
         .bind(node_id)
         .bind(owner_id)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -2078,7 +2156,7 @@ impl AppState {
             "#,
         )
         .bind(node_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await?;
 
         // Record heartbeat activity in history table
@@ -2094,7 +2172,7 @@ impl AppState {
         .bind(active_tasks_before as i32)
         .bind(&status)
         .bind(now)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         // Activity registration: advance execution_status from 'assigned' to
@@ -2112,7 +2190,7 @@ impl AppState {
         )
         .bind(now)
         .bind(node_id)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         // Sync any pending tasks that this node is eligible for.
@@ -2132,7 +2210,7 @@ impl AppState {
             "#,
         )
         .bind(node_id)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         let assigned_tasks: Vec<serde_json::Value> = assigned_task_rows
@@ -2162,6 +2240,7 @@ impl AppState {
 
     /// Reject a node owned by the requesting user
     pub async fn reject_node(&self, node_id: &str, owner_id: Uuid) -> ApiResult<bool> {
+        let db = self.require_db()?;
         // Verify ownership
         if !self.check_node_ownership(node_id, owner_id).await? {
             return Ok(false);
@@ -2178,7 +2257,7 @@ impl AppState {
         .bind(now)
         .bind(node_id)
         .bind(owner_id)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -2197,7 +2276,7 @@ impl AppState {
             "#,
         )
         .bind(node_id)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         // Disconnect all active task assignments for this rejected node,
@@ -2216,7 +2295,7 @@ impl AppState {
         )
         .bind(now)
         .bind(node_id)
-        .execute(&self.db)
+        .execute(db)
         .await?;
 
         // For each previously-assigned task, fix its status and try to find
@@ -2239,7 +2318,7 @@ impl AppState {
                             "#,
                         )
                         .bind(task_id)
-                        .fetch_optional(&self.db)
+                        .fetch_optional(db)
                         .await?;
 
                         if let Some(task_row) = task_details {
@@ -2282,6 +2361,10 @@ impl AppState {
 
     /// List nodes owned by a specific user
     pub async fn list_user_nodes(&self, owner_id: Uuid) -> Vec<NodeInfo> {
+        let Some(db) = &self.db else {
+            return vec![];
+        };
+
         let result = sqlx::query(
             r#"
             SELECT 
@@ -2295,7 +2378,7 @@ impl AppState {
             "#,
         )
         .bind(owner_id)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await;
 
         match result {
@@ -2341,6 +2424,10 @@ impl AppState {
     ///
     /// Returns the number of nodes swept offline.
     pub async fn sweep_offline_nodes(&self) -> ApiResult<usize> {
+        let Ok(db) = self.require_db() else {
+            return Ok(0);
+        };
+
         let threshold_minutes: i64 = std::env::var("NODE_HEARTBEAT_TIMEOUT_MINUTES")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -2362,7 +2449,7 @@ impl AppState {
             "#,
         )
         .bind(threshold_minutes)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         if stale_node_ids.is_empty() {
@@ -2383,7 +2470,7 @@ impl AppState {
                 "#,
             )
             .bind(node_id)
-            .fetch_all(&self.db)
+            .fetch_all(db)
             .await?;
 
             // Disconnect all active assignments for this node.
@@ -2399,7 +2486,7 @@ impl AppState {
                 "#,
             )
             .bind(node_id)
-            .execute(&self.db)
+            .execute(db)
             .await?;
 
             // For each affected task update its status and attempt reassignment.
@@ -2445,6 +2532,10 @@ impl AppState {
     ///
     /// Returns the number of nodes removed.
     pub async fn purge_stale_offline_nodes(&self) -> ApiResult<usize> {
+        let Ok(db) = self.require_db() else {
+            return Ok(0);
+        };
+
         let threshold_minutes: i64 = std::env::var("NODE_REMOVAL_TIMEOUT_MINUTES")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -2465,7 +2556,7 @@ impl AppState {
             "#,
         )
         .bind(threshold_minutes)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         let count = purged.len();
@@ -2491,6 +2582,7 @@ impl AppState {
         submission: NodeTaskResult,
         owner_id: Uuid,
     ) -> ApiResult<serde_json::Value> {
+        let db = self.require_db()?;
         // Verify the reporting node belongs to the authenticated user.
         let node_exists: bool = sqlx::query_scalar(
             r#"
@@ -2502,7 +2594,7 @@ impl AppState {
         )
         .bind(&submission.node_id)
         .bind(owner_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await?;
 
         if !node_exists {
@@ -2520,7 +2612,7 @@ impl AppState {
             "#,
         )
         .bind(task_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(db)
         .await?;
 
         let Some(task_row) = task_row else {
@@ -2556,7 +2648,7 @@ impl AppState {
         )
         .bind(task_id)
         .bind(&submission.node_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await?;
 
         if !is_assigned {
@@ -2613,7 +2705,7 @@ impl AppState {
         };
 
         let now = chrono::Utc::now();
-        let mut tx = self.db.begin().await?;
+        let mut tx = db.begin().await?;
 
         // Persist result and mark task completed.
         sqlx::query(
@@ -2663,7 +2755,7 @@ impl AppState {
         let freed_nodes: Vec<String> =
             sqlx::query_scalar(r#"SELECT node_id FROM task_assignments WHERE task_id = $1"#)
                 .bind(task_id)
-                .fetch_all(&self.db)
+                .fetch_all(db)
                 .await
                 .unwrap_or_default();
 
@@ -2696,6 +2788,10 @@ impl AppState {
         node_id: &str,
         owner_id: Uuid,
     ) -> ApiResult<Vec<ambient_node::GatewaySession>> {
+        let Some(db) = &self.db else {
+            return Ok(vec![]);
+        };
+
         // Verify ownership before exposing session tokens.
         let owns_node: bool = sqlx::query_scalar(
             r#"
@@ -2707,7 +2803,7 @@ impl AppState {
         )
         .bind(node_id)
         .bind(owner_id)
-        .fetch_one(&self.db)
+        .fetch_one(db)
         .await?;
 
         if !owns_node {
@@ -2732,7 +2828,7 @@ impl AppState {
             "#,
         )
         .bind(node_id)
-        .fetch_all(&self.db)
+        .fetch_all(db)
         .await?;
 
         let sessions = rows

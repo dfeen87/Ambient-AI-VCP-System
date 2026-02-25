@@ -386,7 +386,7 @@ async fn test_pending_task_captures_newly_registered_node() {
         .await
         .expect("cleanup tables before integration test");
 
-    let state = AppState::new(pool.clone());
+    let state = AppState::new(Some(pool.clone()));
     let task = TaskSubmission {
         task_type: "computation".to_string(),
         wasm_module: None,
@@ -464,7 +464,7 @@ async fn test_completed_task_marks_assignments_disconnected() {
         .await
         .expect("cleanup tables before integration test");
 
-    let state = AppState::new(pool.clone());
+    let state = AppState::new(Some(pool.clone()));
     let node_id = format!("complete-disconnect-node-{}", Uuid::new_v4());
 
     state
@@ -554,7 +554,7 @@ async fn test_task_assignment_uses_universal_node_type_any() {
         .await
         .expect("cleanup tables before integration test");
 
-    let state = AppState::new(pool.clone());
+    let state = AppState::new(Some(pool.clone()));
     let universal_node_id = format!("universal-any-node-{}", Uuid::new_v4());
 
     state
@@ -633,7 +633,7 @@ async fn test_task_assignment_excludes_non_matching_node_types() {
         .await
         .expect("cleanup tables before integration test");
 
-    let state = AppState::new(pool.clone());
+    let state = AppState::new(Some(pool.clone()));
     let gateway_node_id = format!("gateway-node-{}", Uuid::new_v4());
 
     state
@@ -750,7 +750,7 @@ async fn test_node_deletion_disconnects_tasks_and_reassigns() {
         .await
         .expect("cleanup tables before integration test");
 
-    let state = AppState::new(pool.clone());
+    let state = AppState::new(Some(pool.clone()));
 
     // Create owner for nodes
     let owner_id = Uuid::new_v4();
@@ -901,7 +901,7 @@ async fn test_node_deletion_reverts_task_to_pending_without_fallback() {
         .await
         .expect("cleanup tables before integration test");
 
-    let state = AppState::new(pool.clone());
+    let state = AppState::new(Some(pool.clone()));
 
     // Create owner for node
     let owner_id = Uuid::new_v4();
@@ -1004,7 +1004,7 @@ async fn test_node_rejection_disconnects_task_assignments() {
         .await
         .expect("cleanup tables before integration test");
 
-    let state = AppState::new(pool.clone());
+    let state = AppState::new(Some(pool.clone()));
     let owner_id = Uuid::new_v4();
 
     let node_id = format!("node-reject-only-{}", Uuid::new_v4());
@@ -1133,7 +1133,7 @@ async fn test_heartbeat_triggers_pending_task_assignment() {
         .await
         .expect("cleanup tables before integration test");
 
-    let state = AppState::new(pool.clone());
+    let state = AppState::new(Some(pool.clone()));
     let owner_id = Uuid::new_v4();
     let creator_id = Uuid::new_v4();
 

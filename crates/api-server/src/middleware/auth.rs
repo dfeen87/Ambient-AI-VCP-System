@@ -50,6 +50,10 @@ pub async fn api_key_auth_middleware(
     mut request: Request<Body>,
     next: Next,
 ) -> Result<Response, ApiError> {
+    let Some(db) = &state.db else {
+        return Err(ApiError::service_unavailable("Database not configured"));
+    };
+
     let key = request
         .headers()
         .get("x-api-key")
@@ -67,7 +71,7 @@ pub async fn api_key_auth_middleware(
         "#,
     )
     .bind(key_hash)
-    .fetch_optional(&state.db)
+    .fetch_optional(db)
     .await?
     .ok_or_else(|| ApiError::unauthorized("Invalid API key"))?;
 

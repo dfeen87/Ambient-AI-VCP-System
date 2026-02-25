@@ -20,15 +20,20 @@ async fn main() -> Result<()> {
     api_server::auth::validate_hash_pepper_configuration()?;
 
     // Initialize database connection
-    let db_config = db::DatabaseConfig::from_env()?;
-    let pool = db::create_pool(&db_config).await?;
+    let pool = if let Some(db_config) = db::DatabaseConfig::from_env()? {
+        let pool = db::create_pool(&db_config).await?;
 
-    // Run database migrations
-    db::run_migrations(&pool).await?;
+        // Run database migrations
+        db::run_migrations(&pool).await?;
 
-    // Verify database connection
-    db::health_check(&pool).await?;
-    info!("Database connection established and verified");
+        // Verify database connection
+        db::health_check(&pool).await?;
+        info!("Database connection established and verified");
+        Some(pool)
+    } else {
+        tracing::warn!("Starting in stateless mode (no database configured)");
+        None
+    };
 
     // Start rate limiter cleanup task
     rate_limit::start_cleanup_task().await;
