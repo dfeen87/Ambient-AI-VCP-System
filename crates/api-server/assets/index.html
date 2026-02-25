@@ -1129,51 +1129,8 @@
         </div>
     </header>
 
-    <!-- Authentication Section -->
-    <div id="auth-section" style="display: none;">
-        <div class="section" style="max-width: 500px; margin: 40px auto;">
-            <div class="section-header">
-                <div class="section-title">🔐 Authentication Required</div>
-            </div>
-            <div class="auth-tabs">
-                <button class="auth-tab active" onclick="showAuthTab('login')">Login</button>
-                <button class="auth-tab" onclick="showAuthTab('register')">Register</button>
-            </div>
-            
-            <!-- Login Form -->
-            <form id="login-form" class="auth-form" style="display: block;" onsubmit="handleLogin(event)">
-                <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" id="login-username" placeholder="Enter your username" required>
-                </div>
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" id="login-password" placeholder="Enter your password" required>
-                </div>
-                <button type="submit" class="btn">Login</button>
-            </form>
-
-            <!-- Register Form -->
-            <form id="register-form" class="auth-form" style="display: none;" onsubmit="handleRegister(event)">
-                <div class="form-group">
-                    <label>Username (3-32 characters)</label>
-                    <input type="text" id="reg-username" placeholder="Choose a username" required minlength="3" maxlength="32">
-                </div>
-                <div class="form-group">
-                    <label>Password (min 8 characters)</label>
-                    <input type="password" id="reg-password" placeholder="Choose a password" required minlength="8">
-                </div>
-                <button type="submit" class="btn">Register</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Main Content (requires authentication) -->
+    <!-- Main Content -->
     <div id="main-content">
-        <div style="text-align: right; padding: 0 20px; margin-bottom: 20px;">
-            <span id="user-info" style="color: var(--text-dim); margin-right: 15px;"></span>
-            <button onclick="logout()" class="btn btn-ghost" style="font-size: 13px; padding: 6px 14px;">Logout</button>
-        </div>
 
     <div class="error-banner" id="error-banner">⚠ Unable to reach API — check endpoint or network connection</div>
 
@@ -1658,21 +1615,9 @@
             .replace(/'/g, '&#39;');
     }
 
-    // Check if user is logged in on page load
+    // Show main content directly without authentication
     function checkAuth() {
-        const authSection = document.getElementById('auth-section');
-        const mainContent = document.getElementById('main-content');
-        const userInfo = document.getElementById('user-info');
-        
-        if (authToken && currentUser) {
-            authSection.style.display = 'none';
-            mainContent.style.display = 'block';
-            userInfo.textContent = `Logged in as: ${currentUser}`;
-            fetchData();
-        } else {
-            authSection.style.display = 'block';
-            mainContent.style.display = 'none';
-        }
+        fetchData();
     }
 
     function logout() {
@@ -2290,11 +2235,6 @@
             return;
         }
 
-        if (!authToken) {
-            showToast('Please login to eject nodes', true);
-            return;
-        }
-
         if (!confirm(`Eject node ${nodeId}?`)) {
             return;
         }
@@ -2326,11 +2266,6 @@
 
     async function handleHeartbeat(nodeId, buttonEl) {
         if (!requireApiConnection('send heartbeat')) {
-            return;
-        }
-
-        if (!authToken) {
-            showToast('Please login to send heartbeat', true);
             return;
         }
 
@@ -3201,11 +3136,6 @@
         const btn = document.getElementById('submit-task-btn');
 
         if (!requireApiConnection('submit tasks')) {
-            return;
-        }
-
-        if (!authToken) {
-            showToast('Please login before submitting a task', true);
             return;
         }
 
