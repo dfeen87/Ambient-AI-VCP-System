@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 /// This module provides a connection pool and database operations
 /// for the Ambient AI VCP system. It uses sqlx for async database access.
 use sqlx::{postgres::PgPoolOptions, Executor, PgPool};
+use std::str::FromStr;
 use std::time::Duration;
 
 /// Database configuration
@@ -22,7 +23,9 @@ pub struct DatabaseConfig {
 impl DatabaseConfig {
     /// Create a new database configuration from environment variables
     pub fn from_env() -> Result<Self> {
-        let url = std::env::var("DATABASE_URL").context("DATABASE_URL must be set")?;
+        let url = resolve_database_url().context(
+            "No valid database connection URL found. Set DATABASE_URL or a Render-compatible fallback (DATABASE_INTERNAL_URL / POSTGRES_INTERNAL_URL / POSTGRES_URL), or provide PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE",
+        )?;
 
         let max_connections = std::env::var("DB_MAX_CONNECTIONS")
             .ok()
@@ -46,6 +49,113 @@ impl DatabaseConfig {
             connection_timeout,
         })
     }
+}
+
+fn resolve_database_url() -> Option<String> {
+    const CANDIDATE_KEYS: &[&str] = &[
+        "DATABASE_URL",
+        "DATABASE_INTERNAL_URL",
+        "POSTGRES_INTERNAL_URL",
+        "POSTGRES_URL",
+    ];
+
+    for key in CANDIDATE_KEYS {
+        let raw = match std::env::var(key) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+
+        let candidate = raw.trim().trim_matches('"').trim_matches('\'').to_string();
+        if candidate.is_empty() {
+            continue;
+        }
+
+        if let Some(accepted) = validate_postgres_url(&candidate, key) {
+            return Some(accepted);
+        }
+    }
+
+    if let Some(from_pg_parts) = build_url_from_pg_parts() {
+        if let Some(accepted) = validate_postgres_url(&from_pg_parts, "PG*") {
+            return Some(accepted);
+        }
+    }
+
+    None
+}
+
+fn build_url_from_pg_parts() -> Option<String> {
+    let host = clean_env("PGHOST")?;
+    let user = clean_env("PGUSER")?;
+    let password = clean_env("PGPASSWORD")?;
+    let database = clean_env("PGDATABASE")?;
+    let port = clean_env("PGPORT").unwrap_or_else(|| "5432".to_string());
+
+    let parts = [
+        ("PGHOST", host.as_str()),
+        ("PGUSER", user.as_str()),
+        ("PGPASSWORD", password.as_str()),
+        ("PGDATABASE", database.as_str()),
+        ("PGPORT", port.as_str()),
+    ];
+
+    for (key, value) in parts {
+        if has_unresolved_template(value) {
+            tracing::warn!(
+                env_key = %key,
+                value = %value,
+                "Ignoring PG* database env because it appears to contain an unresolved template placeholder"
+            );
+            return None;
+        }
+    }
+
+    tracing::info!(
+        host = %host,
+        db = %database,
+        "Constructed database URL from PG* environment variables"
+    );
+    Some(format!(
+        "postgres://{}:{}@{}:{}/{}",
+        user, password, host, port, database
+    ))
+}
+
+fn clean_env(key: &str) -> Option<String> {
+    let raw = std::env::var(key).ok()?;
+    let cleaned = raw.trim().trim_matches('"').trim_matches('\'').to_string();
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn has_unresolved_template(value: &str) -> bool {
+    value.contains('$') || value.contains('{') || value.contains('}')
+}
+
+fn validate_postgres_url(candidate: &str, source: &str) -> Option<String> {
+    let Ok(connect_options) = sqlx::postgres::PgConnectOptions::from_str(candidate) else {
+        tracing::warn!(
+            env_key = %source,
+            "Ignoring configured database URL because it is not a valid PostgreSQL connection string"
+        );
+        return None;
+    };
+
+    let host = connect_options.get_host();
+    if has_unresolved_template(host) {
+        tracing::warn!(
+            env_key = %source,
+            host = %host,
+            "Ignoring configured database URL because hostname appears to contain an unresolved template placeholder"
+        );
+        return None;
+    }
+
+    tracing::info!(env_key = %source, host = %host, "Using database connection URL");
+    Some(candidate.to_string())
 }
 
 /// Create a PostgreSQL connection pool

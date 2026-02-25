@@ -124,7 +124,8 @@ For deployment on Render.com (https://ambient-ai-vcp-system.onrender.com):
    - Copy the Internal Database URL
 
 2. Add environment variables in Render:
-   - `DATABASE_URL` - from PostgreSQL instance
+   - `DATABASE_URL` - from PostgreSQL instance (preferred)
+   - `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` - from the same PostgreSQL instance (fallback if URL wiring is incorrect)
    - `JWT_SECRET` - generate using `openssl rand -base64 32`
    - Other optional variables as needed
 

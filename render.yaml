@@ -27,6 +27,26 @@ services:
         fromDatabase:
           name: ambient-ai-vcp-db
           property: connectionString
+      - key: PGHOST
+        fromDatabase:
+          name: ambient-ai-vcp-db
+          property: host
+      - key: PGPORT
+        fromDatabase:
+          name: ambient-ai-vcp-db
+          property: port
+      - key: PGUSER
+        fromDatabase:
+          name: ambient-ai-vcp-db
+          property: user
+      - key: PGPASSWORD
+        fromDatabase:
+          name: ambient-ai-vcp-db
+          property: password
+      - key: PGDATABASE
+        fromDatabase:
+          name: ambient-ai-vcp-db
+          property: database
       - key: DB_MAX_CONNECTIONS
         value: 10
       - key: DB_MIN_CONNECTIONS
