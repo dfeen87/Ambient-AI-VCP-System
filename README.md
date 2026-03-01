@@ -1099,8 +1099,9 @@ MIT License - see [LICENSE](LICENSE) file for details
 - **WasmEdge** for WASM runtime
 - **arkworks** for production ZK proof libraries (Groth16)
 - **Axum** for the web framework
-- **[FEEN](https://github.com/dfeen87/FEEN)** — wave-native Duffing resonator physics engine powering the `feen_resonator` node type and `feen_connectivity` task
 - The decentralized computing community for verifiable computation research
+
+This project was developed with a combination of original ideas, hands‑on coding, and support from advanced AI systems. I would like to acknowledge **Microsoft Copilot**, **Anthropic Claude**, **Google Jules**, and **OpenAI ChatGPT** for their meaningful assistance in refining concepts, improving clarity, and strengthening the overall quality of this work.
 
 ---
 
