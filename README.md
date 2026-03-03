@@ -1,6 +1,6 @@
 # Ambient AI + VCP System
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-274%20passing-success)]() [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Tests](https://img.shields.io/badge/tests-274%20passing-success)]()
  
 A **live online application** and implementation of a **Verifiable Computation Protocol (VCP)** for running and verifying distributed compute tasks across many machines.
 
@@ -1001,7 +1001,7 @@ ambient-vcp/
 ├── Cargo.lock                      # Dependency lock file
 ├── README.md                       # This file
 ├── CITATION.cff                    # Citation metadata for research
-├── LICENSE                         # MIT License
+├── LICENSE                         
 ├── Dockerfile                      # Docker container configuration
 ├── docker-compose.yml              # Multi-container orchestration
 ├── render.yaml                     # Render.com deployment config
@@ -1090,7 +1090,7 @@ Contributions are welcome! Please read our contributing guidelines before submit
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details
+This project is available for **non‑commercial use only** under the terms of the included LICENSE file. Commercial use requires a separate paid license.
 
 ---
 
@@ -1110,26 +1110,6 @@ This project was developed with a combination of original ideas, hands‑on codi
 - 📖 **Documentation**: See `/docs` directory
 - 🐛 **Issues**: [GitHub Issues](https://github.com/dfeen87/Ambient-AI-VCP-System/issues)
 - 💬 **Discussions**: [GitHub Discussions](https://github.com/dfeen87/Ambient-AI-VCP-System/discussions)
-
----
-
-## ⚡ Quick Links
-
-- [**What You Get By Cloning This Repo**](./docs/USER_BENEFITS.md) ⭐ **NEW**
-- [**Understanding Nodes & Tasks**](./docs/NODES_AND_TASKS_GUIDE.md) 📚 **NEW** - What are node types & tasks?
-- [**Node Security & Lifecycle Management**](./docs/NODE_SECURITY.md) 🔒 **NEW** - Ownership, authentication & offline handling
-- [**FEEN Physics Engine**](https://github.com/dfeen87/FEEN) ⚛️ **NEW** - Wave-native Duffing resonator engine powering `feen_resonator` nodes
-- [Getting Started Guide](./docs/GETTING_STARTED.md)
-- [API Documentation (Swagger)](http://localhost:3000/swagger-ui)
-- [Robustness Analysis](./docs/ROBUSTNESS_ANALYSIS.md)
-- [Clone Trait Benefits Analysis](./docs/CLONER_BENEFITS_ANALYSIS.md) (Rust technical deep-dive)
-- [Phase 2 Summary](./docs/PHASE2_SUMMARY.md)
-- [Implementation Summary](./docs/IMPLEMENTATION_SUMMARY.md)
-- [Testing Summary](./docs/TESTING_SUMMARY.md)
-- [Deployment Guide](./docs/GLOBAL_NODE_DEPLOYMENT.md)
-- [Language Decision](./docs/LANGUAGE_DECISION.md)
-- [Contributing Guidelines](./docs/CONTRIBUTING.md)
-- [Citation](./CITATION.cff)
 
 ---
 
