@@ -65,9 +65,9 @@ impl RateLimitTier {
         } else if path.contains("/tasks") {
             Self::TaskSubmission
         } else if path.ends_with("/nodes")
-            || path.contains("/nodes/")
+            || (path.contains("/nodes/")
                 && !path.contains("/heartbeat")
-                && !path.contains("/nodes/tasks")
+                && !path.contains("/nodes/tasks"))
         {
             Self::NodeRegistration
         } else {

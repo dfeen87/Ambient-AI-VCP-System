@@ -71,6 +71,11 @@ impl NodeId {
         })
     }
 
+    /// Generate a new `NodeId` with a random UUID as the identifier.
+    ///
+    /// UUIDs are always non-empty and well within the 256-character limit, so
+    /// this constructor bypasses the validation in `new()` and constructs the
+    /// value directly.
     pub fn generate(region: impl Into<String>, node_type: impl Into<String>) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
