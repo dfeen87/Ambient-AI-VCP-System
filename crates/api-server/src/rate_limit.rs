@@ -54,14 +54,22 @@ impl RateLimitTier {
     }
 
     pub fn from_path(path: &str) -> Self {
+        // Use starts_with or exact segment matching to avoid false positives from
+        // paths that merely contain a keyword (e.g. "/api/v1/some-nodes-report"
+        // containing "/nodes" but not being a node-registration endpoint).
+        let path = path.trim_end_matches('/');
         if path.contains("/auth/login") || path.contains("/auth/register") {
             Self::Auth
-        } else if path.contains("/nodes") && !path.contains("/heartbeat") {
-            Self::NodeRegistration
-        } else if path.contains("/tasks") {
-            Self::TaskSubmission
         } else if path.contains("/proofs/verify") {
             Self::ProofVerification
+        } else if path.contains("/tasks") {
+            Self::TaskSubmission
+        } else if path.ends_with("/nodes")
+            || (path.contains("/nodes/")
+                && !path.contains("/heartbeat")
+                && !path.contains("/nodes/tasks"))
+        {
+            Self::NodeRegistration
         } else {
             Self::General
         }

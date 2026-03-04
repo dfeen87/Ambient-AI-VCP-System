@@ -1,4 +1,5 @@
 use crate::{VerificationKey, ZKProof};
+use anyhow::Result;
 use ark_bn254::{Bn254, Fr};
 use ark_groth16::{Groth16, Proof, VerifyingKey as ArkVerifyingKey};
 use ark_serialize::CanonicalDeserialize;
@@ -11,12 +12,12 @@ pub struct ZKVerifier {
 }
 
 impl ZKVerifier {
-    pub fn new(verification_key: VerificationKey) -> Result<Self, String> {
+    pub fn new(verification_key: VerificationKey) -> Result<Self> {
         // Deserialize the verification key; surface an error instead of panicking
         // so callers can handle invalid or corrupted key material gracefully.
         let ark_vk =
             ArkVerifyingKey::<Bn254>::deserialize_compressed(&verification_key.key_data[..])
-                .map_err(|e| format!("Failed to deserialize verification key: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize verification key: {}", e))?;
 
         Ok(Self {
             verification_key: ark_vk,

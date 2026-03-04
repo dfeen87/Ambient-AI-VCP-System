@@ -9,8 +9,14 @@ pub struct PrivacyBudget {
 }
 
 impl PrivacyBudget {
-    pub fn new(epsilon: f64, delta: f64) -> Self {
-        Self { epsilon, delta }
+    pub fn new(epsilon: f64, delta: f64) -> Result<Self, &'static str> {
+        if !epsilon.is_finite() || epsilon <= 0.0 {
+            return Err("epsilon must be finite and positive");
+        }
+        if !delta.is_finite() || delta <= 0.0 || delta >= 1.0 {
+            return Err("delta must be finite and in (0, 1)");
+        }
+        Ok(Self { epsilon, delta })
     }
 
     /// Conservative privacy budget
@@ -139,6 +145,24 @@ mod tests {
     }
 
     #[test]
+    fn test_privacy_budget_validation() {
+        // Valid budget
+        assert!(PrivacyBudget::new(1.0, 1e-5).is_ok());
+
+        // epsilon must be positive
+        assert!(PrivacyBudget::new(0.0, 1e-5).is_err());
+        assert!(PrivacyBudget::new(-1.0, 1e-5).is_err());
+        assert!(PrivacyBudget::new(f64::INFINITY, 1e-5).is_err());
+        assert!(PrivacyBudget::new(f64::NAN, 1e-5).is_err());
+
+        // delta must be in (0, 1)
+        assert!(PrivacyBudget::new(1.0, 0.0).is_err());
+        assert!(PrivacyBudget::new(1.0, 1.0).is_err());
+        assert!(PrivacyBudget::new(1.0, -1e-5).is_err());
+        assert!(PrivacyBudget::new(1.0, f64::NAN).is_err());
+    }
+
+    #[test]
     fn test_gradient_clipping() {
         let mechanism = PrivacyMechanism::default();
         let mut gradients = vec![3.0, 4.0]; // Norm = 5.0
@@ -177,13 +201,18 @@ mod tests {
 
     #[test]
     fn test_noise_does_not_panic_with_degenerate_budget() {
-        // epsilon=0 would cause division by zero or NaN in the noise formulas;
-        // the implementation must return the original value unperturbed rather
-        // than panicking.
-        let mechanism = PrivacyMechanism::new(PrivacyBudget::new(0.0, 1e-5));
+        // epsilon=0 should now be rejected by the constructor, ensuring the
+        // degenerate-budget guard in add_gaussian_noise is never needed.
+        let result = PrivacyBudget::new(0.0, 1e-5);
+        assert!(
+            result.is_err(),
+            "PrivacyBudget::new should reject epsilon=0"
+        );
+
+        // A valid budget should produce finite noise output.
+        let mechanism = PrivacyMechanism::new(PrivacyBudget::standard());
         let value = 42.0;
         let result = mechanism.add_gaussian_noise(value, 1.0);
-        // With epsilon=0 the sigma is infinite; distribution creation fails gracefully
         assert!(result.is_finite(), "result should be finite: {}", result);
 
         let result2 = mechanism.add_laplacian_noise(value, 1.0);

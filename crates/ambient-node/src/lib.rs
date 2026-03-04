@@ -52,14 +52,30 @@ impl NodeId {
         id: impl Into<String>,
         region: impl Into<String>,
         node_type: impl Into<String>,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            region: region.into(),
-            node_type: node_type.into(),
+    ) -> std::result::Result<Self, &'static str> {
+        let id = id.into();
+        let region = region.into();
+        let node_type = node_type.into();
+
+        if id.is_empty() || region.is_empty() || node_type.is_empty() {
+            return Err("NodeId fields must not be empty");
         }
+        if id.len() > 256 || region.len() > 256 || node_type.len() > 256 {
+            return Err("NodeId fields must not exceed 256 characters");
+        }
+
+        Ok(Self {
+            id,
+            region,
+            node_type,
+        })
     }
 
+    /// Generate a new `NodeId` with a random UUID as the identifier.
+    ///
+    /// UUIDs are always non-empty and well within the 256-character limit, so
+    /// this constructor bypasses the validation in `new()` and constructs the
+    /// value directly.
     pub fn generate(region: impl Into<String>, node_type: impl Into<String>) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
@@ -117,6 +133,7 @@ impl AmbientNode {
 
     /// Calculate overall health score (0.0 - 1.0)
     /// Weights: Bandwidth (upload+download bottleneck) 40%, Latency 30%, Compute 20%, Reputation 10%
+    #[must_use]
     pub fn health_score(&self) -> f64 {
         let bandwidth_score = self.telemetry.bandwidth_score();
         let latency_score = self.telemetry.latency_score();
@@ -165,7 +182,7 @@ mod tests {
 
     #[test]
     fn test_node_creation() {
-        let node_id = NodeId::new("node-001", "us-west", "gateway");
+        let node_id = NodeId::new("node-001", "us-west", "gateway").unwrap();
         let policy = SafetyPolicy::default();
         let node = AmbientNode::new(node_id.clone(), policy);
 
@@ -175,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_health_score_calculation() {
-        let node_id = NodeId::new("node-001", "us-west", "gateway");
+        let node_id = NodeId::new("node-001", "us-west", "gateway").unwrap();
         let mut node = AmbientNode::new(node_id, SafetyPolicy::default());
 
         let telemetry = TelemetrySample {
@@ -201,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_safe_mode_temperature() {
-        let node_id = NodeId::new("node-001", "us-west", "gateway");
+        let node_id = NodeId::new("node-001", "us-west", "gateway").unwrap();
         let mut node = AmbientNode::new(node_id, SafetyPolicy::default());
 
         let telemetry = TelemetrySample {
@@ -215,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_reputation_update() {
-        let node_id = NodeId::new("node-001", "us-west", "gateway");
+        let node_id = NodeId::new("node-001", "us-west", "gateway").unwrap();
         let mut node = AmbientNode::new(node_id, SafetyPolicy::default());
 
         // New node starts with 0.5 score
@@ -232,5 +249,22 @@ mod tests {
         // After more failures, score should be lower
         node.update_reputation(false, 0.1);
         assert!(node.reputation.score() < 0.5);
+    }
+
+    #[test]
+    fn test_node_id_validation() {
+        // Valid node id
+        assert!(NodeId::new("node-001", "us-west", "gateway").is_ok());
+
+        // Empty fields are rejected
+        assert!(NodeId::new("", "us-west", "gateway").is_err());
+        assert!(NodeId::new("node-001", "", "gateway").is_err());
+        assert!(NodeId::new("node-001", "us-west", "").is_err());
+
+        // Strings exceeding 256 characters are rejected
+        let long_str = "x".repeat(257);
+        assert!(NodeId::new(&long_str, "us-west", "gateway").is_err());
+        assert!(NodeId::new("node-001", &long_str, "gateway").is_err());
+        assert!(NodeId::new("node-001", "us-west", &long_str).is_err());
     }
 }

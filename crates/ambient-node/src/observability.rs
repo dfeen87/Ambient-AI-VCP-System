@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn test_node_status_creation() {
-        let node_id = NodeId::new("test-node", "us-west", "compute");
+        let node_id = NodeId::new("test-node", "us-west", "compute").unwrap();
         let node = AmbientNode::new(node_id, SafetyPolicy::default());
         let start_time = SystemTime::now();
 
@@ -247,7 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_observable_state() {
-        let node_id = NodeId::new("test-node", "eu-central", "gateway");
+        let node_id = NodeId::new("test-node", "eu-central", "gateway").unwrap();
         let node = AmbientNode::new(node_id, SafetyPolicy::default());
         let node_arc = Arc::new(RwLock::new(node));
 
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn test_server_creation() {
-        let node_id = NodeId::new("test-node", "ap-south", "compute");
+        let node_id = NodeId::new("test-node", "ap-south", "compute").unwrap();
         let node = AmbientNode::new(node_id, SafetyPolicy::default());
         let node_arc = Arc::new(RwLock::new(node));
 

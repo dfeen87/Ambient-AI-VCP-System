@@ -145,7 +145,8 @@ async fn run_node(
 ) -> Result<()> {
     info!("Starting ambient node: {}", id);
 
-    let node_id = NodeId::new(&id, &region, &node_type);
+    let node_id = NodeId::new(&id, &region, &node_type)
+        .map_err(|e| anyhow::anyhow!("Invalid node ID: {}", e))?;
     let policy = SafetyPolicy::default();
     let mut node = AmbientNode::new(node_id, policy);
 

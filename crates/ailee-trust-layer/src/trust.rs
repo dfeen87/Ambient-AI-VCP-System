@@ -1,6 +1,8 @@
 //! Trust scoring for model outputs
 
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use tracing::warn;
 
 use super::adapters::ModelOutput;
 
@@ -26,6 +28,7 @@ impl TrustScores {
     }
 
     /// Compute overall trust score (weighted average)
+    #[must_use]
     pub fn overall_score(&self) -> f64 {
         // Weights: confidence 40%, safety 30%, consistency 30%
         (self.confidence_score * 0.4) + (self.safety_score * 0.3) + (self.consistency_score * 0.3)
@@ -45,6 +48,9 @@ impl Default for TrustScores {
 /// Consistency score computation
 pub struct ConsistencyScore;
 
+/// Emitted once to warn operators that the stub similarity is active.
+static STUB_WARNED: AtomicBool = AtomicBool::new(false);
+
 impl ConsistencyScore {
     /// Compute semantic similarity between two texts using word-level Jaccard
     /// similarity.
@@ -61,6 +67,13 @@ impl ConsistencyScore {
     /// - Cosine similarity on embedding vectors
     /// - Pre-trained language models
     pub fn compute_similarity(text1: &str, text2: &str) -> f64 {
+        if !STUB_WARNED.swap(true, Ordering::Relaxed) {
+            warn!(
+                "ConsistencyScore::compute_similarity is using a STUB word-level Jaccard \
+                 implementation. Trust scores computed from it may be inaccurate. \
+                 Replace with a real embedding-based similarity before production use."
+            );
+        }
         let words1: std::collections::HashSet<&str> = text1.split_whitespace().collect();
         let words2: std::collections::HashSet<&str> = text2.split_whitespace().collect();
 

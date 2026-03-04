@@ -8,8 +8,8 @@ RUN apt-get update && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/* && \
-    curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | \
-    bash -s -- -p /usr/local
+    curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/0.13.5/utils/install.sh | \
+    bash -s -- -p /usr/local -v 0.13.5
 # Copy workspace files
 COPY Cargo.toml ./
 COPY crates ./crates
@@ -41,5 +41,8 @@ RUN useradd -m -u 1000 ambient && \
 USER ambient
 # Expose port (Render.com uses PORT env var)
 EXPOSE 10000
+# Health check using wget (available in debian-slim images)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD wget -q -O /dev/null http://localhost:10000/api/v1/health || exit 1
 # Run the API server
 CMD ["/app/api-server"]
