@@ -35,7 +35,7 @@ echo ""
 echo "╔═══════════════════════════════════════════════════════════╗"
 echo "║                                                           ║"
 echo "║        Ambient AI VCP - Global Node Deployment           ║"
-echo "║                      v1.0.0                               ║"
+echo "║                      v1.1.0                               ║"
 echo "║                                                           ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo ""
@@ -101,8 +101,17 @@ case $MODE in
 esac
 
 # Wait for services to be healthy
-info "Waiting for services to start..."
-sleep 10
+info "Waiting for API to become healthy..."
+for i in $(seq 1 30); do
+    if curl -s -f http://localhost:3000/api/v1/health > /dev/null 2>&1; then
+        success "API server is healthy!"
+        break
+    fi
+    if [ "$i" -eq 30 ]; then
+        warn "API server did not become healthy within 30 seconds"
+    fi
+    sleep 1
+done
 
 # Check API health
 info "Checking API health..."

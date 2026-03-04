@@ -14,6 +14,7 @@ pub struct Reputation {
 
 impl Reputation {
     /// Calculate reputation score (0.0 - 1.0)
+    #[must_use]
     pub fn score(&self) -> f64 {
         let total_tasks = self.completed_tasks + self.failed_tasks;
 
@@ -30,7 +31,7 @@ impl Reputation {
     /// Record a successful task completion
     pub fn record_success(&mut self, delta: f64) {
         self.completed_tasks += 1;
-        self.total_compute_time_ms += (delta * 1000.0) as u64;
+        self.total_compute_time_ms += (delta.max(0.0) * 1000.0) as u64;
     }
 
     /// Record a failed task

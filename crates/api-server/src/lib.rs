@@ -1,3 +1,16 @@
+// Route handlers and OpenAPI documentation for the API server.
+//
+// # Refactoring Intent
+//
+// This file (~36 KB) mixes OpenAPI doc structs, route handlers for all resources,
+// and router construction. It should be split into a `handlers/` module with
+// per-resource files:
+//
+// - `handlers/nodes.rs`    — Node registration and management handlers
+// - `handlers/tasks.rs`    — Task submission and retrieval handlers
+// - `handlers/auth.rs`     — Authentication and session handlers
+// - `handlers/health.rs`   — Health-check endpoint
+// - `handlers/proofs.rs`   — ZK proof verification handlers
 use axum::{
     extract::{Path, State},
     http::StatusCode,

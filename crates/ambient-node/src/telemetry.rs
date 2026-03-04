@@ -36,8 +36,8 @@ impl Default for TelemetrySample {
             power_watts: 0.0,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         }
     }
 }
@@ -57,6 +57,7 @@ impl TelemetrySample {
     /// measurements have not yet been populated (both are zero).
     ///
     /// Assumes a reference maximum of 1,000 Mbps (1 Gbps).
+    #[must_use]
     pub fn bandwidth_score(&self) -> f64 {
         let effective = match (
             self.upload_bandwidth_mbps > 0.0,

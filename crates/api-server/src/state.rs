@@ -1,6 +1,18 @@
 /// Application state with PostgreSQL persistence
 ///
 /// This module provides CRUD operations for nodes and tasks using a PostgreSQL database.
+///
+/// # Refactoring Intent
+///
+/// This file has grown to ~146 KB and is a monolithic god-module containing
+/// all database queries, business logic, and session management. It should be
+/// split into sub-modules:
+///
+/// - `state/mod.rs`      — `AppState` struct and constructor
+/// - `state/nodes.rs`    — Node CRUD operations
+/// - `state/tasks.rs`    — Task operations
+/// - `state/sessions.rs` — Connect session management
+/// - `state/auth.rs`     — Auth-related state operations
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 use federated_learning::{FederatedAggregator, LayerWeights, ModelWeights, PrivacyBudget};
@@ -3241,7 +3253,7 @@ fn parse_privacy_budget(value: &serde_json::Value) -> Option<PrivacyBudget> {
         return None;
     }
 
-    Some(PrivacyBudget::new(epsilon, delta))
+    Some(PrivacyBudget::new(epsilon, delta).ok()?)
 }
 
 fn aggregate_fedavg_preview(

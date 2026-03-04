@@ -55,6 +55,15 @@ pub struct TaskResult {
 }
 
 /// Mesh coordinator for task orchestration
+///
+/// # Dual Registry Note
+///
+/// `MeshCoordinator` maintains its own `nodes: HashMap<String, AmbientNode>` for
+/// in-memory task scheduling, while `NodeRegistry` (in `registry.rs`) provides
+/// heartbeat tracking and lifecycle management. These two structures serve
+/// overlapping but distinct purposes and must be kept in sync when nodes are
+/// registered or removed. A future refactor should consolidate them by having
+/// `MeshCoordinator` delegate node storage to `NodeRegistry`.
 pub struct MeshCoordinator {
     cluster_id: String,
     nodes: HashMap<String, AmbientNode>,
@@ -259,7 +268,7 @@ mod tests {
         let mut coordinator =
             MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
 
-        let node_id = NodeId::new("node-001", "us-west", "gateway");
+        let node_id = NodeId::new("node-001", "us-west", "gateway").unwrap();
         let node = AmbientNode::new(node_id, SafetyPolicy::default());
 
         coordinator.register_node(node);
@@ -271,7 +280,7 @@ mod tests {
         let mut coordinator =
             MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
 
-        let node_id = NodeId::new("node-001", "us-west", "gateway");
+        let node_id = NodeId::new("node-001", "us-west", "gateway").unwrap();
         let node = AmbientNode::new(node_id, SafetyPolicy::default());
         coordinator.register_node(node);
 
@@ -340,7 +349,7 @@ mod tests {
         let mut coordinator =
             MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
 
-        let node_id = NodeId::new("node-gw", "us-east", "gateway");
+        let node_id = NodeId::new("node-gw", "us-east", "gateway").unwrap();
         let node = AmbientNode::new(node_id, SafetyPolicy::default());
         coordinator.register_node(node);
 
@@ -360,13 +369,13 @@ mod tests {
             MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
 
         // A universal relay that is online.
-        let relay_id = NodeId::new("relay-uni", "us-east", "universal");
+        let relay_id = NodeId::new("relay-uni", "us-east", "universal").unwrap();
         let relay = AmbientNode::new(relay_id, SafetyPolicy::default());
         coordinator.register_node(relay);
         coordinator.sync_connectivity("relay-uni", NodeConnectivityStatus::Online);
 
         // An offline worker that needs to reach the internet.
-        let worker_id = NodeId::new("worker-1", "us-east", "worker");
+        let worker_id = NodeId::new("worker-1", "us-east", "worker").unwrap();
         let worker = AmbientNode::new(worker_id, SafetyPolicy::default());
         coordinator.register_node(worker);
         coordinator.sync_connectivity("worker-1", NodeConnectivityStatus::Offline);
@@ -385,14 +394,14 @@ mod tests {
         let mut coordinator =
             MeshCoordinator::new("test-cluster".to_string(), TaskAssignmentStrategy::Weighted);
 
-        let node_id = NodeId::new("node-x", "eu-west", "open");
+        let node_id = NodeId::new("node-x", "eu-west", "open").unwrap();
         let node = AmbientNode::new(node_id, SafetyPolicy::default());
         coordinator.register_node(node);
         coordinator.sync_connectivity("node-x", NodeConnectivityStatus::Online);
 
         // Removing the node should leave no route for other offline nodes
         // (only node was the potential relay).
-        let offline_id = NodeId::new("node-y", "eu-west", "worker");
+        let offline_id = NodeId::new("node-y", "eu-west", "worker").unwrap();
         let offline = AmbientNode::new(offline_id, SafetyPolicy::default());
         coordinator.register_node(offline);
         coordinator.sync_connectivity("node-y", NodeConnectivityStatus::Offline);

@@ -99,6 +99,10 @@ impl FederatedAggregator {
             .map(|(_, samples)| samples)
             .sum();
 
+        if total_samples == 0 {
+            anyhow::bail!("Total client samples is zero; cannot aggregate");
+        }
+
         // Initialize aggregated weights
         let num_layers = self.global_model.layers.len();
         let mut aggregated_layers = Vec::with_capacity(num_layers);

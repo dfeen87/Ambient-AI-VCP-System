@@ -42,7 +42,7 @@ fn healthy_telemetry() -> TelemetrySample {
 
 #[test]
 fn simulate_node_health_score_returns() {
-    let node_id = NodeId::new("sim-node-001", "us-west", "gateway");
+    let node_id = NodeId::new("sim-node-001", "us-west", "gateway").unwrap();
     let mut node = AmbientNode::new(node_id.clone(), SafetyPolicy::default());
 
     // Start from a degraded baseline: high latency and saturated CPU/memory.
@@ -75,7 +75,7 @@ fn simulate_node_health_score_returns() {
 
 #[test]
 fn simulate_node_safe_mode_returns() {
-    let node_id = NodeId::new("sim-node-002", "eu-central", "compute");
+    let node_id = NodeId::new("sim-node-002", "eu-central", "compute").unwrap();
     let mut node = AmbientNode::new(node_id, SafetyPolicy::default());
 
     // Overheated telemetry triggers safe mode.
@@ -91,7 +91,7 @@ fn simulate_node_safe_mode_returns() {
 
 #[test]
 fn simulate_node_reputation_returns() {
-    let node_id = NodeId::new("sim-node-003", "ap-south", "validator");
+    let node_id = NodeId::new("sim-node-003", "ap-south", "validator").unwrap();
     let mut node = AmbientNode::new(node_id, SafetyPolicy::default());
 
     // Brand-new node starts at 0.5.

@@ -110,7 +110,7 @@ mod tests {
 
     fn make_node(id: &str) -> AmbientNode {
         AmbientNode::new(
-            NodeId::new(id, "us-west", "worker"),
+            NodeId::new(id, "us-west", "worker").unwrap(),
             SafetyPolicy::default(),
         )
     }

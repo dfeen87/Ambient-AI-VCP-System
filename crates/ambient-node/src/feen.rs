@@ -1,4 +1,5 @@
 use crate::{AileeMetric, AileeSample};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -49,8 +50,8 @@ pub trait FeenEngine: Send + Sync {
         input: &Excitation,
         dt: f64,
         steps: u32,
-    ) -> Result<ResonatorState, String>;
-    async fn update_coupling(&self, config: &CouplingConfig) -> Result<(), String>;
+    ) -> Result<ResonatorState>;
+    async fn update_coupling(&self, config: &CouplingConfig) -> Result<()>;
 }
 
 /// Implementation of FEEN Engine Client
@@ -62,10 +63,12 @@ pub struct FeenClient {
 
 impl FeenClient {
     pub fn new(api_url: String) -> Self {
-        Self {
-            api_url,
-            client: reqwest::Client::new(),
-        }
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("Failed to build HTTP client");
+        Self { api_url, client }
     }
 }
 
@@ -94,7 +97,7 @@ impl FeenEngine for FeenClient {
         input: &Excitation,
         dt: f64,
         steps: u32,
-    ) -> Result<ResonatorState, String> {
+    ) -> Result<ResonatorState> {
         let request = SimulationRequest {
             config,
             state,
@@ -110,21 +113,21 @@ impl FeenEngine for FeenClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| format!("Failed to send request: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to send request: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("FEEN API error: {}", response.status()));
+            anyhow::bail!("FEEN API error: {}", response.status());
         }
 
         let sim_res: SimulationResponse = response
             .json()
             .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?;
 
         Ok(sim_res.state)
     }
 
-    async fn update_coupling(&self, config: &CouplingConfig) -> Result<(), String> {
+    async fn update_coupling(&self, config: &CouplingConfig) -> Result<()> {
         let url = format!("{}/api/v1/coupling", self.api_url);
         let response = self
             .client
@@ -132,10 +135,10 @@ impl FeenEngine for FeenClient {
             .json(config)
             .send()
             .await
-            .map_err(|e| format!("Failed to send request: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to send request: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("FEEN API error: {}", response.status()));
+            anyhow::bail!("FEEN API error: {}", response.status());
         }
 
         Ok(())
@@ -167,7 +170,7 @@ impl FeenNode {
         }
     }
 
-    pub async fn tick(&mut self, input: &Excitation, dt: f64) -> Result<(), String> {
+    pub async fn tick(&mut self, input: &Excitation, dt: f64) -> Result<()> {
         let new_state = self
             .client
             .simulate_resonator(&self.resonator_config, &self.current_state, input, dt, 1)
@@ -198,7 +201,7 @@ impl FeenNode {
         self.metric.delta_v()
     }
 
-    pub async fn update_coupling(&self, config: &CouplingConfig) -> Result<(), String> {
+    pub async fn update_coupling(&self, config: &CouplingConfig) -> Result<()> {
         self.client.update_coupling(config).await
     }
 }

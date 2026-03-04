@@ -1,0 +1,43 @@
+# Prevent sensitive files and build artifacts from leaking into the build context
+
+# Environment files (may contain secrets)
+.env
+.env.*
+!.env.example
+
+# Git history
+.git
+.gitignore
+
+# Rust build artifacts
+target/
+
+# Archive directory
+archive/
+
+# Node.js dependencies (installed during build)
+node_modules/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Test and CI configuration
+.github/
+
+# Demo scripts
+demo/
+
+# Reference implementations
+v0.3-reference/

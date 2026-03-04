@@ -20,7 +20,7 @@ fn ts() -> u64 {
 }
 
 fn make_node(id: &str, region: &str, node_type: &str, bandwidth: f64, latency: f64) -> AmbientNode {
-    let node_id = NodeId::new(id, region, node_type);
+    let node_id = NodeId::new(id, region, node_type).unwrap();
     let mut node = AmbientNode::new(node_id, SafetyPolicy::default());
     node.ingest_telemetry(TelemetrySample {
         bandwidth_mbps: bandwidth,

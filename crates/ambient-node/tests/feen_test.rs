@@ -30,9 +30,9 @@ impl FeenEngine for MockFeenEngine {
         _input: &Excitation,
         dt: f64,
         _steps: u32,
-    ) -> Result<ResonatorState, String> {
+    ) -> anyhow::Result<ResonatorState> {
         if self.fail {
-            return Err("mock engine failure".to_string());
+            anyhow::bail!("mock engine failure");
         }
         // Simple Euler step: x' = x + v*dt, v' = v - ω²·x·dt
         let omega_sq = (2.0 * std::f64::consts::PI * config.frequency_hz).powi(2);
@@ -48,9 +48,9 @@ impl FeenEngine for MockFeenEngine {
         })
     }
 
-    async fn update_coupling(&self, _config: &CouplingConfig) -> Result<(), String> {
+    async fn update_coupling(&self, _config: &CouplingConfig) -> anyhow::Result<()> {
         if self.fail {
-            return Err("mock engine failure".to_string());
+            anyhow::bail!("mock engine failure");
         }
         Ok(())
     }
@@ -190,7 +190,7 @@ async fn failing_engine_returns_error() {
         .await;
 
     assert!(result.is_err(), "failing engine must propagate error");
-    assert!(result.unwrap_err().contains("mock engine failure"));
+    assert!(result.unwrap_err().to_string().contains("mock engine failure"));
 }
 
 // ---------------------------------------------------------------------------

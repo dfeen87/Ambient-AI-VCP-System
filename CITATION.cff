@@ -9,7 +9,7 @@ authors:
 repository-code: "https://github.com/dfeen87/Ambient-AI-VCP-System"
 url: "https://github.com/dfeen87/Ambient-AI-VCP-System"
 license: MIT
-version: 1.0.0
+version: 1.1.0
 date-released: 2026-02-15
 keywords:
   - "verifiable computation"
