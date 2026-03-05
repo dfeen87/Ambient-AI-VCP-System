@@ -3253,7 +3253,7 @@ fn parse_privacy_budget(value: &serde_json::Value) -> Option<PrivacyBudget> {
         return None;
     }
 
-    Some(PrivacyBudget::new(epsilon, delta).ok()?)
+    PrivacyBudget::new(epsilon, delta).ok()
 }
 
 fn aggregate_fedavg_preview(
