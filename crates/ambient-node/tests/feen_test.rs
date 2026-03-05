@@ -190,7 +190,10 @@ async fn failing_engine_returns_error() {
         .await;
 
     assert!(result.is_err(), "failing engine must propagate error");
-    assert!(result.unwrap_err().to_string().contains("mock engine failure"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("mock engine failure"));
 }
 
 // ---------------------------------------------------------------------------
