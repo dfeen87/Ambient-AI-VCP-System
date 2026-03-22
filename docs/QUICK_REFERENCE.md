@@ -242,6 +242,6 @@ GET  /api/v1/cluster/stats      # Cluster statistics
 
 ---
 
-**Version**: 1.0.0 | **License**: MIT | **Tests**: 48 Passing ✅
+**Version**: 1.0.0 | **License**: Non-Commercial | **Tests**: 48 Passing ✅
 
 *Print this card for quick reference!*

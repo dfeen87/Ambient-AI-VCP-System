@@ -528,7 +528,7 @@ When you clone this repo, you immediately get:
 - ✅ **HTTP CONNECT Proxy** — browsers on offline nodes tunnel HTTPS through a connected relay node, bypassing `ERR_INTERNET_DISCONNECTED` (new)
 - ✅ **274 Passing Tests** + Zero compiler warnings
 - ✅ **Complete Documentation** (15+ guides)
-- ✅ **MIT License** - Use commercially, modify freely
+- ✅ **Non-Commercial License** - Free for research, personal, and non-profit use
 
 👉 **[See Full Benefits Guide](./docs/USER_BENEFITS.md)** - Learn who benefits and how to use it
 

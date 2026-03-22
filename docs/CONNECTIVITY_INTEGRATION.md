@@ -379,4 +379,4 @@ match manager.start().await {
 
 ## License
 
-MIT - See LICENSE file for details
+Non-Commercial - See LICENSE file for details
