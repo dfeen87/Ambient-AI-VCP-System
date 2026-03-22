@@ -322,4 +322,4 @@ psql $DATABASE_URL -c "\dt"
 
 ## License
 
-MIT License - See LICENSE file for details
+Non-Commercial License - See LICENSE file for details
