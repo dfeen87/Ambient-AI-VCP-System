@@ -2,7 +2,7 @@
 name = "ailee-trust-layer"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license-file.workspace = true
 authors.workspace = true
 description = "AILEE Trust Layer - External generative intelligence, trust scoring, consensus, and lineage tracking"
 
