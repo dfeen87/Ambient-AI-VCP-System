@@ -25,7 +25,7 @@ What makes the system distinctive is its combination of a **Verifiable Computati
 
 Think of this app as a **service for compute power**:
 
-- Some people have spare machines (laptops, servers, edge devices) and register them as **nodes**, metadata per node is private but all avaialable publicly.
+- Some people have spare machines (laptops, servers, edge devices) and register them as **nodes**; each node's metadata is visible to authenticated users.
 - Other people submit **tasks** they want computed, they are private to the user.
 - The system finds appropriate nodes, runs the work, and tracks results.
 - It can also verify that work was executed correctly using cryptographic proofs.
@@ -1120,6 +1120,6 @@ This project was developed with a combination of original ideas, hands‑on codi
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=WebAssembly&logoColor=white)](https://webassembly.org/)
 
-**Status**: Production-Ready for Development | **Version**: 2.3.0 | **Tests**: 246 Passing ✅
+**Status**: Production-Ready | **Version**: 3.1.1 | **Tests**: 274 Passing ✅
 
 </div>

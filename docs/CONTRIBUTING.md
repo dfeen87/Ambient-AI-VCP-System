@@ -62,7 +62,6 @@ Add telemetry collection for GPU metrics
 
 ### High Priority
 
-- Real ZK proof implementation (RISC Zero or Plonky2)
 - P2P networking layer (libp2p)
 - Production WASM runtime integration
 - Security audit and hardening
