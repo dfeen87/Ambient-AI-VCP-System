@@ -41,9 +41,9 @@ cargo test
 
 **Expected output:**
 ```
-running 48 tests
+running X tests
 ...
-test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured
+test result: ok. X passed; 0 failed; 0 ignored; 0 measured
 ```
 
 ### Step 4: Start the API Server (10 seconds)
@@ -81,14 +81,8 @@ curl http://localhost:3000/api/v1/health
 
 ### Option A: Explore the Web Dashboard
 
-1. Open your browser to `dashboard/index.html`
-2. Or just open the file directly:
-   ```bash
-   open dashboard/index.html  # macOS
-   # or
-   xdg-open dashboard/index.html  # Linux
-   ```
-3. You'll see the real-time monitoring interface
+1. Open your browser to [http://localhost:3000](http://localhost:3000)
+2. You'll see the real-time monitoring interface
 
 ### Option B: Run the Demo Script
 
@@ -375,7 +369,7 @@ curl http://localhost:3000/api/v1/tasks/$TASK_ID | jq
 ## ✅ Checklist: You're Ready When...
 
 - [ ] API server starts successfully
-- [ ] All 48 tests pass
+- [ ] All 274 tests pass
 - [ ] You can register a node via API
 - [ ] You can submit a task via API
 - [ ] Dashboard shows real-time data
