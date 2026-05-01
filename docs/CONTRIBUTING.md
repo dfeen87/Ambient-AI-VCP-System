@@ -96,4 +96,4 @@ Add telemetry collection for GPU metrics
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same non-commercial license as this project (see LICENSE file).
+By contributing, you agree that your contributions will be licensed under the same MIT License as this project (see LICENSE file).

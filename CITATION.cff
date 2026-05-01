@@ -8,7 +8,7 @@ authors:
     given-names: "Don Michael"
 repository-code: "https://github.com/dfeen87/Ambient-AI-VCP-System"
 url: "https://github.com/dfeen87/Ambient-AI-VCP-System"
-license: non-commercial
+license: MIT
 version: 3.1.1
 date-released: 2026-04-05
 keywords:
