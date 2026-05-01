@@ -316,7 +316,7 @@ Contributions are welcome! Please read our contributing guidelines before submit
 
 ## 📄 License
 
-Non-Commercial License - see LICENSE file for details
+MIT License - see LICENSE file for details
 
 ## 🙏 Acknowledgments
 

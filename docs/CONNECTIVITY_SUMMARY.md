@@ -552,7 +552,7 @@ Before deploying to production:
 
 ## License
 
-Non-Commercial - See LICENSE file
+MIT License - See LICENSE file
 
 ## Contributors
 

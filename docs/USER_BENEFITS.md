@@ -206,7 +206,7 @@ cargo build --release && ./target/release/api-server
 ## 💰 Economic Benefits
 
 ### Free & Open Source
-- ✅ **Non-Commercial License** - Free for research, personal, and non-profit use
+- ✅ **MIT License** - Fully open-source for personal, research, non-profit, and commercial use
 - ✅ **No Vendor Lock-In** - Run on your own infrastructure
 - ✅ **No Usage Fees** - Unlike cloud providers charging per computation
 - ✅ **Community Driven** - Contribute improvements back
@@ -499,7 +499,7 @@ By cloning this repository, you get:
 5. **Working Examples** (demo + examples you can run today)
 6. **Cost Savings** (90%+ vs. cloud providers for many use cases)
 7. **Learning Resource** (production-grade distributed systems code)
-8. **Non-Commercial Freedom** (free for research, personal, and non-profit use)
+8. **Open-Source MIT Freedom** (free for personal, research, non-profit, and commercial use)
 
 **Bottom Line**: This is a **$100k+ enterprise platform** that would take a team 6-12 months to build, **completely free and open source**.
 
@@ -520,6 +520,6 @@ cargo run --bin api-server
 
 **Status**: ✅ Production-Ready for Development & Testing  
 **Version**: 1.0.0  
-**License**: Non-Commercial  
+**License**: MIT  
 **Tests**: 48/48 Passing  
 **Performance**: 170k+ operations/second

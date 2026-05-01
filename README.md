@@ -528,7 +528,7 @@ When you clone this repo, you immediately get:
 - ✅ **HTTP CONNECT Proxy** — browsers on offline nodes tunnel HTTPS through a connected relay node, bypassing `ERR_INTERNET_DISCONNECTED` (new)
 - ✅ **274 Passing Tests** + Zero compiler warnings
 - ✅ **Complete Documentation** (15+ guides)
-- ✅ **Non-Commercial License** - Free for research, personal, and non-profit use
+- ✅ **MIT License** - Fully open-source for personal, research, non-profit, and commercial use
 
 👉 **[See Full Benefits Guide](./docs/USER_BENEFITS.md)** - Learn who benefits and how to use it
 
@@ -1090,7 +1090,7 @@ Contributions are welcome! Please read our contributing guidelines before submit
 
 ## 📄 License
 
-This project is available for **non‑commercial use only** under the terms of the included LICENSE file. Commercial use requires a separate paid license.
+This project is fully open-source under the terms of the MIT License in the included LICENSE file.
 
 ---
 
@@ -1104,6 +1104,9 @@ This project is available for **non‑commercial use only** under the terms of t
 This project was developed with a combination of original ideas, hands‑on coding, and support from advanced AI systems. I would like to acknowledge **Microsoft Copilot**, **Anthropic Claude**, **Google Jules**, and **OpenAI ChatGPT** for their meaningful assistance in refining concepts, improving clarity, and strengthening the overall quality of this work.
 
 ---
+
+## Enterprise Consulting & Integration
+This architecture is fully open-source under the MIT License. If your organization requires custom scaling, proprietary integration, or dedicated technical consulting to deploy these models at an enterprise level, please reach out at: dfeen87@gmail.com
 
 ## 📧 Support & Contact
 

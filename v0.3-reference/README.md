@@ -175,4 +175,4 @@ See the white papers in `/docs/whitepapers/`:
 
 ## 📄 License
 
-Non-Commercial License - see parent LICENSE file
+MIT License - see parent LICENSE file
