@@ -1,6 +1,6 @@
 # Ambient AI + VCP System
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-blue.svg)](https://polyformproject.org/licenses/noncommercial/1.0.0/)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() 
 [![Tests](https://img.shields.io/badge/tests-274%20passing-success)]()
  
