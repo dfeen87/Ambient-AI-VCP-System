@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Security management for hotspot mode
 //!
 //! Handles WPA2/WPA3 configuration, rotating PSKs, and client isolation

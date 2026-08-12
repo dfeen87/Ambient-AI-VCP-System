@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! QoS (Quality of Service) management
 //!
 //! Prioritizes control traffic over bulk traffic on the hotspot

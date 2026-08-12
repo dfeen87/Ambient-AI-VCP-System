@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 #ifndef FEEN_VCP_INTEGRATION_H
 #define FEEN_VCP_INTEGRATION_H
 

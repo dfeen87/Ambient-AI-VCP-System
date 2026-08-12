@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) Don Michael Feeney Jr.
+# Licensed under the MIT License.
+
 
 # Ambient AI VCP - Global Node Deployment Script
 # This script deploys a complete global VCP network

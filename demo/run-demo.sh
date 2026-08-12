@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) Don Michael Feeney Jr.
+# Licensed under the MIT License.
+
 # Multi-Node Demo for Ambient AI VCP System - Phase 2
 # This script demonstrates federated learning, ZK proofs, and verifiable computation
 

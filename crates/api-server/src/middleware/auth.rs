@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Authentication and authorization middleware
 
 use crate::auth::{hash_api_key, Claims};

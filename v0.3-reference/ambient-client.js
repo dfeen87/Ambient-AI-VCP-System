@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /*
  * =================================================================
  * AMBIENT AI CLIENT (v0.3 - ZK REQUESTER)

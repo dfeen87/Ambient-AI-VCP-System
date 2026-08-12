@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /// Middleware modules for API server
 pub mod auth;
 pub mod cors;

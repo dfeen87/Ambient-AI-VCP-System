@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Connectivity layer for universal/open-access nodes
 //!
 //! This module provides multi-backhaul orchestration for distributed systems,

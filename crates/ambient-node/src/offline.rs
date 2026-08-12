@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 use ring::signature::{self, KeyPair};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};

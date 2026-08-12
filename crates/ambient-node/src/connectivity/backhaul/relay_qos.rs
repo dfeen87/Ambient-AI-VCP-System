@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! WAN-side QoS for connect_only relay sessions
 //!
 //! When an `open_internet` or global-`any` node runs a `connect_only` task it

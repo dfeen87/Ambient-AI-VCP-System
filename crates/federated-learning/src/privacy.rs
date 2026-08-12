@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 

@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 use crate::{AileeMetric, AileeSample};
 use anyhow::Result;
 use async_trait::async_trait;

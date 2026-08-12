@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! AILEE Trust Layer
 //!
 //! External generative intelligence engine providing trust-scored, multi-model

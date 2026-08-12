@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! State machine for interface lifecycle
 //!
 //! State transitions: UP → DEGRADED → DOWN → PROBING → UP

@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /// Prometheus metrics middleware and exporter
 ///
 /// Exposes /metrics endpoint and tracks per-route metrics

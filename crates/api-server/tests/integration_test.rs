@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 use api_server::models::*;
 use api_server::state::AppState;
 use sqlx::PgPool;

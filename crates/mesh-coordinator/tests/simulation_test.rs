@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Simulation tests for the Mesh Coordinator.
 //!
 //! Each test builds a realistic cluster, runs a coordinator operation, and

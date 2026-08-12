@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /*
  * =================================================================
  * AMBIENT AI NODE (v0.3 - ZK WORKER)

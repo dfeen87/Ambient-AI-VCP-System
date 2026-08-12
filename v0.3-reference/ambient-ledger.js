@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /*
  * =================================================================
  * AMBIENT AI LEDGER (v0.3 - "THE ZK SMART CONTRACT")

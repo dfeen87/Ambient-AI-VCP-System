@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 use crate::error::ApiError;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

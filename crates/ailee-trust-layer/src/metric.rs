@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! AILEE optimization metric (∆v)
 //!
 //! Implements the energy-weighted gain functional from the AILEE paper:

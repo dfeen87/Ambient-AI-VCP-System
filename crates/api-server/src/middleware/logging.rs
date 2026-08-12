@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /// Logging and request tracing middleware
 ///
 /// Adds structured logging with request IDs and timing

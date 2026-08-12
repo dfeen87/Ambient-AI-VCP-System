@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Hotspot (AP mode) management
 //!
 //! Phase 2 functionality for Wi-Fi AP mode activation and management

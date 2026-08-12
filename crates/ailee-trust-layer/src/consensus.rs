@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Consensus engine for selecting final output from multiple models
 
 use futures::future::join_all;

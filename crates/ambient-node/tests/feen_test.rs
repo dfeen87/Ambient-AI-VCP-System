@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Unit tests for the FEEN physics engine integration in Ambient AI VCP.
 //!
 //! These tests exercise the VCP-side FEEN types and the `FeenNode` state
