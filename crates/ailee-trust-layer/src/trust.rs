@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Trust scoring for model outputs
 
 use serde::{Deserialize, Serialize};

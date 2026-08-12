@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /// CORS middleware with configurable origins
 ///
 /// Replaces permissive CORS with production-ready configuration

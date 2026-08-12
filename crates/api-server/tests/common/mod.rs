@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /// Test utilities for integration tests
 /// 
 /// This module provides helper functions for setting up test databases

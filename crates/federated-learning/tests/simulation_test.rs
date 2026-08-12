@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Simulation tests for the Federated Learning subsystem.
 //!
 //! Each test builds a realistic training scenario and asserts on the concrete

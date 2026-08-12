@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Wi-Fi Access Point mode management
 //!
 //! Handles switching Wi-Fi radios to AP mode when no upstream is available.

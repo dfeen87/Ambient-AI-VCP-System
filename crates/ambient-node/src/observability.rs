@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Local Node Observability
 //!
 //! **Privacy & Decentralization Constraints**

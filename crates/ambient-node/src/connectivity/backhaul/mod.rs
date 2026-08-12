@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Multi-backhaul orchestration module
 //!
 //! This module ties together interface discovery, health probing, scoring,

@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Health probing for backhaul interfaces
 //!
 //! Performs periodic async probes to multiple targets:

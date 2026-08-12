@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! USB tethering detection and management
 //!
 //! Detects USB RNDIS/ECM/NCM interfaces (usb0, enx*)

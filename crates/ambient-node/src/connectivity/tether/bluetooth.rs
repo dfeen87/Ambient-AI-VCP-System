@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Bluetooth PAN tethering detection and management
 //!
 //! Detects bnep* interfaces and integrates with backhaul scoring

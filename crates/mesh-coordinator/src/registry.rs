@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 use ambient_node::AmbientNode;
 use std::collections::HashMap;
 

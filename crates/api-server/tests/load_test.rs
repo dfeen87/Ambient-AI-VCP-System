@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 // Load tests are disabled because they require a database connection
 // To run load tests with a real database:
 // TEST_DATABASE_URL=postgres://user:pass@localhost/test_db cargo test --test load_test -- --ignored

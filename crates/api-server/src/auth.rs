@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /// Authentication module with JWT and API key support
 ///
 /// This module provides secure authentication mechanisms including:

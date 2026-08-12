@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Interface discovery and monitoring
 //!
 //! This module detects and monitors network interfaces:

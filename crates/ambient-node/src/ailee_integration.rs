@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! VCP Integration Adapter for AILEE Trust Layer
 //!
 //! This module provides the integration boundary between Ambient AI VCP

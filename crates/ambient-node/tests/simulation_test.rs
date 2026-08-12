@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Simulation tests for the Ambient AI VCP System.
 //!
 //! These tests exercise the real application code end-to-end and assert on

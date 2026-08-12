@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /// Security headers middleware
 ///
 /// Adds security-related HTTP headers to all responses

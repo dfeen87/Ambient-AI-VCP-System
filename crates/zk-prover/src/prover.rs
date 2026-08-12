@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 use crate::{ExecutionTrace, ProvingKey, VerificationKey, ZKProof};
 use anyhow::Result;
 use ark_bn254::{Bn254, Fr};

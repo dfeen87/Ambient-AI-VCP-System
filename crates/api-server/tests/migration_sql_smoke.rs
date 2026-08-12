@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 #[tokio::test]
 async fn migration_sql_files_are_postgres_compatible() {
     let db_url = match std::env::var("DATABASE_URL") {

@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /// Structured error handling with secure defaults
 ///
 /// This module provides comprehensive error types for the API with

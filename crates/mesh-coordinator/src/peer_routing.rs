@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Mesh/peer routing for internet connectivity
 //!
 //! This module analyzes node connectivity and implements peer routing logic

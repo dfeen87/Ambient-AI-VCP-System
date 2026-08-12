@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 // Route handlers and OpenAPI documentation for the API server.
 //
 // # Refactoring Intent

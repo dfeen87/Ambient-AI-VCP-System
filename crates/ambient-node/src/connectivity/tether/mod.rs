@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Tether detection and management
 //!
 //! Phase 2 functionality for USB and Bluetooth tethering

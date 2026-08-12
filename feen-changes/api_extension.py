@@ -1,3 +1,6 @@
+# Copyright (c) Don Michael Feeney Jr.
+# Licensed under the MIT License.
+
 from flask import Blueprint, request, jsonify
 from feen.vcp import simulate_resonator, update_coupling, compute_delta_v
 

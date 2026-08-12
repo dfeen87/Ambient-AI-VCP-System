@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Interface scoring system
 //!
 //! Implements a weight-based scoring function for backhaul interfaces:

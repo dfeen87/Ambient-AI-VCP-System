@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /// Application state with PostgreSQL persistence
 ///
 /// This module provides CRUD operations for nodes and tasks using a PostgreSQL database.

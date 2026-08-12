@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 #[cfg(feature = "observability")]
 use ambient_node::LocalObservabilityServer;
 use ambient_node::{

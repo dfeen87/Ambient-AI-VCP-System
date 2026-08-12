@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 //! Linux policy routing for backhaul interfaces
 //!
 //! Uses per-interface routing tables and `ip rule` semantics.

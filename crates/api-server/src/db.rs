@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 use anyhow::{Context, Result};
 /// Database module for PostgreSQL persistence
 ///

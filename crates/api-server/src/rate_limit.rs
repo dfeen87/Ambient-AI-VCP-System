@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 /// Rate limiting middleware
 use crate::error::ApiError;
 use axum::{

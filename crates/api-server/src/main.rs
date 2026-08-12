@@ -1,3 +1,6 @@
+// Copyright (c) Don Michael Feeney Jr.
+// Licensed under the MIT License.
+
 use anyhow::Result;
 use api_server::{create_router, db, rate_limit, state::AppState};
 use std::net::SocketAddr;
