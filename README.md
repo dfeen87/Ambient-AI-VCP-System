@@ -1,42 +1,42 @@
 # Ambient AI + VCP System
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() 
-[![Tests](https://img.shields.io/badge/tests-274%20passing-success)]()
- 
-A **live online application** and implementation of a **Verifiable Computation Protocol (VCP)** for running and verifying distributed compute tasks across many machines.
+[![CI](https://github.com/dfeen87/Ambient-AI-VCP-System/actions/workflows/ci.yml/badge.svg)](https://github.com/dfeen87/Ambient-AI-VCP-System/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust 2021](https://img.shields.io/badge/Rust-2021-orange.svg?logo=rust)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-3.2.0-6f42c1.svg)](Cargo.toml)
+[![Public Demo](https://img.shields.io/badge/demo-live-2ea44f.svg)](https://ambient-ai-vcp-system.onrender.com)
 
-## 🎯 Status: **Live in Production (Public Demo Running)**
+An open-source implementation of a **Verifiable Computation Protocol (VCP)** for orchestrating and validating distributed workloads across heterogeneous machines.
 
-✅ **All 274 tests passing** | ✅ **Zero compiler warnings** | ✅ **Load tests included** | ✅ **Groth16-based ZK proof implementation**
+## 🎯 Project Status
 
-> Yes — this app is already deployed and running online.
-> You can use it as-is, and if you self-host it, you should still tune infra/security settings for your own environment.
+The project includes a hosted public demo, automated CI checks, load tests, and a Groth16-based zero-knowledge proof implementation.
 
----
-
-## 🧩 What Is This?
-
-The Ambient AI + VCP System is an open-source platform for **distributed, verifiable AI computing**. It connects devices that have spare compute capacity — laptops, servers, edge boxes — into a self-organizing mesh where work can be submitted, scheduled, and cryptographically verified. A built-in control plane handles node registration, health scoring, task routing, and result validation, so you don't have to build any of that yourself.
-
-What makes the system distinctive is its combination of a **Verifiable Computation Protocol (VCP)** with a practical mesh runtime. Every task can be backed by a Zero-Knowledge proof (Groth16/BN254) that proves the computation happened correctly without revealing private inputs, and every node carries its own trust score derived from real telemetry. Beyond pure compute, the AILEE trust layer adds multi-model consensus, an energy-weighted efficiency metric (∆v), and offline-first operation — nodes can authenticate sessions, cache egress policies, and sync with peers over a direct P2P channel even when the central API is unreachable. The result is an end-to-end platform for building trustworthy, resilient AI workflows across heterogeneous hardware.
+> [!NOTE]
+> The hosted deployment is intended for evaluation and demonstration. Self-hosted production deployments should be configured and hardened for their operating environment; see the [deployment guide](./docs/DEPLOYMENT.md) and [security report](./docs/SECURITY_REPORT.md).
 
 ---
 
-## 🧾 In Plain English: What this app does
+## 🧩 Overview
 
-Think of this app as a **service for compute power**:
+Ambient AI + VCP is a platform for **distributed, verifiable AI computing**. It connects available compute resources—including laptops, servers, and edge devices—into a coordinated mesh where workloads can be submitted, scheduled, and cryptographically verified. Its control plane provides node registration, health scoring, task routing, and result validation.
 
-- Some people have spare machines (laptops, servers, edge devices) and register them as **nodes**; each node's metadata is visible to authenticated users.
-- Other people submit **tasks** they want computed, they are private to the user.
-- The system finds appropriate nodes, runs the work, and tracks results.
-- It can also verify that work was executed correctly using cryptographic proofs.
+The system combines a **Verifiable Computation Protocol** with a practical mesh runtime. Tasks can be backed by Groth16/BN254 zero-knowledge proofs, while node trust scores are derived from operational telemetry. The AILEE trust layer adds multi-model consensus, an energy-weighted efficiency metric (∆v), and offline-first capabilities such as local session authentication, cached egress policies, and direct peer-to-peer policy synchronization when the central API is unavailable.
 
-In plain terms: this application is a control center for distributed AI computing. Through a single dashboard, you can send tasks to multiple machines, run them in parallel, and watch the entire cluster update in real time.
+---
 
-What’s especially powerful is that the system is model-agnostic — it doesn’t care whether a task runs on a GPU node, a CPU worker, a proof generator, or even multiple AI models working together. If a workflow requires several components or agents, the platform can orchestrate them across the cluster automatically.
+## 🧾 How It Works
 
-It’s designed to make complex compute workflows feel effortless — from launching jobs to monitoring performance and managing results — all through one unified interface.
+The platform connects compute providers with users who need distributed processing:
+
+- **Node operators** register available laptops, servers, or edge devices and advertise their capabilities.
+- **Task submitters** define private workloads and their execution requirements.
+- **The control plane** selects suitable nodes, coordinates execution, and tracks results.
+- **The verification layer** can validate completed work with cryptographic proofs.
+
+The included dashboard provides a unified view for submitting work, monitoring parallel execution, and observing cluster health in real time.
+
+Because the runtime is model-agnostic, workloads can target GPU nodes, CPU workers, proof generators, or multi-model workflows. This allows heterogeneous components to be coordinated through one consistent interface.
 
 ## 🚀 Live Demo
 
@@ -53,14 +53,14 @@ Tip: To quickly verify the public demo is reachable, run:
  
 ---
 
-## 🎯 Quick Concept Overview
+## 🎯 Core Concepts
 
 **New to the system?** Here's what you need to know:
 
-**The System is a Two-Sided Service:**
-- **Node Operators** (Supply) = People who provide computing power (you register your device)
-- **Task Submitters** (Demand) = People who need computing power (developers, researchers, businesses)
-- **The System** = Matches tasks to nodes, orchestrates execution, returns results
+**The system serves two primary groups:**
+- **Node operators** provide computing capacity by registering their devices.
+- **Task submitters** are developers, researchers, or organizations that require compute resources.
+- **The platform** matches tasks to suitable nodes, orchestrates execution, and returns results.
 
 **Nodes** = Devices that join the network to contribute computing power (your laptop, server, etc.)
   - **5 Node Types**: Compute (run tasks), Gateway (route traffic), Storage (store data), Validator (verify proofs), Resonator (FEEN physics)
