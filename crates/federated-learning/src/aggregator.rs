@@ -75,12 +75,28 @@ impl FederatedAggregator {
             .zip(self.global_model.layers.iter())
             .enumerate()
         {
+            if client_layer.name != global_layer.name {
+                anyhow::bail!(
+                    "Client model layer {} is named '{}' but global layer is named '{}'",
+                    layer_idx,
+                    client_layer.name,
+                    global_layer.name
+                );
+            }
             if client_layer.weights.len() != global_layer.weights.len() {
                 anyhow::bail!(
                     "Client model layer {} has {} weights but global model has {}",
                     layer_idx,
                     client_layer.weights.len(),
                     global_layer.weights.len()
+                );
+            }
+            if client_layer.shape != global_layer.shape {
+                anyhow::bail!(
+                    "Client model layer {} has shape {:?} but global model has {:?}",
+                    layer_idx,
+                    client_layer.shape,
+                    global_layer.shape
                 );
             }
         }
@@ -96,11 +112,12 @@ impl FederatedAggregator {
         }
 
         // Calculate total samples across all clients
-        let total_samples: usize = self
+        let total_samples = self
             .client_contributions
             .values()
             .map(|(_, samples)| samples)
-            .sum();
+            .try_fold(0usize, |total, samples| total.checked_add(*samples))
+            .ok_or_else(|| anyhow::anyhow!("Total client sample count overflowed"))?;
 
         if total_samples == 0 {
             anyhow::bail!("Total client samples is zero; cannot aggregate");
@@ -291,5 +308,34 @@ mod tests {
             "error should mention weights: {}",
             msg
         );
+    }
+
+    #[test]
+    fn test_add_client_update_rejects_mismatched_layer_metadata() {
+        let mut aggregator = FederatedAggregator::new(create_test_model(1.0));
+        let mut wrong_model = create_test_model(2.0);
+        wrong_model.layers[0].name = "different_layer".to_string();
+        assert!(aggregator
+            .add_client_update("client1".to_string(), wrong_model, 100)
+            .is_err());
+
+        let mut wrong_model = create_test_model(2.0);
+        wrong_model.layers[0].shape = vec![1, 3];
+        assert!(aggregator
+            .add_client_update("client1".to_string(), wrong_model, 100)
+            .is_err());
+    }
+
+    #[test]
+    fn test_aggregate_rejects_sample_count_overflow() {
+        let mut aggregator = FederatedAggregator::new(create_test_model(1.0));
+        aggregator
+            .add_client_update("client1".to_string(), create_test_model(2.0), usize::MAX)
+            .unwrap();
+        aggregator
+            .add_client_update("client2".to_string(), create_test_model(3.0), 1)
+            .unwrap();
+
+        assert!(aggregator.aggregate().is_err());
     }
 }

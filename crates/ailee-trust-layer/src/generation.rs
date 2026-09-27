@@ -55,7 +55,7 @@ impl GenerationRequest {
         Self {
             prompt: prompt.into(),
             task_type,
-            trust_threshold: trust_threshold.clamp(0.0, 1.0),
+            trust_threshold: normalize_trust_score(trust_threshold),
             execution_mode,
             allow_offline,
         }
@@ -102,7 +102,7 @@ impl GenerationResult {
         let output_hash = Self::compute_output_hash(&final_output);
         Self {
             final_output,
-            trust_score: trust_score.clamp(0.0, 1.0),
+            trust_score: normalize_trust_score(trust_score),
             model_lineage,
             execution_metadata,
             input_hash,
@@ -120,6 +120,15 @@ impl GenerationResult {
     /// Verify hash matches output
     pub fn verify_hash(&self) -> bool {
         self.output_hash == Self::compute_output_hash(&self.final_output)
+    }
+}
+
+/// Keep trust values in their documented range, including for non-finite input.
+fn normalize_trust_score(score: f64) -> f64 {
+    if score.is_finite() {
+        score.clamp(0.0, 1.0)
+    } else {
+        0.0
     }
 }
 
@@ -199,6 +208,15 @@ mod tests {
             false,
         );
         assert_eq!(req2.trust_threshold, 0.0);
+
+        let req3 = GenerationRequest::new(
+            "test",
+            TaskType::Code,
+            f64::NAN,
+            ExecutionMode::Local,
+            false,
+        );
+        assert_eq!(req3.trust_threshold, 0.0);
     }
 
     #[test]
@@ -263,5 +281,15 @@ mod tests {
             "hash".to_string(),
         );
         assert_eq!(result.trust_score, 1.0);
+
+        let metadata = ExecutionMetadata::new(1, 1, false, 50);
+        let result = GenerationResult::new(
+            "output".to_string(),
+            f64::INFINITY,
+            vec![],
+            metadata,
+            "input_hash".to_string(),
+        );
+        assert_eq!(result.trust_score, 0.0);
     }
 }

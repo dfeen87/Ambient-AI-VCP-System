@@ -21,6 +21,7 @@ impl NodeRegistry {
 
     pub fn register(&mut self, node: AmbientNode) {
         let node_id = node.id.id.clone();
+        self.heartbeats.remove(&node_id);
         self.nodes.insert(node_id, node);
     }
 
@@ -193,5 +194,16 @@ mod tests {
 
         assert!(registry.last_heartbeat("n1").is_none());
         assert!(registry.nodes.is_empty());
+    }
+
+    #[test]
+    fn test_reregister_clears_previous_heartbeat() {
+        let mut registry = NodeRegistry::new();
+        registry.register(make_node("n1"));
+        registry.record_heartbeat("n1", 500);
+
+        registry.register(make_node("n1"));
+
+        assert_eq!(registry.last_heartbeat("n1"), None);
     }
 }
