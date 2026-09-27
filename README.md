@@ -1125,6 +1125,6 @@ This architecture is fully open-source under the MIT License. If your organizati
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=WebAssembly&logoColor=white)](https://webassembly.org/)
 
-**Status**: Production-Ready | **Version**: 3.1.1 | **Tests**: 274 Passing ✅
+**Status**: Production-Ready | **Version**: 3.2.0 | **Tests**: 274 Passing ✅
 
 </div>

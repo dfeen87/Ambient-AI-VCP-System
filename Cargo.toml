@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "3.1.1"
+version = "3.2.0"
 edition = "2021"
 license-file = "LICENSE"
 authors = ["Don Michael Feeney Jr."]
