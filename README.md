@@ -8,6 +8,37 @@
 
 An open-source implementation of a **Verifiable Computation Protocol (VCP)** for orchestrating and validating distributed workloads across heterogeneous machines.
 
+## 📑 Table of Contents
+
+- [Project Status](#project-status)
+- [Overview](#overview)
+- [How It Works](#how-it-works)
+- [Live Demo](#live-demo)
+- [Core Concepts](#core-concepts)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Technology Stack](#technology-stack)
+- [Why Clone This Repository?](#why-clone-this-repository)
+- [Quick Start](#quick-start)
+- [Minimal Examples](#minimal-examples)
+- [Testing](#testing)
+- [Security & Validation](#security--validation)
+- [Threat Model](#threat-model)
+- [Health Scoring Formula](#health-scoring-formula)
+- [Deployment Guide](#deployment-guide)
+- [Deployment Options](#deployment-options)
+- [Performance Targets](#performance-targets)
+- [Executable Specification](#executable-specification-living-contract)
+- [Roadmap](#roadmap)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
+- [Enterprise Consulting & Integration](#enterprise-consulting--integration)
+- [Support & Contact](#support--contact)
+
+---
+
 ## 🎯 Project Status
 
 The project includes a hosted public demo, automated CI checks, load tests, and a Groth16-based zero-knowledge proof implementation.
@@ -163,6 +194,10 @@ Tip: To quickly verify the public demo is reachable, run:
 ---
 
 ## 🏗️ Architecture
+
+![Ambient AI + VCP architecture diagram placeholder](docs/images/architecture-diagram-placeholder.png)
+
+> **Diagram placeholder:** A versioned visual of the control plane, peer mesh, execution runtimes, and proof-verification path will be published here. The component map below remains the normative architecture summary.
 
 ### System Components
 
@@ -558,6 +593,40 @@ cargo build --release
 cargo test
 ```
 
+### CLI-to-Result Quickstart
+
+The CLI runs nodes and coordinators locally; authenticated registration and task intake use the REST control plane. With PostgreSQL available and the API server running, the following sequence installs the CLI, registers a node, submits one minimal computation, and reads its state and result:
+
+```bash
+# Install the workspace CLI and start the API in another terminal.
+cargo install --path crates/cli
+JWT_SECRET="$(openssl rand -base64 32)" DATABASE_URL="$DATABASE_URL" \
+  cargo run --bin api-server
+
+export VCP_API=http://localhost:3000
+curl -sS -X POST "$VCP_API/api/v1/auth/register" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"quickstart","password":"change-me-now"}' >/dev/null
+export VCP_TOKEN="$(curl -sS -X POST "$VCP_API/api/v1/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"quickstart","password":"change-me-now"}' | jq -r .access_token)"
+
+# Register control-plane capacity, then run the corresponding local node process.
+curl -sS -X POST "$VCP_API/api/v1/nodes" \
+  -H "Authorization: Bearer $VCP_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"node_id":"quick-node","region":"local","node_type":"compute","capabilities":{"bandwidth_mbps":100,"cpu_cores":4,"memory_gb":8,"gpu_available":false}}' | jq
+ambient-vcp node --id quick-node --region local --node-type compute
+
+# In another terminal with VCP_API and VCP_TOKEN exported:
+export TASK_ID="$(curl -sS -X POST "$VCP_API/api/v1/tasks" \
+  -H "Authorization: Bearer $VCP_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"task_type":"computation","wasm_module":null,"inputs":{"operation":"sum","values":[1,2,3]},"requirements":{"min_nodes":1,"max_execution_time_sec":30,"require_gpu":false,"require_proof":false}}' | jq -r .task_id)"
+curl -sS -H "Authorization: Bearer $VCP_TOKEN" \
+  "$VCP_API/api/v1/tasks/$TASK_ID" | jq '{task_id,status,result}'
+```
+
+Task execution is asynchronous. Poll the final command until `status` is `completed` or `failed`; a real worker may submit a result earlier, while the configured fallback respects `max_execution_time_sec`.
+
 ### Running the API Server
 
 ```bash
@@ -593,6 +662,69 @@ cargo run --bin api-server
 
 # Open dashboard
 open http://localhost:3000/
+```
+
+---
+
+## 🧩 Minimal Examples
+
+These payloads intentionally show the smallest useful shapes. Replace `$VCP_TOKEN`, task IDs, and cryptographic material with values issued by your deployment.
+
+### Tiny WASM Execution
+
+Compile a deterministic exported function, encode the module, and submit it through the same authenticated task endpoint:
+
+```rust
+// src/lib.rs in a cdylib crate targeting wasm32-wasip1
+#[no_mangle]
+pub extern "C" fn answer() -> i32 { 42 }
+```
+
+```bash
+WASM_B64="$(base64 < target/wasm32-wasip1/release/tiny.wasm | tr -d '\n')"
+jq -n --arg module "$WASM_B64" '{
+  task_type:"wasm_execution", wasm_module:$module,
+  inputs:{function_name:"answer",args:[]},
+  requirements:{min_nodes:1,max_execution_time_sec:30,require_gpu:false,require_proof:false}
+}' | curl -sS -X POST "$VCP_API/api/v1/tasks" \
+  -H "Authorization: Bearer $VCP_TOKEN" -H 'Content-Type: application/json' -d @- | jq
+```
+
+### One Federated Learning Round
+
+`FederatedAggregator` applies sample-weighted FedAvg and increments the global model version after each successful round:
+
+```rust
+use federated_learning::{FederatedAggregator, LayerWeights, ModelWeights};
+
+let model = |weights| ModelWeights {
+    layers: vec![LayerWeights { name: "dense".into(), weights, shape: vec![2] }],
+    version: 0,
+};
+let mut round = FederatedAggregator::new(model(vec![0.0, 0.0]));
+round.add_client_update("node-a".into(), model(vec![1.0, 3.0]), 1)?;
+round.add_client_update("node-b".into(), model(vec![3.0, 5.0]), 1)?;
+let global = round.aggregate()?; // weights = [2.0, 4.0], version = 1
+# Ok::<(), anyhow::Error>(())
+```
+
+### ZK Proof Verification Payload
+
+The verifier accepts base64-encoded Groth16 proof bytes and serialized public inputs. Payload validation is not proof generation: both fields must come from the matching BN254 circuit and verification key.
+
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "proof_data": "<base64-groth16-proof>",
+  "public_inputs": "<base64-serialized-public-inputs>",
+  "circuit_id": "wasm-execution-v1"
+}
+```
+
+```bash
+curl -sS -X POST "$VCP_API/api/v1/proofs/verify" \
+  -H "Authorization: Bearer $VCP_TOKEN" -H 'Content-Type: application/json' \
+  --data @proof-request.json | jq
 ```
 
 ---
@@ -748,6 +880,31 @@ Nodes enter safe mode when:
 
 ---
 
+## 🛡️ Threat Model
+
+### Trust Boundaries
+
+- **Public clients → API control plane:** All client input is untrusted. JWTs establish an authenticated principal; ownership and admin checks establish authorization.
+- **Control plane → node mesh:** Registration claims, heartbeats, results, and relay requests cross a machine boundary. A registered node is not assumed honest merely because it is online.
+- **Task payload → execution runtime:** Submitted modules and inputs are attacker-controlled. WASM isolation, deterministic execution, resource limits, and task-type policy checks constrain their authority.
+- **Peer → offline node:** Policy snapshots and session leases can arrive without the coordinator. Their signatures, integrity hashes, expiry, and trusted-key membership must be verified before use.
+- **Proof producer → verifier:** A prover may be malicious. Verification establishes only the statement encoded by the selected circuit and public inputs; it does not make an incorrect circuit specification trustworthy.
+
+### Attack Surfaces and Mitigations
+
+| Surface | Representative risk | Required mitigation |
+|---------|---------------------|---------------------|
+| Authentication API | Credential stuffing, token theft, replay | bcrypt password hashing, short-lived JWT access tokens, refresh-token rotation/revocation, TLS, and per-tier rate limiting |
+| Node and task intake | Capability inflation, oversized payloads, scheduler abuse | Capability whitelists, canonical task registry, input/depth limits, ownership checks, and admission control |
+| Worker execution | Malicious WASM, resource exhaustion, nondeterministic output | No filesystem/network access, memory/time/gas ceilings, deterministic modules, circuit breakers, and isolated worker identities |
+| Results and proofs | Forged output or proof substitution | Bind task ID, circuit ID, and public inputs; verify Groth16 proofs server-side; reject malformed encodings and unknown circuits |
+| Offline policy sync | Forged leases, stale policy, malicious peer downgrade | Ed25519 signatures, trusted signer allowlists, expiry enforcement, full-content hashing, non-destructive imports, and chained audit records |
+| Gateway/data plane | Open proxying, token disclosure, destination escape | Ephemeral session tokens, immediate revocation, destination capability allowlists, bounded sessions, authenticated ownership, and least-privilege egress |
+
+**Security roles:** ZK proofs provide computation integrity and privacy for statements supported by a circuit; JWTs authenticate control-plane requests; rate limits reduce online abuse and resource exhaustion; capability whitelists constrain what nodes and tasks may claim. These controls are complementary, not interchangeable. Operators must still protect signing keys, JWT secrets, databases, hosts, and TLS termination, and must monitor audit logs for anomalous behavior.
+
+---
+
 ## 📊 Health Scoring Formula
 
 ```
@@ -759,6 +916,67 @@ Score = (bandwidth × 0.4) + (latency × 0.3) + (compute × 0.2) + (reputation �
 - **Latency** (30%): Lower is better, max 100ms
 - **Compute** (20%): CPU + Memory availability
 - **Reputation** (10%): Task success rate
+
+---
+
+## 🚀 Deployment Guide
+
+### Environment Variables
+
+Start from `.env.example`, keep secrets in a platform secret store, and validate the effective configuration before exposing the service:
+
+| Area | Variables | Production guidance |
+|------|-----------|---------------------|
+| Runtime | `ENVIRONMENT`, `PORT`, `RUST_LOG` | Set `ENVIRONMENT=production`; log structured operational data without payloads or credentials |
+| Persistence | `DATABASE_URL`, `DB_MAX_CONNECTIONS`, `DB_MIN_CONNECTIONS` | Require PostgreSQL TLS, a least-privilege role, bounded pools, migrations, backups, and restore tests |
+| Authentication | `JWT_SECRET`, `JWT_EXPIRATION_HOURS`, `AUTH_HASH_PEPPER`, token-specific pepper overrides, `BCRYPT_COST` | Generate independent high-entropy secrets, inject at runtime, and rotate under an incident-tested procedure |
+| Browser/API boundary | `CORS_ALLOWED_ORIGINS` | Enumerate HTTPS origins; wildcards are rejected in production |
+| Abuse controls | `RATE_LIMIT_*_RPM`, `RATE_LIMIT_*_BURST` | Size each endpoint tier from measured traffic and alert on sustained rejection rates |
+| Node lifecycle | `NODE_HEARTBEAT_TIMEOUT_MINUTES`, `NODE_OFFLINE_SWEEP_INTERVAL_SECONDS` | Choose a timeout above normal network jitter but below the maximum acceptable failover interval |
+
+```bash
+cp .env.example .env
+export ENVIRONMENT=production
+export JWT_SECRET="$(openssl rand -base64 48)"
+export AUTH_HASH_PEPPER="$(openssl rand -base64 48)"
+export DATABASE_URL='postgres://vcp@db.internal/vcp?sslmode=require'
+export CORS_ALLOWED_ORIGINS='https://console.example.com'
+cargo run --release --bin api-server
+```
+
+### Production Hardening
+
+- Terminate TLS at a hardened reverse proxy or load balancer; restrict database, metrics, observability, and coordinator ports to private networks.
+- Run the API and workers as distinct, non-root identities with read-only filesystems, minimal Linux capabilities, CPU/memory limits, and separate credentials.
+- Pin the Rust lockfile and container digests, scan dependencies and images, protect CI signing material, and stage migrations before rollout.
+- Centralize immutable audit logs and metrics; alert on authentication failures, proof rejections, node churn, task backlog, and offline-policy imports.
+- Back up PostgreSQL and policy/signing keys separately, test restoration, and document JWT/key rotation and node-revocation procedures.
+
+### Offline-First Configuration
+
+Prime each node with the minimum required egress policies, verification keys, and signed session leases while the control plane is reachable. Pin trusted Ed25519 peer keys out of band, bound lease lifetimes, retain the tamper-evident audit queue, and test transitions through `OnlineControlPlane`, `OfflineControlPlane`, and `NoUpstream`. Offline operation must fail closed when a signature, expiry, destination, or capability check cannot be satisfied; it does not bypass task or egress policy.
+
+### Gateway Mode
+
+Use a dedicated `open_internet` or `any` node and expose only the configured relay listener. The gateway consumes coordinator-issued sessions and should never be deployed as an unauthenticated general proxy:
+
+```bash
+ambient-vcp gateway --listen 0.0.0.0:7000 \
+  --sessions-file /run/ambient-vcp/gateway-sessions.json \
+  --connect-timeout-seconds 5 --idle-timeout-seconds 600
+```
+
+Keep the session file owner-readable only, enforce destination allowlists and expiry, revoke sessions immediately when tasks end, leave backhaul routing in monitor-only mode until deliberately enabled, and apply host firewall plus relay QoS rules to the selected WAN interface.
+
+### Recommended Security Settings
+
+- Use unique 48-byte-or-stronger JWT, refresh-token, API-key, and connect-session secrets; never reuse development values.
+- Keep bcrypt at cost 12 or benchmark a stronger tolerable value; use short JWT lifetimes and rotate refresh tokens.
+- Retain the default endpoint-specific rate limits as a floor, restrict CORS to explicit HTTPS origins, and protect `/metrics` with admin authentication and network policy.
+- Permit only registered task/node types and bounded capabilities; enable proof requirements for workloads whose result integrity crosses an untrusted-node boundary.
+- Disable public local observability, database access, and peer-sync listeners; allow only authenticated peers and required ingress paths.
+
+For platform-specific rollout and rollback procedures, see [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) and [`docs/NODE_SECURITY.md`](./docs/NODE_SECURITY.md).
 
 ---
 
@@ -897,6 +1115,8 @@ If you are integrating the system, use these tests as the authoritative referenc
 ---
 
 ## 🛣️ Roadmap
+
+The roadmap prioritizes verifiable execution and operational safety over surface-area growth. Near-term work completes observability, Byzantine-resilient coordination, libp2p transport, independent security review, and MFA. Planned improvements then deepen scheduling, mobile/edge support, reproducible proof circuits, policy/key rotation, and failure-injection coverage. The long-term goal is an interoperable, decentralized compute fabric with auditable governance and privacy-preserving execution across heterogeneous nodes.
 
 ### ✅ Phase 1 - Core Infrastructure (COMPLETED)
 - ✅ Ambient node implementation
@@ -1076,6 +1296,48 @@ ambient-vcp/
 ## 🤝 Contributing
 
 Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+
+### Local Development
+
+```bash
+# Format, lint, and exercise the complete workspace.
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+
+# Database-backed API tests use an isolated PostgreSQL database.
+TEST_DATABASE_URL=postgres://postgres:postgres@localhost/ambient_vcp_test \
+  cargo test -p api-server --test integration_test
+```
+
+### Adding a Node Type
+
+1. Add the canonical node type to API registration validation and document its bounded capabilities.
+2. Implement behavior in `ambient-node` behind a narrow trait boundary; keep transport, policy, and execution state separable.
+3. Extend coordinator eligibility/routing rules and add unit tests for selection, heartbeat, offline, and rejection paths.
+4. Add API integration tests and update OpenAPI-facing models and operator documentation. Never accept arbitrary capability names as executable authority.
+
+### Adding a Task Type
+
+1. Add one entry to `TASK_TYPE_REGISTRY` with its preferred node type, minimum capabilities, payload ceiling, execution deadline, and WASM policy.
+2. Validate the input schema before persistence, define completion/disconnection semantics, and bind any proof to an explicit circuit and public-input format.
+3. Implement worker execution and coordinator assignment without weakening sandbox, ownership, or admission-control guarantees.
+4. Test valid intake, malformed and oversized inputs, insufficient capacity, reassignment, result submission, and proof-required failure cases.
+
+### Working With the Coordinator Locally
+
+```bash
+# Terminal 1: standalone in-memory coordinator
+cargo run -p ambient-vcp-cli -- coordinator \
+  --cluster-id local-dev --strategy weighted
+
+# Terminal 2: a local worker with operator-only observability
+cargo run -p ambient-vcp-cli --features observability -- node \
+  --id dev-node --region local --node-type compute \
+  --observability --observability-port 9090
+```
+
+The standalone CLI is useful for coordinator and node logic. Use the API server plus `TEST_DATABASE_URL` when changing authenticated registration, durable assignment, heartbeat, or result lifecycle behavior. Keep tests deterministic, avoid real network dependencies in unit tests, and update the executable specification when a public contract changes.
 
 ### Development Workflow
 
